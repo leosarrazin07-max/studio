@@ -53,7 +53,13 @@ export function usePrepState(): UsePrepStateReturn {
   const updatePushEnabledState = async () => {
      if ('permissions' in navigator) {
         const permissionStatus = await navigator.permissions.query({name: 'notifications'});
-        setState(prevState => ({...prevState, pushEnabled: permissionStatus.state === 'granted'}));
+        const enabled = permissionStatus.state === 'granted';
+        setState(prevState => ({...prevState, pushEnabled: enabled}));
+        if (enabled && 'serviceWorker' in navigator) {
+            const registration = await navigator.serviceWorker.ready;
+            const sub = await registration.pushManager.getSubscription();
+            setSubscription(sub);
+        }
      }
   }
 
@@ -74,8 +80,8 @@ export function usePrepState(): UsePrepStateReturn {
     }
 
     const registration = await navigator.serviceWorker.ready;
-    const currentSubscription = await registration.pushManager.getSubscription();
-
+    let currentSubscription = await registration.pushManager.getSubscription();
+    
     if (currentSubscription) {
         setSubscription(currentSubscription);
         await saveSubscription(currentSubscription.toJSON());
