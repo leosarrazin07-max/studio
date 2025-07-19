@@ -3,7 +3,7 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import * as webpush from "web-push";
 import {z} from "zod";
-import { add, sub, isAfter } from 'date-fns';
+import { add } from 'date-fns';
 
 
 admin.initializeApp();
@@ -123,13 +123,12 @@ export const checkAndSendReminders = functions.runWith({secrets: ["VAPID_PRIVATE
     }
 
     const now = new Date();
-    const statesSnapshot = await db.collection("states").get();
+    const statesSnapshot = await db.collection("states").where("sessionActive", "==", true).where("pushEnabled", "==", true).get();
 
     for (const doc of statesSnapshot.docs) {
       try {
         const state = StateSchema.parse(doc.data());
-        if (!state.sessionActive || !state.pushEnabled) continue;
-
+        
         const lastDose = state.doses
           .filter((d) => d.type !== "stop")
           .sort((a, b) => (
