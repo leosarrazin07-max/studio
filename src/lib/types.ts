@@ -1,8 +1,11 @@
 
 
+export type DoseType = 'start' | 'dose' | 'stop';
+
 export interface Dose {
   time: Date; // Stored as Date object in state, ISO string in storage
   pills: number;
+  type: DoseType;
 }
 
 export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed';
@@ -25,5 +28,3 @@ export interface PrepLogic {
 }
 
 export type UsePrepStateReturn = PrepState & PrepLogic;
-
-    

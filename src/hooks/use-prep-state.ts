@@ -142,7 +142,7 @@ export function usePrepState(): UsePrepStateReturn {
     }
     
     setState(prevState => {
-      const newDoses = [...prevState.doses, { time: dose.time, pills: dose.pills }]
+      const newDoses = [...prevState.doses, { ...dose, type: 'dose' as const }]
         .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 
       if (newDoses.length > 0 && subscription.endpoint) {
@@ -169,10 +169,14 @@ export function usePrepState(): UsePrepStateReturn {
         return;
     }
     
-    const newDose = { time, pills: 2 };
-    setState({
-      doses: [newDose],
-      sessionActive: true,
+    const newDose = { time, pills: 2, type: 'start' as const };
+    
+    setState(prevState => {
+        const updatedDoses = [...prevState.doses, newDose].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+        return {
+            doses: updatedDoses,
+            sessionActive: true,
+        };
     });
     
     scheduleDoseReminders({
@@ -184,20 +188,21 @@ export function usePrepState(): UsePrepStateReturn {
   }, [requestNotificationPermission, subscription, toast]);
 
   const endSession = useCallback(() => {
-    // Stop server-side reminders
     if (subscription?.endpoint) {
         endSessionForUser({ subscriptionEndpoint: subscription.endpoint });
     }
-    // Deactivate the session locally to change UI state, but keep dose history
-    // This allows showing the final protection end date.
-    setState(prevState => ({ ...prevState, sessionActive: false }));
+    setState(prevState => {
+        const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const };
+        const updatedDoses = [...prevState.doses, stopEvent].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+        return { ...prevState, sessionActive: false, doses: updatedDoses };
+    });
     toast({
         title: "Session terminée",
         description: "Les rappels de notification sont maintenant arrêtés."
     });
   }, [subscription, toast]);
   
-  const lastDose = state.doses.length > 0 ? state.doses[state.doses.length - 1] : null;
+  const lastDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
 
   let status: PrepStatus = 'inactive';
   let statusColor = 'bg-gray-500';
@@ -206,9 +211,11 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
-  if (isClient && state.sessionActive && lastDose) {
+  const firstDoseInSession = state.doses.find(d => d.type === 'start');
+
+  if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
     const lastDoseTime = new Date(lastDose.time);
-    const protectionStartTime = add(new Date(state.doses[0].time), { hours: PROTECTION_START_HOURS });
+    const protectionStartTime = add(new Date(firstDoseInSession.time), { hours: PROTECTION_START_HOURS });
     const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
     const protectionLapsesTime = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
 
@@ -232,7 +239,6 @@ export function usePrepState(): UsePrepStateReturn {
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
   } else if (isClient && !state.sessionActive && lastDose) {
-    // Handle case where session has been manually stopped
     status = 'missed';
     statusColor = 'bg-destructive';
     statusText = 'Session terminée';
@@ -240,12 +246,10 @@ export function usePrepState(): UsePrepStateReturn {
     protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
-
   if (!isClient) {
     statusText = "Chargement...";
     statusColor = "bg-muted";
   }
-
 
   return {
     ...state,
@@ -261,5 +265,3 @@ export function usePrepState(): UsePrepStateReturn {
     endSession,
   };
 }
-
-    
