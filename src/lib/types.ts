@@ -6,6 +6,7 @@ export interface Dose {
   time: Date; // Stored as Date object in state, ISO string in storage
   pills: number;
   type: DoseType;
+  id: string; // Unique ID for each dose
 }
 
 export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed';
@@ -14,7 +15,8 @@ export interface PrepState {
   doses: Dose[];
   sessionActive: boolean;
   pushEnabled: boolean;
-  protectionNotified?: boolean; // Ajout pour suivre l'envoi de la notification
+  protectionNotified?: boolean; 
+  reminderNotifiedForDoseId?: string | null; // ID of the dose for which a reminder was sent
 }
 
 export interface PrepLogic {

@@ -2,15 +2,13 @@
 import { NextResponse } from 'next/server';
 import * as webpush from 'web-push';
 import { z } from 'zod';
-import { add, sub } from 'date-fns';
+import { add } from 'date-fns';
 import { PROTECTION_START_HOURS, DOSE_INTERVAL_HOURS } from '@/lib/constants';
 
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY as string;
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string;
 const projectId = process.env.GCP_PROJECT || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 
-// The cron job runs every 5 minutes, so we define a window slightly larger than that
-// to ensure we catch the event without sending it multiple times.
 const CRON_JOB_INTERVAL_MINUTES = 5;
 
 if (VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY) {
@@ -21,15 +19,19 @@ if (VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY) {
     );
 }
 
+const DoseSchema = z.object({
+  time: z.string().datetime(),
+  pills: z.number(),
+  type: z.string(),
+  id: z.string(),
+});
+
 const StateSchema = z.object({
-  doses: z.array(z.object({
-    time: z.string().datetime(),
-    pills: z.number(),
-    type: z.string(),
-  })),
+  doses: z.array(DoseSchema),
   sessionActive: z.boolean(),
   pushEnabled: z.boolean(),
   protectionNotified: z.boolean().optional(),
+  reminderNotifiedForDoseId: z.string().nullable().optional(),
 });
 
 type FirestoreStateDocument = {
@@ -43,6 +45,7 @@ type FirestoreStateDocument = {
                             time: { stringValue: string };
                             pills: { integerValue: string };
                             type: { stringValue: string };
+                            id: { stringValue: string };
                         }
                     }
                 }[]
@@ -51,17 +54,15 @@ type FirestoreStateDocument = {
         sessionActive: { booleanValue: boolean },
         pushEnabled: { booleanValue: boolean },
         protectionNotified?: { booleanValue: boolean },
+        reminderNotifiedForDoseId?: { stringValue: string } | { nullValue: null },
     }
 };
 
 async function getAccessToken() {
-    // This function will only work in a Google Cloud environment (like App Hosting)
     const response = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token', {
         headers: { 'Metadata-Flavor': 'Google' },
     });
-    if (!response.ok) {
-        throw new Error(`Failed to get access token: ${await response.text()}`);
-    }
+    if (!response.ok) throw new Error(`Failed to get access token: ${await response.text()}`);
     const data = await response.json();
     return data.access_token;
 }
@@ -83,6 +84,16 @@ async function deleteSubscriptionAndState(docId: string, accessToken: string) {
     await fetch(deleteStateUrl, { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
 }
 
+async function updateFirestoreField(docName: string, fieldName: string, value: { booleanValue: boolean } | { stringValue: string }, accessToken: string) {
+    const updateUrl = `https://firestore.googleapis.com/v1/${docName}?updateMask.fieldPaths=${fieldName}`;
+    await fetch(updateUrl, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: { [fieldName]: value } })
+    });
+}
+
+
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -101,9 +112,7 @@ export async function GET(request: Request) {
     const statesResponse = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/states`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
     });
-    if (!statesResponse.ok) {
-        throw new Error(`Failed to fetch states: ${await statesResponse.text()}`);
-    }
+    if (!statesResponse.ok) throw new Error(`Failed to fetch states: ${await statesResponse.text()}`);
     const statesData = await statesResponse.json();
     const stateDocs: FirestoreStateDocument[] = statesData.documents || [];
     
@@ -118,10 +127,12 @@ export async function GET(request: Request) {
                 time: v.mapValue.fields.time.stringValue,
                 pills: parseInt(v.mapValue.fields.pills.integerValue, 10),
                 type: v.mapValue.fields.type.stringValue,
+                id: v.mapValue.fields.id.stringValue,
             })),
             sessionActive: doc.fields.sessionActive.booleanValue,
             pushEnabled: doc.fields.pushEnabled.booleanValue,
             protectionNotified: doc.fields.protectionNotified?.booleanValue ?? false,
+            reminderNotifiedForDoseId: doc.fields.reminderNotifiedForDoseId?.stringValue ?? null,
         };
 
         const parseResult = StateSchema.safeParse(state);
@@ -131,9 +142,7 @@ export async function GET(request: Request) {
         }
         const parsedState = parseResult.data;
         
-        if (!parsedState.sessionActive || !parsedState.pushEnabled) {
-            continue;
-        }
+        if (!parsedState.sessionActive || !parsedState.pushEnabled) continue;
 
         const subscriptionResponse = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/subscriptions/${docId}`, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -142,23 +151,17 @@ export async function GET(request: Request) {
         const subscriptionData = await subscriptionResponse.json();
         const subscription = {
             endpoint: subscriptionData.fields.endpoint.stringValue,
-            keys: {
-                p256dh: subscriptionData.fields.keys.mapValue.fields.p256dh.stringValue,
-                auth: subscriptionData.fields.keys.mapValue.fields.auth.stringValue
-            }
+            keys: { p256dh: subscriptionData.fields.keys.mapValue.fields.p256dh.stringValue, auth: subscriptionData.fields.keys.mapValue.fields.auth.stringValue }
         };
 
         const firstDose = parsedState.doses.find(d => d.type === 'start');
-        const lastDose = parsedState.doses
-          .filter((d) => d.type !== "stop")
-          .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())[0] ?? null;
+        const lastDose = parsedState.doses.filter(d => d.type !== "stop").sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())[0] ?? null;
 
         if (!lastDose || !firstDose) continue;
 
         // --- Logic for Protection Start Notification (at 2 hours) ---
         if (!parsedState.protectionNotified) {
             const protectionStartTime = add(new Date(firstDose.time), { hours: PROTECTION_START_HOURS });
-            // This window ensures we send the notification only on the first cron run after the 2-hour mark.
             const notificationWindowStart = protectionStartTime;
             const notificationWindowEnd = add(protectionStartTime, { minutes: CRON_JOB_INTERVAL_MINUTES }); 
             
@@ -168,28 +171,25 @@ export async function GET(request: Request) {
 
                 if (success) {
                     notificationsSent++;
-                    // Mark as notified in Firestore to prevent re-sending
-                    const updateStateUrl = `https://firestore.googleapis.com/v1/${doc.name}?updateMask.fieldPaths=protectionNotified`;
-                    await fetch(updateStateUrl, {
-                        method: 'PATCH',
-                        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ fields: { protectionNotified: { booleanValue: true } } })
-                    });
+                    await updateFirestoreField(doc.name, 'protectionNotified', { booleanValue: true }, accessToken);
                 } else if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
-                    errorsEncountered++;
                     await deleteSubscriptionAndState(docId, accessToken);
                 } else {
-                    errorsEncountered++;
                     console.error(`Failed to send protection notification to ${subscription.endpoint}:`, error);
                 }
-                continue; // Skip daily reminder check if this was sent
+                continue; 
             }
         }
 
         // --- Logic for Daily Dose Reminder (22-26h window) ---
+        // Check if a reminder has already been sent for the last dose
+        if (parsedState.reminderNotifiedForDoseId === lastDose.id) {
+            continue;
+        }
+
         const lastDoseTime = new Date(lastDose.time);
         const reminderWindowStart = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS - 2 }); // 22h
-        const reminderWindowEnd = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS + 2 }); // 26h
+        const reminderWindowEnd = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS + 2 });   // 26h
 
         if (now >= reminderWindowStart && now <= reminderWindowEnd) {
             const payload = JSON.stringify({ title: "Rappel PrEP", body: "Il est temps de prendre votre prochaine dose !" });
@@ -197,11 +197,10 @@ export async function GET(request: Request) {
 
             if (success) {
                 notificationsSent++;
+                await updateFirestoreField(doc.name, 'reminderNotifiedForDoseId', { stringValue: lastDose.id }, accessToken);
             } else if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
-                errorsEncountered++;
                 await deleteSubscriptionAndState(docId, accessToken);
             } else {
-                errorsEncountered++;
                 console.error(`Failed to send reminder to ${subscription.endpoint}:`, error);
             }
         }
