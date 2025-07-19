@@ -1,13 +1,11 @@
 
 import { NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, doc, setDoc } from 'firebase/firestore';
 import { z } from 'zod';
+import { initializeServerApp } from '@/lib/firebase-server';
 
-if (!getApps().length) {
-    initializeApp();
-}
-const db = getFirestore();
+const app = initializeServerApp();
+const db = getFirestore(app);
 
 const SubscriptionSchema = z.object({
     endpoint: z.string(),
@@ -21,7 +19,7 @@ export async function POST(request: Request) {
     try {
         const body = await request.json();
         const subscription = SubscriptionSchema.parse(body);
-        await db.collection("subscriptions").doc(subscription.endpoint).set(subscription);
+        await setDoc(doc(db, "subscriptions", subscription.endpoint), subscription);
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error("Failed to save subscription:", error);

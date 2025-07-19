@@ -1,12 +1,10 @@
 
 import { NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, doc, deleteDoc } from 'firebase/firestore';
+import { initializeServerApp } from '@/lib/firebase-server';
 
-if (!getApps().length) {
-    initializeApp();
-}
-const db = getFirestore();
+const app = initializeServerApp();
+const db = getFirestore(app);
 
 export async function POST(request: Request) {
     try {
@@ -14,8 +12,8 @@ export async function POST(request: Request) {
         if (!endpoint) {
             return NextResponse.json({ success: false, error: 'Missing endpoint' }, { status: 400 });
         }
-        await db.collection("states").doc(endpoint).delete();
-        await db.collection("subscriptions").doc(endpoint).delete();
+        await deleteDoc(doc(db, "states", endpoint));
+        await deleteDoc(doc(db, "subscriptions", endpoint));
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error("Failed to delete state:", error);

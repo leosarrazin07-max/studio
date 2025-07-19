@@ -1,17 +1,14 @@
 
 import { NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, collection, getDocs, doc, getDoc, deleteDoc } from 'firebase/firestore';
+import { initializeServerApp } from '@/lib/firebase-server';
 import * as webpush from 'web-push';
 import { z } from 'zod';
 import { add } from 'date-fns';
 
-// Initialize Firebase Admin SDK
-// Check if the app is already initialized to prevent errors
-if (!getApps().length) {
-  initializeApp();
-}
-const db = getFirestore();
+// Initialize Firebase App
+const app = initializeServerApp();
+const db = getFirestore(app);
 
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY as string;
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string;
@@ -45,7 +42,6 @@ const StateSchema = z.object({
 });
 
 export async function GET(request: Request) {
-  // Protect the route with a secret key
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new Response('Unauthorized', { status: 401 });
@@ -58,14 +54,14 @@ export async function GET(request: Request) {
 
   try {
     const now = new Date();
-    const statesSnapshot = await db.collection("states").get();
+    const statesSnapshot = await getDocs(collection(db, "states"));
 
     let notificationsSent = 0;
     let errorsEncountered = 0;
 
-    for (const doc of statesSnapshot.docs) {
+    for (const docSnapshot of statesSnapshot.docs) {
       try {
-        const state = StateSchema.parse(doc.data());
+        const state = StateSchema.parse(docSnapshot.data());
         
         if (!state.sessionActive || !state.pushEnabled) {
             continue;
@@ -82,12 +78,10 @@ export async function GET(request: Request) {
         const gracePeriodEndTime = add(nextDoseDueTime, { hours: 4 });
 
         if (now >= nextDoseDueTime && now <= gracePeriodEndTime) {
-          const subscriptionSnapshot = await db
-            .collection("subscriptions")
-            .doc(doc.id)
-            .get();
+          const subscriptionRef = doc(db, "subscriptions", docSnapshot.id);
+          const subscriptionSnapshot = await getDoc(subscriptionRef);
 
-          if (!subscriptionSnapshot.exists) continue;
+          if (!subscriptionSnapshot.exists()) continue;
 
           const subscription = SubscriptionSchema.parse(subscriptionSnapshot.data());
           const payload = JSON.stringify({
@@ -101,8 +95,8 @@ export async function GET(request: Request) {
           } catch (error: any) {
               if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
                   console.warn(`Subscription ${subscription.endpoint} is no longer valid. Deleting.`);
-                  await db.collection("subscriptions").doc(doc.id).delete();
-                  await db.collection("states").doc(doc.id).delete();
+                  await deleteDoc(doc(db, "subscriptions", docSnapshot.id));
+                  await deleteDoc(doc(db, "states", docSnapshot.id));
               } else {
                 console.error(`Failed to send notification to ${subscription.endpoint}:`, error);
                 errorsEncountered++;
@@ -110,7 +104,7 @@ export async function GET(request: Request) {
           }
         }
       } catch (error) {
-        console.error(`Failed to process state for doc ${doc.id}:`, error);
+        console.error(`Failed to process state for doc ${docSnapshot.id}:`, error);
         errorsEncountered++;
       }
     }
