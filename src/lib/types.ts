@@ -14,6 +14,7 @@ export interface PrepState {
   doses: Dose[];
   sessionActive: boolean;
   pushEnabled: boolean;
+  protectionNotified?: boolean; // Ajout pour suivre l'envoi de la notification
 }
 
 export interface PrepLogic {

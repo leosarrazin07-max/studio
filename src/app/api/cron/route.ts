@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import * as webpush from 'web-push';
 import { z } from 'zod';
 import { add } from 'date-fns';
-import { DOSE_INTERVAL_HOURS } from '@/lib/constants';
+import { PROTECTION_START_HOURS } from '@/lib/constants';
 
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY as string;
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string;
@@ -25,6 +25,7 @@ const StateSchema = z.object({
   })),
   sessionActive: z.boolean(),
   pushEnabled: z.boolean(),
+  protectionNotified: z.boolean().optional(),
 });
 
 type FirestoreStateDocument = {
@@ -44,22 +45,30 @@ type FirestoreStateDocument = {
             }
         },
         sessionActive: { booleanValue: boolean },
-        pushEnabled: { booleanValue: boolean }
+        pushEnabled: { booleanValue: boolean },
+        protectionNotified?: { booleanValue: boolean },
     }
 };
 
 async function getAccessToken() {
     // This function will only work in a Google Cloud environment (like App Hosting)
     const response = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token', {
-        headers: {
-            'Metadata-Flavor': 'Google',
-        },
+        headers: { 'Metadata-Flavor': 'Google' },
     });
     if (!response.ok) {
         throw new Error(`Failed to get access token: ${await response.text()}`);
     }
     const data = await response.json();
     return data.access_token;
+}
+
+async function sendNotification(subscription: any, payload: string) {
+    try {
+        await webpush.sendNotification(subscription, payload);
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error };
+    }
 }
 
 export async function GET(request: Request) {
@@ -100,6 +109,7 @@ export async function GET(request: Request) {
             })),
             sessionActive: doc.fields.sessionActive.booleanValue,
             pushEnabled: doc.fields.pushEnabled.booleanValue,
+            protectionNotified: doc.fields.protectionNotified?.booleanValue ?? false,
         };
 
         const parseResult = StateSchema.safeParse(state);
@@ -113,43 +123,65 @@ export async function GET(request: Request) {
             continue;
         }
 
+        const subscriptionResponse = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/subscriptions/${docId}`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        if (!subscriptionResponse.ok) continue;
+        const subscriptionData = await subscriptionResponse.json();
+        const subscription = {
+            endpoint: subscriptionData.fields.endpoint.stringValue,
+            keys: {
+                p256dh: subscriptionData.fields.keys.mapValue.fields.p256dh.stringValue,
+                auth: subscriptionData.fields.keys.mapValue.fields.auth.stringValue
+            }
+        };
+
+        const firstDose = parsedState.doses.find(d => d.type === 'start');
         const lastDose = parsedState.doses
           .filter((d) => d.type !== "stop")
           .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())[0] ?? null;
 
-        if (!lastDose) continue;
-        
-        const lastDoseTime = new Date(lastDose.time);
+        if (!lastDose || !firstDose) continue;
 
-        // Your specific reminder window: between 22 and 26 hours after the last dose.
+        // --- Logic for Protection Start Notification ---
+        if (!parsedState.protectionNotified) {
+            const protectionStartTime = add(new Date(firstDose.time), { hours: PROTECTION_START_HOURS });
+            const protectionNotifWindowEnd = add(protectionStartTime, { hours: 1 }); // Send within 1h of protection start
+            
+            if (now >= protectionStartTime && now <= protectionNotifWindowEnd) {
+                const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
+                const { success, error } = await sendNotification(subscription, payload);
+
+                if (success) {
+                    notificationsSent++;
+                    // Mark as notified in Firestore to prevent re-sending
+                    const updateStateUrl = `https://firestore.googleapis.com/v1/${doc.name}?updateMask.fieldPaths=protectionNotified`;
+                    await fetch(updateStateUrl, {
+                        method: 'PATCH',
+                        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fields: { protectionNotified: { booleanValue: true } } })
+                    });
+                } else {
+                    errorsEncountered++;
+                    // Handle subscription deletion on error
+                }
+                continue; // Skip daily reminder check if this was sent
+            }
+        }
+
+        // --- Logic for Daily Dose Reminder ---
+        const lastDoseTime = new Date(lastDose.time);
         const reminderWindowStart = add(lastDoseTime, { hours: 22 });
         const reminderWindowEnd = add(lastDoseTime, { hours: 26 });
 
         if (now >= reminderWindowStart && now <= reminderWindowEnd) {
-            const subscriptionResponse = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/subscriptions/${docId}`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` }
-            });
+            const payload = JSON.stringify({ title: "Rappel PrEP", body: "Il est temps de prendre votre prochaine dose !" });
+            const { success, error } = await sendNotification(subscription, payload);
 
-            if (!subscriptionResponse.ok) continue;
-
-            const subscriptionData = await subscriptionResponse.json();
-            const subscription = {
-                endpoint: subscriptionData.fields.endpoint.stringValue,
-                keys: {
-                    p256dh: subscriptionData.fields.keys.mapValue.fields.p256dh.stringValue,
-                    auth: subscriptionData.fields.keys.mapValue.fields.auth.stringValue
-                }
-            };
-          
-            const payload = JSON.stringify({
-                title: "Rappel PrEP",
-                body: "Il est temps de prendre votre prochaine dose !",
-            });
-
-            try {
-                await webpush.sendNotification(subscription, payload);
+            if (success) {
                 notificationsSent++;
-            } catch (error: any) {
+            } else {
+                errorsEncountered++;
                 if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
                     console.warn(`Subscription ${subscription.endpoint} is no longer valid. Deleting.`);
                     const deleteSubUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/subscriptions/${docId}`;
@@ -158,10 +190,10 @@ export async function GET(request: Request) {
                     await fetch(deleteStateUrl, { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
                 } else {
                     console.error(`Failed to send notification to ${subscription.endpoint}:`, error);
-                    errorsEncountered++;
                 }
             }
         }
+
       } catch (error) {
         console.error(`Failed to process state for doc ${doc.name.split('/').pop()}:`, error);
         errorsEncountered++;

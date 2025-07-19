@@ -42,7 +42,8 @@ const safelyParseJSON = (jsonString: string | null) => {
 const defaultState: PrepState = {
     doses: [],
     sessionActive: false,
-    pushEnabled: false
+    pushEnabled: false,
+    protectionNotified: false
 };
 
 
@@ -100,6 +101,14 @@ export function usePrepState(): UsePrepStateReturn {
   const unsubscribeFromNotifications = useCallback(async () => {
     if (subscription) {
       await subscription.unsubscribe();
+      // Also delete from server
+      await fetch('/api/deleteState', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ endpoint: subscription.endpoint })
+      });
       setSubscription(null);
       setState(prevState => ({...prevState, pushEnabled: false}));
       toast({ title: "Notifications désactivées." });
@@ -187,7 +196,7 @@ export function usePrepState(): UsePrepStateReturn {
     if (isClient) {
         localStorage.setItem('prepState', JSON.stringify({
             ...state,
-            doses: state.doses.map(d => ({...d, time: new Date(d.time).toISOString()}))
+            doses: state.doses.map(d => ({...d, time: d.time.toISOString()}))
         }));
 
         if (state.sessionActive && subscription) {
@@ -200,7 +209,7 @@ export function usePrepState(): UsePrepStateReturn {
                     endpoint: subscription.endpoint,
                     state: {
                         ...state,
-                        doses: state.doses.map(d => ({...d, time: new Date(d.time).toISOString()}))
+                        doses: state.doses.map(d => ({...d, time: d.time.toISOString()}))
                     }
                 })
             });
@@ -211,7 +220,7 @@ export function usePrepState(): UsePrepStateReturn {
   const addDose = useCallback((dose: { time: Date; pills: number }) => {
     setState(prevState => {
       const newDoses = [...prevState.doses, { ...dose, type: 'dose' as const }]
-        .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+        .sort((a, b) => a.time.getTime() - b.time.getTime());
 
       return { ...prevState, sessionActive: true, doses: newDoses };
     });
@@ -231,12 +240,13 @@ export function usePrepState(): UsePrepStateReturn {
     const newDose = { time, pills: 2, type: 'start' as const };
     
     setState(prevState => {
-        const updatedDoses = [newDose].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+        const updatedDoses = [newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
         const newState = {
-            ...prevState,
+            ...defaultState, // Reset state but keep push settings
+            pushEnabled: prevState.pushEnabled,
             doses: updatedDoses,
             sessionActive: true,
-            pushEnabled: true,
+            protectionNotified: false, // Reset this flag for the new session
         };
         return newState;
     });
@@ -246,7 +256,7 @@ export function usePrepState(): UsePrepStateReturn {
   const endSession = useCallback(() => {
     setState(prevState => {
         const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const };
-        const updatedDoses = [...prevState.doses, stopEvent].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+        const updatedDoses = [...prevState.doses, stopEvent].sort((a, b) => a.time.getTime() - b.time.getTime());
         return { ...prevState, sessionActive: false, doses: updatedDoses };
     });
     toast({
@@ -283,8 +293,8 @@ export function usePrepState(): UsePrepStateReturn {
   const firstDoseInSession = state.doses.find(d => d.type === 'start');
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
-    const lastDoseTime = new Date(lastDose.time);
-    const protectionStartTime = add(new Date(firstDoseInSession.time), { hours: PROTECTION_START_HOURS });
+    const lastDoseTime = lastDose.time;
+    const protectionStartTime = add(firstDoseInSession.time, { hours: PROTECTION_START_HOURS });
     const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
     const protectionLapsesTime = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
 
@@ -311,7 +321,7 @@ export function usePrepState(): UsePrepStateReturn {
     status = 'missed';
     statusColor = 'bg-destructive';
     statusText = 'Session terminée';
-    const protectionEndsAt = add(new Date(lastDose.time), { hours: FINAL_PROTECTION_HOURS });
+    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
