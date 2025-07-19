@@ -2,7 +2,7 @@
 /**
  * @fileOverview Manages push notification subscriptions and scheduling.
  *
- * - saveSubscription - Saves a user's push notification subscription.
+ * - saveSubscription - Saves a user's push notification subscription to Firestore.
  * - scheduleDoseReminders - Schedules reminders for the next dose.
  */
 
@@ -10,16 +10,40 @@ import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { add, isAfter } from 'date-fns';
 import * as webpush from 'web-push';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 import { DOSE_INTERVAL_HOURS, GRACE_PERIOD_HOURS, PROTECTION_START_HOURS } from '@/lib/constants';
 
-// In a real app, these would be stored in a database (e.g., Firestore).
-// We use in-memory storage for this prototype.
-const subscriptions: webpush.PushSubscription[] = [];
+// --- Firebase Admin SDK Setup ---
+// In a real production environment, you would use environment variables
+// to configure the SDK, especially for service account credentials.
+// For App Hosting, this configuration is often handled automatically.
+try {
+    if (!getApps().length) {
+        if (process.env.FIREBASE_CONFIG && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+             // Deployed on App Hosting
+            initializeApp();
+        } else {
+             // Local development - requires a service account key file
+            const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || '{}');
+            initializeApp({
+                credential: cert(serviceAccount)
+            });
+        }
+    }
+} catch (error) {
+    console.error("Firebase Admin initialization error:", error);
+    // You might want to throw an error or handle this case gracefully
+}
+
+const db = getFirestore();
+const subscriptionsCollection = db.collection('subscriptions');
+
+// This remains in-memory as it's tied to the server's lifecycle.
+// A more robust solution would use a cron job service.
 const scheduledNotifications: NodeJS.Timeout[] = [];
 
-// Configure web-push
-// In a real app, these VAPID keys should be stored securely (e.g., in environment variables)
-// and generated only once.
+// --- Web Push Configuration ---
 const vapidKeys = {
     publicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BGEPqO_1POfO9s3j01tpkLdYd-v1jYYtMGTcwaxgQ2I_exGj155R8Xk-sXeyV6ORHIq8n4XhGzAsaKxV9wJzO6w',
     privateKey: process.env.VAPID_PRIVATE_KEY || 'WBgYgqfS2_RA5k0hKj0oYfTBsQjH6qIHUgYyU-w-wM0'
@@ -33,6 +57,7 @@ if (vapidKeys.publicKey && vapidKeys.privateKey) {
     );
 }
 
+// --- Zod Schemas ---
 const SubscriptionSchema = z.object({
     endpoint: z.string(),
     keys: z.object({
@@ -47,6 +72,8 @@ const ScheduleSchema = z.object({
     isFirstDose: z.boolean(),
 });
 
+// --- Genkit Flows ---
+
 export const saveSubscription = ai.defineFlow(
   {
     name: 'saveSubscription',
@@ -54,25 +81,40 @@ export const saveSubscription = ai.defineFlow(
     outputSchema: z.boolean(),
   },
   async (subscription) => {
-    // Avoid storing duplicate subscriptions
-    if (!subscriptions.some(s => s.endpoint === subscription.endpoint)) {
-        subscriptions.push(subscription);
+    try {
+        // Use the endpoint as the document ID to prevent duplicates
+        const subRef = subscriptionsCollection.doc(encodeURIComponent(subscription.endpoint));
+        await subRef.set(subscription);
+        console.log('Subscription saved to Firestore.');
+        return true;
+    } catch (error) {
+        console.error("Error saving subscription to Firestore:", error);
+        return false;
     }
-    console.log('Subscription saved. Total subscriptions:', subscriptions.length);
-    return true;
   }
 );
 
-
-const sendNotification = (subscription: webpush.PushSubscription, payload: string) => {
-    webpush.sendNotification(subscription, payload).catch(error => {
-        console.error('Error sending notification, removing subscription:', error);
-        // If a subscription is invalid, remove it.
-        const index = subscriptions.findIndex(s => s.endpoint === subscription.endpoint);
-        if (index > -1) {
-            subscriptions.splice(index, 1);
+const sendNotificationsToAll = async (payload: string) => {
+    try {
+        const snapshot = await subscriptionsCollection.get();
+        if (snapshot.empty) {
+            console.log('No subscriptions found.');
+            return;
         }
-    });
+
+        snapshot.forEach(doc => {
+            const subscription = doc.data() as webpush.PushSubscription;
+            webpush.sendNotification(subscription, payload).catch(error => {
+                console.error('Error sending notification, removing subscription:', error);
+                // If a subscription is invalid (e.g., 410 Gone), remove it from Firestore.
+                if (error.statusCode === 410) {
+                    doc.ref.delete();
+                }
+            });
+        });
+    } catch (error) {
+        console.error("Error fetching subscriptions from Firestore:", error);
+    }
 };
 
 export const scheduleDoseReminders = ai.defineFlow(
@@ -82,7 +124,7 @@ export const scheduleDoseReminders = ai.defineFlow(
         outputSchema: z.boolean(),
     },
     async ({ lastDoseTime, firstDoseTime, isFirstDose }) => {
-        // Clear any previously scheduled notifications for this user/session
+        // Clear any previously scheduled notifications
         scheduledNotifications.forEach(clearTimeout);
         scheduledNotifications.length = 0;
 
@@ -100,7 +142,7 @@ export const scheduleDoseReminders = ai.defineFlow(
                         body: 'Vous êtes protégé par la PrEP.',
                         icon: '/shield-check.png',
                     });
-                    subscriptions.forEach(sub => sendNotification(sub, payload));
+                    sendNotificationsToAll(payload);
                 }, delay);
                 scheduledNotifications.push(timeoutId);
             }
@@ -110,6 +152,7 @@ export const scheduleDoseReminders = ai.defineFlow(
         const nextDoseTime = add(lastDoseDate, { hours: DOSE_INTERVAL_HOURS });
         const reminderWindowEnd = add(nextDoseTime, { hours: GRACE_PERIOD_HOURS });
 
+        // Schedule reminders every 15 minutes within the grace period
         for (let i = 0; i < (GRACE_PERIOD_HOURS * 60); i += 15) {
             const reminderTime = add(nextDoseTime, { minutes: i });
 
@@ -119,15 +162,15 @@ export const scheduleDoseReminders = ai.defineFlow(
                     const minutesRemaining = Math.round((reminderWindowEnd.getTime() - reminderTime.getTime()) / (1000 * 60));
                     const hours = Math.floor(minutesRemaining / 60);
                     const mins = minutesRemaining % 60;
-                    const timeLeft = `Il vous reste ${hours}h et ${mins}min.`;
+                    const timeLeft = `Il vous reste ${hours}h${mins > 0 ? ` et ${mins}min` : ''}.`;
                     
                     const payload = JSON.stringify({
                         title: "C'est l'heure de prendre la PrEP",
                         body: timeLeft,
                         icon: '/pill.png',
-                        tag: 'prep-reminder'
+                        tag: 'prep-reminder' // Tag to replace previous reminders
                     });
-                     subscriptions.forEach(sub => sendNotification(sub, payload));
+                     sendNotificationsToAll(payload);
                 }, delay);
                 scheduledNotifications.push(timeoutId);
             }
