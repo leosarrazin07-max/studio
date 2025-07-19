@@ -43,7 +43,7 @@ const StateSchema = z.object({
 
 
 // Proxied API endpoints for client to call
-export const saveSubscription = functions.https.onRequest(async (req, res) => {
+export const saveSubscription = functions.region("europe-west9").https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
     res.set('Access-Control-Allow-Methods', 'POST');
@@ -65,7 +65,7 @@ export const saveSubscription = functions.https.onRequest(async (req, res) => {
   }
 });
 
-export const saveState = functions.https.onRequest(async (req, res) => {
+export const saveState = functions.region("europe-west9").https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
     res.set('Access-Control-Allow-Methods', 'POST');
@@ -87,7 +87,7 @@ export const saveState = functions.https.onRequest(async (req, res) => {
   }
 });
 
-export const deleteState = functions.https.onRequest(async (req, res) => {
+export const deleteState = functions.region("europe-west9").https.onRequest(async (req, res) => {
     res.set('Access-control-Allow-Origin', '*');
     if (req.method === 'OPTIONS') {
       res.set('Access-Control-Allow-Methods', 'POST');
@@ -112,7 +112,7 @@ export const deleteState = functions.https.onRequest(async (req, res) => {
 
 
 // Scheduled function to check for reminders
-export const checkAndSendReminders = functions.runWith({secrets: ["VAPID_PRIVATE_KEY"]}).https
+export const checkAndSendReminders = functions.region("europe-west9").runWith({secrets: ["VAPID_PRIVATE_KEY"]}).https
   .onRequest(async (req, res) => {
     functions.logger.info("Running checkAndSendReminders on request");
 
