@@ -8,7 +8,6 @@ import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/type
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
 
-
 const VAPID_PUBLIC_KEY = 'BGEPqO_1POfO9s3j01tpkLdYd-v1jYYtMGTcwaxgQ2I_exGj155R8Xk-sXeyV6ORHIq8n4XhGzAsaKxV9wJzO6w';
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -29,8 +28,13 @@ function urlBase64ToUint8Array(base64String: string) {
 const safelyParseJSON = (jsonString: string | null) => {
   if (!jsonString) return null;
   try {
-    return JSON.parse(jsonString);
+    const parsed = JSON.parse(jsonString);
+    if (parsed.doses) {
+        parsed.doses = parsed.doses.map((d: any) => ({...d, time: new Date(d.time)}));
+    }
+    return parsed;
   } catch (e) {
+    console.error("Failed to parse JSON from localStorage", e);
     return null;
   }
 };
@@ -50,6 +54,31 @@ export function usePrepState(): UsePrepStateReturn {
 
   const [state, setState] = useState<PrepState>(defaultState);
   
+  const updateSubscriptionOnServer = useCallback(async (sub: PushSubscription | null) => {
+    if (sub) {
+        try {
+            // This now calls the new Firebase Cloud Function
+            const response = await fetch('/api/saveSubscription', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(sub.toJSON()),
+            });
+            if (!response.ok) {
+                throw new Error('Server response was not ok.');
+            }
+        } catch (e) {
+            console.error("Failed to save subscription", e);
+            toast({
+                title: "Erreur serveur",
+                description: "Impossible de sauvegarder les préférences de notification.",
+                variant: "destructive",
+            });
+        }
+    }
+  }, [toast]);
+  
   const updateSubscriptionObject = useCallback(async () => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       try {
@@ -57,20 +86,20 @@ export function usePrepState(): UsePrepStateReturn {
         const sub = await registration.pushManager.getSubscription();
         setSubscription(sub);
         if (sub) {
-            // If a subscription exists, it means permission was granted.
-            // Sync the `pushEnabled` state.
             setState(prevState => ({...prevState, pushEnabled: true}));
+        } else {
+            setState(prevState => ({...prevState, pushEnabled: false}));
         }
       } catch (error) {
         console.error("Error getting push subscription:", error);
         setSubscription(null);
+        setState(prevState => ({...prevState, pushEnabled: false}));
       }
     }
   }, []);
 
   const unsubscribeFromNotifications = useCallback(async () => {
     if (subscription) {
-      
       await subscription.unsubscribe();
       setSubscription(null);
       setState(prevState => ({...prevState, pushEnabled: false}));
@@ -108,6 +137,7 @@ export function usePrepState(): UsePrepStateReturn {
         }
         
         setSubscription(currentSubscription);
+        await updateSubscriptionOnServer(currentSubscription);
         
         setState(prevState => ({...prevState, pushEnabled: true}));
         toast({ title: "Notifications activées!" });
@@ -122,7 +152,7 @@ export function usePrepState(): UsePrepStateReturn {
         setState(prevState => ({...prevState, pushEnabled: false}));
         return false;
     }
-  }, [toast]);
+  }, [toast, updateSubscriptionOnServer]);
 
 
   useEffect(() => {
@@ -132,7 +162,6 @@ export function usePrepState(): UsePrepStateReturn {
       navigator.serviceWorker.register('/service-worker.js')
         .then(registration => {
             console.log('Service Worker enregistré avec succès:', registration);
-            // This will now sync both the subscription object and pushEnabled state
             updateSubscriptionObject();
         })
         .catch(error => console.error('Erreur lors de l’enregistrement du Service Worker:', error));
@@ -140,8 +169,6 @@ export function usePrepState(): UsePrepStateReturn {
 
     const savedState = safelyParseJSON(localStorage.getItem('prepState'));
     if (savedState) {
-        // When loading from storage, ensure we respect the saved `pushEnabled` state.
-        // `updateSubscriptionObject` will later align it if needed.
       setState(savedState);
     }
 
@@ -153,33 +180,40 @@ export function usePrepState(): UsePrepStateReturn {
 
   useEffect(() => {
     if (isClient) {
-       const stateToSave = {
-        ...state,
-        doses: state.doses.map(d => ({...d, time: new Date(d.time).toISOString()}))
-       }
-       localStorage.setItem('prepState', JSON.stringify(stateToSave));
+        localStorage.setItem('prepState', JSON.stringify({
+            ...state,
+            doses: state.doses.map(d => ({...d, time: new Date(d.time).toISOString()}))
+        }));
+
+        if (state.sessionActive && subscription) {
+            fetch('/api/saveState', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    endpoint: subscription.endpoint,
+                    state: {
+                        ...state,
+                        doses: state.doses.map(d => ({...d, time: new Date(d.time).toISOString()}))
+                    }
+                })
+            });
+        }
     }
-  }, [state, isClient]);
+  }, [state, isClient, subscription]);
 
   const addDose = useCallback((dose: { time: Date; pills: number }) => {
-    if(!state.pushEnabled || !subscription?.endpoint) {
-        toast({
-            title: "Notifications désactivées",
-            description: "Veuillez activer les notifications pour planifier des rappels.",
-            variant: "destructive"
-        });
-    }
-    
     setState(prevState => {
       const newDoses = [...prevState.doses, { ...dose, type: 'dose' as const }]
         .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 
       return { ...prevState, sessionActive: true, doses: newDoses };
     });
-  }, [subscription, toast, state.pushEnabled]);
+  }, []);
 
   const startSession = useCallback(async (time: Date) => {
-    const hasPermission = state.pushEnabled || await requestNotificationPermission();
+    const hasPermission = await requestNotificationPermission();
     if (!hasPermission) {
         toast({
             title: "Action impossible",
@@ -197,11 +231,12 @@ export function usePrepState(): UsePrepStateReturn {
             ...prevState,
             doses: updatedDoses,
             sessionActive: true,
+            pushEnabled: true,
         };
         return newState;
     });
     
-  }, [requestNotificationPermission, state.pushEnabled, toast]);
+  }, [requestNotificationPermission, toast]);
 
   const endSession = useCallback(() => {
     setState(prevState => {
@@ -216,12 +251,20 @@ export function usePrepState(): UsePrepStateReturn {
   }, [toast]);
 
   const clearHistory = useCallback(() => {
-    
+    if (subscription) {
+      fetch('/api/deleteState', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ endpoint: subscription.endpoint })
+      });
+    }
     localStorage.removeItem('prepState');
-    setState(defaultState); // Reset to the very default state
+    setState(defaultState);
     updateSubscriptionObject();
     toast({ title: "Données effacées", description: "Votre historique local a été supprimé." });
-  }, [updateSubscriptionObject, toast]);
+  }, [updateSubscriptionObject, toast, subscription]);
   
   const lastDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
 
@@ -272,7 +315,6 @@ export function usePrepState(): UsePrepStateReturn {
     statusColor = "bg-muted";
   }
 
-  // Ensure doses are Date objects for calculations, but they are stringified in localStorage
   const dosesAsDates = state.doses.map(d => ({ ...d, time: new Date(d.time) }));
 
   return {
