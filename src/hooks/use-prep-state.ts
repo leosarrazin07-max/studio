@@ -50,19 +50,18 @@ export function usePrepState(): UsePrepStateReturn {
 
   const [state, setState] = useState<PrepState>(defaultState);
   
-  const updatePushEnabledState = useCallback(async () => {
-     if ('permissions' in navigator) {
-        const permissionStatus = await navigator.permissions.query({name: 'notifications'});
-        const enabled = permissionStatus.state === 'granted';
-        setState(prevState => ({...prevState, pushEnabled: enabled}));
-        if (enabled && 'serviceWorker' in navigator) {
-            const registration = await navigator.serviceWorker.ready;
-            const sub = await registration.pushManager.getSubscription();
-            setSubscription(sub);
-        } else {
-            setSubscription(null);
-        }
-     }
+  // This function only syncs the subscription object if permission is granted
+  const updateSubscriptionObject = useCallback(async () => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const sub = await registration.pushManager.getSubscription();
+        setSubscription(sub); // sub will be null if not subscribed
+      } catch (error) {
+        console.error("Error getting push subscription:", error);
+        setSubscription(null);
+      }
+    }
   }, []);
 
   const unsubscribeFromNotifications = useCallback(async () => {
@@ -78,38 +77,36 @@ export function usePrepState(): UsePrepStateReturn {
 
   const requestNotificationPermission = useCallback(async () => {
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-        return false;
-    }
-
-    const registration = await navigator.serviceWorker.ready;
-    let currentSubscription = await registration.pushManager.getSubscription();
-    
-    if (currentSubscription) {
-        setSubscription(currentSubscription);
-        await saveSubscription(currentSubscription.toJSON());
-        setState(prevState => ({...prevState, pushEnabled: true}));
-        return true;
-    }
-
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') {
-        toast({
-            title: "Notifications refusées",
-            description: "Les rappels ne fonctionneront pas. Vous pouvez les activer dans les paramètres de votre navigateur.",
-            variant: "destructive"
-        });
-        setState(prevState => ({...prevState, pushEnabled: false}));
+        toast({ title: "Navigateur non compatible", variant: "destructive" });
         return false;
     }
 
     try {
-        const newSubscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-        });
+        const registration = await navigator.serviceWorker.ready;
         
-        setSubscription(newSubscription);
-        await saveSubscription(newSubscription.toJSON());
+        // Check browser-level permission first
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            toast({
+                title: "Notifications refusées",
+                description: "Les rappels ne fonctionneront pas. Vous pouvez les activer dans les paramètres de votre navigateur.",
+                variant: "destructive"
+            });
+            setState(prevState => ({...prevState, pushEnabled: false}));
+            return false;
+        }
+
+        // If permission is granted, get or create a subscription
+        let currentSubscription = await registration.pushManager.getSubscription();
+        if (!currentSubscription) {
+            currentSubscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+            });
+        }
+        
+        setSubscription(currentSubscription);
+        await saveSubscription(currentSubscription.toJSON());
         setState(prevState => ({...prevState, pushEnabled: true}));
         toast({ title: "Notifications activées!" });
         return true;
@@ -133,25 +130,21 @@ export function usePrepState(): UsePrepStateReturn {
       navigator.serviceWorker.register('/service-worker.js')
         .then(registration => {
             console.log('Service Worker enregistré avec succès:', registration);
-            updatePushEnabledState(); // Check notification status on load
+            updateSubscriptionObject();
         })
         .catch(error => console.error('Erreur lors de l’enregistrement du Service Worker:', error));
     }
 
     const savedState = safelyParseJSON(localStorage.getItem('prepState'));
     if (savedState) {
-      setState(prevState => ({
-        ...prevState,
-        ...savedState,
-        doses: savedState.doses.map((d: Dose) => ({ ...d, time: new Date(d.time) })),
-      }));
+      setState(savedState);
     }
 
     const timer = setInterval(() => setNow(new Date()), 1000 * 60); // Update every minute
     return () => {
         clearInterval(timer);
     };
-  }, [updatePushEnabledState]);
+  }, [updateSubscriptionObject]);
 
   useEffect(() => {
     if (isClient) {
@@ -191,7 +184,7 @@ export function usePrepState(): UsePrepStateReturn {
   }, [subscription, toast, state.pushEnabled]);
 
   const startSession = useCallback(async (time: Date) => {
-    const hasPermission = await requestNotificationPermission();
+    const hasPermission = state.pushEnabled || await requestNotificationPermission();
     if (!hasPermission) {
         toast({
             title: "Action impossible",
@@ -204,7 +197,7 @@ export function usePrepState(): UsePrepStateReturn {
     const newDose = { time, pills: 2, type: 'start' as const };
     
     setState(prevState => {
-        const updatedDoses = [...prevState.doses, newDose].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+        const updatedDoses = [newDose].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
         const newState = {
             ...prevState,
             doses: updatedDoses,
@@ -222,7 +215,7 @@ export function usePrepState(): UsePrepStateReturn {
         return newState;
     });
     
-  }, [requestNotificationPermission, subscription, toast]);
+  }, [requestNotificationPermission, subscription, toast, state.pushEnabled]);
 
   const endSession = useCallback(() => {
     if (subscription?.endpoint) {
@@ -244,10 +237,10 @@ export function usePrepState(): UsePrepStateReturn {
       endSessionForUser({ subscriptionEndpoint: subscription.endpoint });
     }
     localStorage.removeItem('prepState');
-    setState(defaultState);
-    updatePushEnabledState();
+    setState(defaultState); // Reset to the very default state
+    updateSubscriptionObject();
     toast({ title: "Données effacées", description: "Votre historique local a été supprimé." });
-  }, [subscription, toast, updatePushEnabledState]);
+  }, [subscription, toast, updateSubscriptionObject]);
   
   const lastDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
 
@@ -298,9 +291,12 @@ export function usePrepState(): UsePrepStateReturn {
     statusColor = "bg-muted";
   }
 
+  // Ensure doses are Date objects for calculations, but they are stringified in localStorage
+  const dosesAsDates = state.doses.map(d => ({ ...d, time: new Date(d.time) }));
+
   return {
     ...state,
-    doses: state.doses.filter(dose => isAfter(new Date(dose.time), sub(now, { days: MAX_HISTORY_DAYS }))),
+    doses: dosesAsDates.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
     statusText,
