@@ -11,15 +11,13 @@ admin.initializeApp();
 const db = admin.firestore();
 
 // Initialize web-push
-// These variables must be set in the Firebase environment config
-// firebase functions:config:set webpush.vapid_public_key="..."
-// firebase functions:config:set webpush.vapid_private_key="..."
-const vapidKeys = functions.config().webpush;
-if (vapidKeys) {
+// These variables are loaded from Firebase environment config.
+// The config is set in `firebase.json` for App Hosting and picked up here.
+if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
     "mailto:contact@prepy.app",
-    vapidKeys.vapid_public_key,
-    vapidKeys.vapid_private_key
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
   );
 } else {
   console.error(
@@ -69,7 +67,7 @@ async function deleteSubscriptionAndState(docId: string) {
 }
 
 async function processCron() {
-    if (!vapidKeys) {
+    if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
         throw new Error("VAPID keys are not set. Cannot proceed.");
     }
 
@@ -160,7 +158,10 @@ async function processCron() {
 }
 
 export const cronJob = functions.region("us-central1").runWith({
-    secrets: ["CRON_SECRET"],
+    secrets: ["CRON_SECRET", "VAPID_PRIVATE_KEY"],
+    env: {
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string,
+    }
 }).https.onRequest(async (req, res) => {
     if (req.method !== 'POST') {
         res.status(405).send('Method Not Allowed');

@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server';
 // located in the `functions` directory by running `firebase deploy --only functions`.
 
 export async function GET(request: Request) {
-  // The 'x-app-check' header is automatically verified by App Hosting.
+  // The OIDC authentication is automatically verified by App Hosting.
   // We can add our own secret to ensure only our app can call this.
   const cronSecret = request.headers.get('X-Cron-Secret');
   if (cronSecret !== process.env.CRON_SECRET) {
@@ -17,8 +17,8 @@ export async function GET(request: Request) {
   }
 
   // This is the URL of the deployed Cloud Function.
-  // We are calling the function from the Next.js backend.
-  const functionUrl = `https://${process.env.GCLOUD_PROJECT}.cloudfunctions.net/cron-job`;
+  // Format: https://<region>-<project-id>.cloudfunctions.net/<function-name>
+  const functionUrl = `https://us-central1-${process.env.GCLOUD_PROJECT}.cloudfunctions.net/cronJob`;
 
   try {
     const response = await fetch(functionUrl, {
@@ -26,7 +26,9 @@ export async function GET(request: Request) {
       headers: {
         // We add a secret header to secure the call between Next.js and the function.
         'X-Cron-Secret': process.env.CRON_SECRET!,
+        'Content-Type': 'application/json'
       },
+      body: JSON.stringify({ message: "Cron call from Next.js" })
     });
 
     const data = await response.json();
