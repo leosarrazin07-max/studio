@@ -182,10 +182,7 @@ export const checkAndSendReminders = ai.defineFlow(
         outputSchema: z.string(),
         // This allows Cloud Scheduler to call the flow without authentication
         authPolicy: (auth, input) => {
-          if (!auth) {
-            return; // Allow unauthenticated calls from Cloud Scheduler
-          }
-          // You might add other authorization logic here if needed in the future
+          // No auth check, so we allow unauthenticated calls from Cloud Scheduler
         },
     },
     async () => {
