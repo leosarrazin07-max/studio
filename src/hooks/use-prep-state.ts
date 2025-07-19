@@ -35,17 +35,39 @@ const safelyParseJSON = (jsonString: string | null) => {
   }
 };
 
+const defaultState: PrepState = {
+    doses: [],
+    sessionActive: false,
+    pushEnabled: false
+};
+
+
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
-  const [subscription, setSubscription] = useState<PushSubscriptionJSON | null>(null);
+  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
 
-  const [state, setState] = useState<PrepState>({
-    doses: [],
-    sessionActive: false,
-  });
+  const [state, setState] = useState<PrepState>(defaultState);
   
+  const updatePushEnabledState = async () => {
+     if ('permissions' in navigator) {
+        const permissionStatus = await navigator.permissions.query({name: 'notifications'});
+        setState(prevState => ({...prevState, pushEnabled: permissionStatus.state === 'granted'}));
+     }
+  }
+
+  const unsubscribeFromNotifications = useCallback(async () => {
+    if (subscription) {
+      await endSessionForUser({ subscriptionEndpoint: subscription.endpoint });
+      await subscription.unsubscribe();
+      setSubscription(null);
+      setState(prevState => ({...prevState, pushEnabled: false}));
+      toast({ title: "Notifications désactivées." });
+    }
+  }, [subscription, toast]);
+
+
   const requestNotificationPermission = useCallback(async () => {
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
         return false;
@@ -54,10 +76,10 @@ export function usePrepState(): UsePrepStateReturn {
     const registration = await navigator.serviceWorker.ready;
     const currentSubscription = await registration.pushManager.getSubscription();
 
-    if(currentSubscription){
-        setSubscription(currentSubscription.toJSON());
-        // No need to save again if it exists, but doesn't hurt.
+    if (currentSubscription) {
+        setSubscription(currentSubscription);
         await saveSubscription(currentSubscription.toJSON());
+        setState(prevState => ({...prevState, pushEnabled: true}));
         return true;
     }
 
@@ -68,6 +90,7 @@ export function usePrepState(): UsePrepStateReturn {
             description: "Les rappels ne fonctionneront pas. Vous pouvez les activer dans les paramètres de votre navigateur.",
             variant: "destructive"
         });
+        setState(prevState => ({...prevState, pushEnabled: false}));
         return false;
     }
 
@@ -77,9 +100,10 @@ export function usePrepState(): UsePrepStateReturn {
             applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
         });
         
-        setSubscription(newSubscription.toJSON());
+        setSubscription(newSubscription);
         await saveSubscription(newSubscription.toJSON());
-
+        setState(prevState => ({...prevState, pushEnabled: true}));
+        toast({ title: "Notifications activées!" });
         return true;
     } catch (error) {
         console.error("Error subscribing to push notifications:", error);
@@ -88,6 +112,7 @@ export function usePrepState(): UsePrepStateReturn {
             description: "Impossible de s'abonner aux notifications. Veuillez réessayer.",
             variant: "destructive"
         });
+        setState(prevState => ({...prevState, pushEnabled: false}));
         return false;
     }
   }, [toast]);
@@ -100,26 +125,25 @@ export function usePrepState(): UsePrepStateReturn {
       navigator.serviceWorker.register('/service-worker.js')
         .then(registration => {
             console.log('Service Worker enregistré avec succès:', registration);
-            // We request permission as soon as the app loads and we have a SW
-            // to improve user experience, instead of asking on first action.
-            requestNotificationPermission();
+            updatePushEnabledState(); // Check notification status on load
         })
         .catch(error => console.error('Erreur lors de l’enregistrement du Service Worker:', error));
     }
 
     const savedState = safelyParseJSON(localStorage.getItem('prepState'));
     if (savedState) {
-      setState({
+      setState(prevState => ({
+        ...prevState,
         ...savedState,
         doses: savedState.doses.map((d: Dose) => ({ ...d, time: new Date(d.time) })),
-      });
+      }));
     }
 
     const timer = setInterval(() => setNow(new Date()), 1000 * 60); // Update every minute
     return () => {
         clearInterval(timer);
     };
-  }, [requestNotificationPermission]);
+  }, []);
 
   useEffect(() => {
     if (isClient) {
@@ -132,7 +156,7 @@ export function usePrepState(): UsePrepStateReturn {
   }, [state, isClient]);
 
   const addDose = useCallback((dose: { time: Date; pills: number }) => {
-    if(!subscription?.endpoint) {
+    if(!state.pushEnabled || !subscription?.endpoint) {
         toast({
             title: "Action impossible",
             description: "Les notifications ne sont pas activées. Impossible de planifier des rappels.",
@@ -156,11 +180,11 @@ export function usePrepState(): UsePrepStateReturn {
 
       return { ...prevState, sessionActive: true, doses: newDoses };
     });
-  }, [subscription, toast]);
+  }, [subscription, toast, state.pushEnabled]);
 
   const startSession = useCallback(async (time: Date) => {
     const hasPermission = await requestNotificationPermission();
-    if (!hasPermission || !subscription?.endpoint) {
+    if (!hasPermission) {
         toast({
             title: "Action impossible",
             description: "L'autorisation de notification est requise pour démarrer une session.",
@@ -173,18 +197,23 @@ export function usePrepState(): UsePrepStateReturn {
     
     setState(prevState => {
         const updatedDoses = [...prevState.doses, newDose].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-        return {
+        const newState = {
+            ...prevState,
             doses: updatedDoses,
             sessionActive: true,
         };
+
+        if (subscription?.endpoint) {
+            scheduleDoseReminders({
+                lastDoseTime: newDose.time.toISOString(),
+                firstDoseTime: newDose.time.toISOString(),
+                isFirstDose: true,
+                subscriptionEndpoint: subscription.endpoint,
+            });
+        }
+        return newState;
     });
     
-    scheduleDoseReminders({
-        lastDoseTime: newDose.time.toISOString(),
-        firstDoseTime: newDose.time.toISOString(),
-        isFirstDose: true,
-        subscriptionEndpoint: subscription.endpoint,
-    });
   }, [requestNotificationPermission, subscription, toast]);
 
   const endSession = useCallback(() => {
@@ -200,6 +229,16 @@ export function usePrepState(): UsePrepStateReturn {
         title: "Session terminée",
         description: "Les rappels de notification sont maintenant arrêtés."
     });
+  }, [subscription, toast]);
+
+  const clearHistory = useCallback(() => {
+    if (subscription?.endpoint) {
+      endSessionForUser({ subscriptionEndpoint: subscription.endpoint });
+    }
+    localStorage.removeItem('prepState');
+    setState(defaultState);
+    updatePushEnabledState();
+    toast({ title: "Données effacées", description: "Votre historique local a été supprimé." });
   }, [subscription, toast]);
   
   const lastDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
@@ -263,5 +302,8 @@ export function usePrepState(): UsePrepStateReturn {
     addDose,
     startSession,
     endSession,
+    clearHistory,
+    requestNotificationPermission,
+    unsubscribeFromNotifications
   };
 }

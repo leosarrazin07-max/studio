@@ -6,13 +6,15 @@ import { usePrepState } from "@/hooks/use-prep-state";
 import { Button } from "@/components/ui/button";
 import { LogDoseDialog } from "@/components/log-dose-dialog";
 import { PrepDashboard } from "@/components/prep-dashboard";
-import { Pill } from 'lucide-react';
+import { Pill, Menu } from 'lucide-react';
+import { SettingsSheet } from "@/components/settings-sheet";
 
 export default function Home() {
   const prepState = usePrepState();
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const { sessionActive, startSession } = prepState;
+  const { sessionActive, startSession, clearHistory, pushEnabled, requestNotificationPermission, unsubscribeFromNotifications } = prepState;
 
   const WelcomeScreen = () => (
     <div className="flex flex-col items-center justify-center h-full text-center p-4 md:p-8">
@@ -49,6 +51,9 @@ export default function Home() {
             <Pill className="text-primary" />
             <span className="font-bold text-lg font-headline">PrEPy</span>
           </div>
+          <Button variant="ghost" size="icon" onClick={() => setIsSettingsOpen(true)}>
+            <Menu />
+          </Button>
         </div>
       </header>
       <main className="flex-1 flex flex-col items-center justify-center">
@@ -56,6 +61,13 @@ export default function Home() {
           {sessionActive ? <PrepDashboard {...prepState} /> : <WelcomeScreen />}
         </div>
       </main>
+      <SettingsSheet
+        isOpen={isSettingsOpen}
+        onOpenChange={setIsSettingsOpen}
+        onClearHistory={clearHistory}
+        pushEnabled={pushEnabled}
+        onTogglePush={ (enabled) => enabled ? requestNotificationPermission() : unsubscribeFromNotifications() }
+      />
     </div>
   );
 }

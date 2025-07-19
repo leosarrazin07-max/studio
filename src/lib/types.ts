@@ -13,6 +13,7 @@ export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed';
 export interface PrepState {
   doses: Dose[];
   sessionActive: boolean;
+  pushEnabled: boolean;
 }
 
 export interface PrepLogic {
@@ -25,6 +26,9 @@ export interface PrepLogic {
   addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
   endSession: () => void;
+  clearHistory: () => void;
+  requestNotificationPermission: () => Promise<boolean>;
+  unsubscribeFromNotifications: () => void;
 }
 
 export type UsePrepStateReturn = PrepState & PrepLogic;
