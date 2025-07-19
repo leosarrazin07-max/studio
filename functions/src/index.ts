@@ -114,7 +114,7 @@ export const checkAndSendReminders = functions.runWith({secrets: ["VAPID_PRIVATE
           ))[0] ?? null;
 
         if (!lastDose) continue;
-
+        
         const lastDoseTime = new Date(lastDose.time);
         // 22 hours later
         const nextDoseDueTime = new Date(
@@ -145,21 +145,16 @@ export const checkAndSendReminders = functions.runWith({secrets: ["VAPID_PRIVATE
             await webpush.sendNotification(subscription, payload);
             functions.logger.info(`Sent notification to ${subscription.endpoint}`);
           } catch (error) {
-              // This is a crucial error handling block.
-              // If a push subscription is no longer valid (e.g., user uninstalled the app),
-              // web-push will throw an error, often with statusCode 410 (Gone).
-              // We must catch it to prevent the entire cron job from failing.
-              functions.logger.error(`Failed to send notification to ${subscription.endpoint}:`, error);
               if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
                   functions.logger.warn(`Subscription ${subscription.endpoint} is no longer valid. Deleting.`);
-                  // Clean up the invalid subscription and its associated state.
                   await db.collection("subscriptions").doc(doc.id).delete();
                   await db.collection("states").doc(doc.id).delete();
+              } else {
+                functions.logger.error(`Failed to send notification to ${subscription.endpoint}:`, error);
               }
           }
         }
       } catch (error) {
-        // This outer catch handles errors like parsing the state, which are less common.
         functions.logger.error(`Failed to process state for doc ${doc.id}:`, error);
       }
     }
