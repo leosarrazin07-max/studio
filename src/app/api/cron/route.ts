@@ -4,13 +4,14 @@ import * as webpush from 'web-push';
 import { z } from 'zod';
 import { add, sub, formatDistance, isAfter, isBefore } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { initializeAdminApp } from '@/lib/firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
 import { PROTECTION_START_HOURS, DOSE_INTERVAL_HOURS, LAPSES_AFTER_HOURS } from '@/lib/constants';
 
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY as string;
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string;
-const projectId = process.env.GCP_PROJECT || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 
-const CRON_JOB_INTERVAL_MINUTES = 5;
+const CRON_JOB_INTERVAL_MINUTES = 5; 
 
 if (VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY) {
     webpush.setVapidDetails(
@@ -19,6 +20,10 @@ if (VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY) {
       VAPID_PRIVATE_KEY
     );
 }
+
+// Initialize Firebase Admin SDK
+const adminApp = initializeAdminApp();
+const db = getFirestore(adminApp);
 
 const DoseSchema = z.object({
   time: z.string().datetime(),
@@ -34,123 +39,70 @@ const StateSchema = z.object({
   protectionNotified: z.boolean().optional(),
 });
 
-type FirestoreStateDocument = {
-    name: string;
-    fields: {
-        doses: {
-            arrayValue: {
-                values?: {
-                    mapValue: {
-                        fields: {
-                            time: { stringValue: string };
-                            pills: { integerValue: string };
-                            type: { stringValue: string };
-                            id: { stringValue: string };
-                        }
-                    }
-                }[]
-            }
-        },
-        sessionActive: { booleanValue: boolean },
-        pushEnabled: { booleanValue: boolean },
-        protectionNotified?: { booleanValue: boolean },
-    }
-};
-
-async function getAccessToken() {
-    const response = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token', {
-        headers: { 'Metadata-Flavor': 'Google' },
-    });
-    if (!response.ok) throw new Error(`Failed to get access token: ${await response.text()}`);
-    const data = await response.json();
-    return data.access_token;
-}
+type ParsedState = z.infer<typeof StateSchema>;
 
 async function sendNotification(subscription: any, payload: string) {
     try {
         await webpush.sendNotification(subscription, payload);
         return { success: true };
     } catch (error: any) {
-        return { success: false, error };
+        if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
+            // Subscription is no longer valid
+            return { success: false, error, shouldDelete: true };
+        }
+        return { success: false, error, shouldDelete: false };
     }
 }
 
-async function deleteSubscriptionAndState(docId: string, accessToken: string) {
+async function deleteSubscriptionAndState(docId: string) {
     console.warn(`Subscription for doc ${docId} is no longer valid. Deleting.`);
-    const deleteSubUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/subscriptions/${docId}`;
-    const deleteStateUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/states/${docId}`;
-    await fetch(deleteSubUrl, { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
-    await fetch(deleteStateUrl, { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
-}
-
-async function updateFirestoreField(docName: string, fieldName: string, value: { booleanValue: boolean }, accessToken: string) {
-    const updateUrl = `https://firestore.googleapis.com/v1/${docName}?updateMask.fieldPaths=${fieldName}`;
-    await fetch(updateUrl, {
-        method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: { [fieldName]: value } })
-    });
+    const subRef = db.collection('subscriptions').doc(docId);
+    const stateRef = db.collection('states').doc(docId);
+    await db.batch().delete(subRef).delete(stateRef).commit();
 }
 
 
 export async function GET(request: Request) {
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return new Response('Unauthorized', { status: 401 });
-  }
+  // OIDC authentication is now handled by the Cloud Scheduler configuration,
+  // so the manual bearer token check is removed.
 
-  if (!VAPID_PRIVATE_KEY || !projectId) {
-    console.error("Configuration variables are not set.");
+  if (!VAPID_PRIVATE_KEY) {
+    console.error("VAPID_PRIVATE_KEY is not set.");
     return NextResponse.json({ success: false, error: "Server configuration incomplete." }, { status: 500 });
   }
 
   try {
-    const accessToken = await getAccessToken();
     const now = new Date();
 
-    const statesResponse = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/states`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
-    if (!statesResponse.ok) throw new Error(`Failed to fetch states: ${await statesResponse.text()}`);
-    const statesData = await statesResponse.json();
-    const stateDocs: FirestoreStateDocument[] = statesData.documents || [];
+    const statesSnapshot = await db.collection('states').get();
+    if (statesSnapshot.empty) {
+      return NextResponse.json({ success: true, message: "No active states to process." });
+    }
     
     let notificationsSent = 0;
     let errorsEncountered = 0;
 
-    for (const doc of stateDocs) {
-      try {
-        const docId = doc.name.split('/').pop()!;
-        const state = {
-            doses: (doc.fields.doses.arrayValue.values || []).map(v => ({
-                time: v.mapValue.fields.time.stringValue,
-                pills: parseInt(v.mapValue.fields.pills.integerValue, 10),
-                type: v.mapValue.fields.type.stringValue,
-                id: v.mapValue.fields.id.stringValue,
-            })),
-            sessionActive: doc.fields.sessionActive.booleanValue,
-            pushEnabled: doc.fields.pushEnabled.booleanValue,
-            protectionNotified: doc.fields.protectionNotified?.booleanValue ?? false,
-        };
+    for (const doc of statesSnapshot.docs) {
+      const docId = doc.id;
+      const stateData = doc.data();
 
-        const parseResult = StateSchema.safeParse(state);
+      try {
+        const parseResult = StateSchema.safeParse(stateData);
         if (!parseResult.success) {
             console.warn(`Invalid state for doc ${docId}:`, parseResult.error);
             continue;
         }
         const parsedState = parseResult.data;
         
-        if (!parsedState.sessionActive || !parsedState.pushEnabled || parsedState.doses.length === 0) continue;
+        if (!parsedState.sessionActive || !parsedState.pushEnabled || parsedState.doses.length === 0) {
+          continue;
+        }
 
-        const subscriptionResponse = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/subscriptions/${docId}`, {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        if (!subscriptionResponse.ok) continue;
-        const subscriptionData = await subscriptionResponse.json();
-        const subscription = {
-            endpoint: subscriptionData.fields.endpoint.stringValue,
-            keys: { p256dh: subscriptionData.fields.keys.mapValue.fields.p256dh.stringValue, auth: subscriptionData.fields.keys.mapValue.fields.auth.stringValue }
-        };
+        const subscriptionDoc = await db.collection('subscriptions').doc(docId).get();
+        if (!subscriptionDoc.exists) {
+            continue;
+        }
+        const subscription = subscriptionDoc.data();
 
         const firstDose = parsedState.doses.find(d => d.type === 'start');
         const lastDose = parsedState.doses.filter(d => d.type !== "stop").sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())[0];
@@ -161,19 +113,19 @@ export async function GET(request: Request) {
         if (!parsedState.protectionNotified) {
             const protectionStartTime = add(new Date(firstDose.time), { hours: PROTECTION_START_HOURS });
             const notificationWindowStart = protectionStartTime;
-            const notificationWindowEnd = add(notificationWindowStart, { minutes: CRON_JOB_INTERVAL_MINUTES }); 
+            const notificationWindowEnd = add(notificationWindowStart, { minutes: CRON_JOB_INTERVAL_MINUTES });
             
             if (isAfter(now, notificationWindowStart) && isBefore(now, notificationWindowEnd)) {
                 const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
-                const { success, error } = await sendNotification(subscription, payload);
+                const { success, error, shouldDelete } = await sendNotification(subscription, payload);
 
                 if (success) {
                     notificationsSent++;
-                    await updateFirestoreField(doc.name, 'protectionNotified', { booleanValue: true }, accessToken);
-                } else if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
-                    await deleteSubscriptionAndState(docId, accessToken);
+                    await db.collection('states').doc(docId).update({ protectionNotified: true });
+                } else if (shouldDelete) {
+                    await deleteSubscriptionAndState(docId);
                 } else {
-                    console.error(`Failed to send protection notification to ${subscription.endpoint}:`, error);
+                    console.error(`Failed to send protection notification to ${docId}:`, error);
                 }
                 continue; 
             }
@@ -189,19 +141,19 @@ export async function GET(request: Request) {
             const title = "Rappel PrEP : il est temps !";
             const body = `Prenez votre dose pour rester protégé. Il vous reste environ ${timeRemaining}.`;
             const payload = JSON.stringify({ title, body });
-            const { success, error } = await sendNotification(subscription, payload);
+            const { success, error, shouldDelete } = await sendNotification(subscription, payload);
 
             if (success) {
                 notificationsSent++;
-            } else if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
-                await deleteSubscriptionAndState(docId, accessToken);
+            } else if (shouldDelete) {
+                await deleteSubscriptionAndState(docId);
             } else {
-                console.error(`Failed to send reminder to ${subscription.endpoint}:`, error);
+                console.error(`Failed to send reminder to ${docId}:`, error);
             }
         }
 
       } catch (error) {
-        console.error(`Failed to process state for doc ${doc.name.split('/').pop()}:`, error);
+        console.error(`Failed to process state for doc ${docId}:`, error);
         errorsEncountered++;
       }
     }
