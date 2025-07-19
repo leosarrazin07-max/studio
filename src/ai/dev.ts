@@ -4,7 +4,5 @@ import './flows/notification-flow';
 import {genkit} from 'genkit';
 import {googleAI} from '@genkit-ai/googleai';
 
-genkit({
-  plugins: [googleAI()],
-  enableTracingAndMetrics: true,
-});
+// In this version, genkit() is called within the flow file itself
+// or by the framework. This file is just for dev-time discovery.

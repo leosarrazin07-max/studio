@@ -9,74 +9,14 @@
  * - checkAndSendReminders - (FOR CRON JOB) Checks all active sessions and sends notifications if due.
  */
 
-import { defineFlow, run, startFlow, Flow, FlowAuthPolicy } from 'genkit';
+import { genkit, defineFlow, run } from 'genkit';
+import { googleAI } from '@genkit-ai/googleai';
 import { z } from 'zod';
 import { add, isAfter, differenceInMinutes, isBefore } from 'date-fns';
 import * as webpush from 'web-push';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { DOSE_INTERVAL_HOURS, GRACE_PERIOD_HOURS, PROTECTION_START_HOURS } from '@/lib/constants';
-import { GenkitError } from 'genkit/errors';
-
-// --- Types ---
-interface SessionData {
-    lastDoseTime: string; // ISO string
-    firstDoseTime: string; // ISO string
-    subscriptionEndpoint: string; // To link session to subscription
-    protectionNotified: boolean; // To ensure protection notification is sent only once
-}
-
-// --- Firebase Admin SDK Setup ---
-let db: ReturnType<typeof getFirestore>;
-try {
-    if (!getApps().length) {
-        if (process.env.FIREBASE_CONFIG && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-            initializeApp();
-        } else if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-            const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-            initializeApp({
-                credential: cert(serviceAccount)
-            });
-        }
-    }
-    db = getFirestore();
-} catch (error) {
-    console.error("CRITICAL: Firebase Admin initialization error:", error);
-}
-
-
-// --- Web Push Configuration ---
-const vapidKeys = {
-    publicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BGEPqO_1POfO9s3j01tpkLdYd-v1jYYtMGTcwaxgQ2I_exGj155R8Xk-sXeyV6ORHIq8n4XhGzAsaKxV9wJzO6w',
-    privateKey: process.env.VAPID_PRIVATE_KEY || 'WBgYgqfS2_RA5k0hKj0oYfTBsQjH6qIHUgYyU-w-wM0'
-};
-
-if (vapidKeys.publicKey && vapidKeys.privateKey) {
-    webpush.setVapidDetails(
-        'mailto:example@yourdomain.org',
-        vapidKeys.publicKey,
-        vapidKeys.privateKey
-    );
-}
-
-// --- Helper Functions ---
-const sendNotification = async (endpoint: string, payload: string) => {
-    try {
-        const subDoc = await db.collection('subscriptions').doc(encodeURIComponent(endpoint)).get();
-        if (!subDoc.exists) {
-            console.error(`Subscription not found for endpoint: ${endpoint}`);
-            return;
-        }
-        const subscription = subDoc.data() as webpush.PushSubscription;
-        await webpush.sendNotification(subscription, payload);
-    } catch (error: any) {
-        console.error('Error sending notification, removing subscription:', error.body || error.message);
-        if (error.statusCode === 410) { // 410 Gone
-            await db.collection('subscriptions').doc(encodeURIComponent(endpoint)).delete();
-            await db.collection('sessions').doc(encodeURIComponent(endpoint)).delete();
-        }
-    }
-};
 
 // --- Zod Schemas ---
 const SubscriptionSchema = z.object({
@@ -98,21 +38,81 @@ const EndSessionSchema = z.object({
     subscriptionEndpoint: z.string(),
 });
 
+// --- Genkit Initialization ---
+genkit({
+    plugins: [googleAI()],
+    enableTracingAndMetrics: true,
+});
 
-// --- Genkit Flows ---
-const publicAuthPolicy: FlowAuthPolicy = (auth, input) => {
-    // Allow all access for this flow.
+// --- Firebase Admin SDK Setup ---
+let db: ReturnType<typeof getFirestore>;
+if (!getApps().length) {
+    try {
+        if (process.env.FIREBASE_CONFIG && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+            initializeApp();
+        } else if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+            const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+            initializeApp({
+                credential: cert(serviceAccount)
+            });
+        }
+        db = getFirestore();
+    } catch (error) {
+        console.error("CRITICAL: Firebase Admin initialization error:", error);
+    }
+} else {
+    db = getFirestore();
+}
+
+// --- Web Push Configuration ---
+const vapidKeys = {
+    publicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BGEPqO_1POfO9s3j01tpkLdYd-v1jYYtMGTcwaxgQ2I_exGj155R8Xk-sXeyV6ORHIq8n4XhGzAsaKxV9wJzO6w',
+    privateKey: process.env.VAPID_PRIVATE_KEY || 'WBgYgqfS2_RA5k0hKj0oYfTBsQjH6qIHUgYyU-w-wM0'
 };
 
-export const saveSubscription = defineFlow(
-  {
-    name: 'saveSubscription',
-    inputSchema: SubscriptionSchema,
-    outputSchema: z.boolean(),
-  },
-  async (subscription) => {
+if (vapidKeys.publicKey && vapidKeys.privateKey) {
+    webpush.setVapidDetails(
+        'mailto:example@yourdomain.org',
+        vapidKeys.publicKey,
+        vapidKeys.privateKey
+    );
+}
+
+// --- Helper Functions ---
+const sendNotification = async (endpoint: string, payload: string) => {
+    if (!db) return;
     try {
-        if (!db) throw new Error("Firestore not initialized");
+        const subDoc = await db.collection('subscriptions').doc(encodeURIComponent(endpoint)).get();
+        if (!subDoc.exists) {
+            console.error(`Subscription not found for endpoint: ${endpoint}`);
+            return;
+        }
+        const subscription = subDoc.data() as webpush.PushSubscription;
+        await webpush.sendNotification(subscription, payload);
+    } catch (error: any) {
+        console.error('Error sending notification, removing subscription:', error.body || error.message);
+        if (error.statusCode === 410) { // 410 Gone
+            await db.collection('subscriptions').doc(encodeURIComponent(endpoint)).delete();
+            await db.collection('sessions').doc(encodeURIComponent(endpoint)).delete();
+        }
+    }
+};
+
+// --- Types for old Genkit version ---
+interface SessionData {
+    lastDoseTime: string; // ISO string
+    firstDoseTime: string; // ISO string
+    subscriptionEndpoint: string; // To link session to subscription
+    protectionNotified: boolean; // To ensure protection notification is sent only once
+}
+
+// --- Genkit Flows ---
+
+export const saveSubscription = defineFlow(
+  async (subscription: z.infer<typeof SubscriptionSchema>) => {
+    if (!db) throw new Error("Firestore not initialized");
+    SubscriptionSchema.parse(subscription);
+    try {
         const subRef = db.collection('subscriptions').doc(encodeURIComponent(subscription.endpoint));
         await subRef.set(subscription);
         return true;
@@ -124,16 +124,11 @@ export const saveSubscription = defineFlow(
 );
 
 export const scheduleDoseReminders = defineFlow(
-    {
-        name: 'scheduleDoseReminders',
-        inputSchema: ScheduleSchema,
-        outputSchema: z.boolean(),
-    },
-    async (sessionData) => {
+    async (sessionData: z.infer<typeof ScheduleSchema>) => {
+        if (!db) throw new Error("Firestore not initialized");
+        ScheduleSchema.parse(sessionData);
         try {
-            if (!db) throw new Error("Firestore not initialized");
             const sessionRef = db.collection('sessions').doc(encodeURIComponent(sessionData.subscriptionEndpoint));
-
             if (sessionData.isFirstDose) {
                 await sessionRef.set({
                     lastDoseTime: sessionData.lastDoseTime,
@@ -146,7 +141,6 @@ export const scheduleDoseReminders = defineFlow(
                     lastDoseTime: sessionData.lastDoseTime,
                 });
             }
-
             return true;
         } catch (error) {
             console.error("Error saving session to Firestore:", error);
@@ -156,14 +150,10 @@ export const scheduleDoseReminders = defineFlow(
 );
 
 export const endSessionForUser = defineFlow(
-    {
-        name: 'endSessionForUser',
-        inputSchema: EndSessionSchema,
-        outputSchema: z.boolean(),
-    },
-    async ({ subscriptionEndpoint }) => {
+    async ({ subscriptionEndpoint }: z.infer<typeof EndSessionSchema>) => {
+        if (!db) throw new Error("Firestore not initialized");
+        EndSessionSchema.parse({ subscriptionEndpoint });
         try {
-            if (!db) throw new Error("Firestore not initialized");
             const sessionRef = db.collection('sessions').doc(encodeURIComponent(subscriptionEndpoint));
             await sessionRef.delete();
             return true;
@@ -175,13 +165,16 @@ export const endSessionForUser = defineFlow(
 );
 
 // THIS IS THE FLOW FOR THE CRON JOB
-export const checkAndSendReminders = defineFlow(
-    {
-        name: 'checkAndSendReminders',
-        inputSchema: z.null(), // No input needed
-        outputSchema: z.string(),
-        authPolicy: publicAuthPolicy 
+export const checkAndSendReminders = defineFlow({
+    name: 'checkAndSendReminders',
+    // This auth policy allows invocation from scheduler.
+    authPolicy: async (auth, input) => {
+        if (process.env.GENKIT_ENV === 'dev') return; // Allow in dev
+        // In production, you would check for a specific service account
+        // or other authentication method from Cloud Scheduler.
+        // For now, we are allowing all access for simplicity of deployment.
     },
+},
     async () => {
         if (!db) {
             const errorMessage = "CRON JOB FAILED: Firestore database is not initialized.";
@@ -192,7 +185,6 @@ export const checkAndSendReminders = defineFlow(
         const now = new Date();
         const sessionsCollection = db.collection('sessions');
         const sessionsSnapshot = await sessionsCollection.get();
-
 
         if (sessionsSnapshot.empty) {
             return "No active sessions.";
