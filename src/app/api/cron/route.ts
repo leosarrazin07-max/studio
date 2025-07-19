@@ -160,10 +160,10 @@ export async function GET(request: Request) {
         // --- Logic for Protection Start Notification (at 2 hours) ---
         if (!parsedState.protectionNotified) {
             const protectionStartTime = add(new Date(firstDose.time), { hours: PROTECTION_START_HOURS });
-            const notificationWindowStart = protectionStartTime;
+            // This window ensures we only send the notification once, on the first cron run after the 2-hour mark.
             const notificationWindowEnd = add(protectionStartTime, { minutes: CRON_JOB_INTERVAL_MINUTES }); 
             
-            if (isAfter(now, notificationWindowStart) && now <= notificationWindowEnd) {
+            if (isAfter(now, protectionStartTime) && now <= notificationWindowEnd) {
                 const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
                 const { success, error } = await sendNotification(subscription, payload);
 
