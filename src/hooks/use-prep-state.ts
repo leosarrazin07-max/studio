@@ -50,13 +50,17 @@ export function usePrepState(): UsePrepStateReturn {
 
   const [state, setState] = useState<PrepState>(defaultState);
   
-  // This function only syncs the subscription object if permission is granted
   const updateSubscriptionObject = useCallback(async () => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       try {
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.getSubscription();
-        setSubscription(sub); // sub will be null if not subscribed
+        setSubscription(sub);
+        if (sub) {
+            // If a subscription exists, it means permission was granted.
+            // Sync the `pushEnabled` state.
+            setState(prevState => ({...prevState, pushEnabled: true}));
+        }
       } catch (error) {
         console.error("Error getting push subscription:", error);
         setSubscription(null);
@@ -84,7 +88,6 @@ export function usePrepState(): UsePrepStateReturn {
     try {
         const registration = await navigator.serviceWorker.ready;
         
-        // Check browser-level permission first
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
             toast({
@@ -96,7 +99,6 @@ export function usePrepState(): UsePrepStateReturn {
             return false;
         }
 
-        // If permission is granted, get or create a subscription
         let currentSubscription = await registration.pushManager.getSubscription();
         if (!currentSubscription) {
             currentSubscription = await registration.pushManager.subscribe({
@@ -130,6 +132,7 @@ export function usePrepState(): UsePrepStateReturn {
       navigator.serviceWorker.register('/service-worker.js')
         .then(registration => {
             console.log('Service Worker enregistré avec succès:', registration);
+            // This will now sync both the subscription object and pushEnabled state
             updateSubscriptionObject();
         })
         .catch(error => console.error('Erreur lors de l’enregistrement du Service Worker:', error));
@@ -137,6 +140,8 @@ export function usePrepState(): UsePrepStateReturn {
 
     const savedState = safelyParseJSON(localStorage.getItem('prepState'));
     if (savedState) {
+        // When loading from storage, ensure we respect the saved `pushEnabled` state.
+        // `updateSubscriptionObject` will later align it if needed.
       setState(savedState);
     }
 
