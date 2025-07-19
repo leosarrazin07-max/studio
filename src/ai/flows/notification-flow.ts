@@ -11,7 +11,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import { add, isAfter, differenceInMinutes } from 'date-fns';
+import { add, isAfter, differenceInMinutes, isBefore } from 'date-fns';
 import * as webpush from 'web-push';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -21,8 +21,8 @@ import { DOSE_INTERVAL_HOURS, GRACE_PERIOD_HOURS, PROTECTION_START_HOURS } from 
 interface SessionData {
     lastDoseTime: string; // ISO string
     firstDoseTime: string; // ISO string
-    isFirstDose: boolean;
     subscriptionEndpoint: string; // To link session to subscription
+    protectionNotified: boolean; // To ensure protection notification is sent only once
 }
 
 // --- Firebase Admin SDK Setup ---
@@ -130,26 +130,23 @@ export const scheduleDoseReminders = ai.defineFlow(
     async (sessionData) => {
         try {
             const sessionRef = sessionsCollection.doc(encodeURIComponent(sessionData.subscriptionEndpoint));
-            await sessionRef.set(sessionData);
-
-            // If it's the first dose, schedule the "protection active" notification immediately.
+            
             if (sessionData.isFirstDose) {
-                const now = new Date();
-                const protectionStartTime = add(new Date(sessionData.firstDoseTime), { hours: PROTECTION_START_HOURS });
-                 if (isAfter(protectionStartTime, now)) {
-                    // NOTE: This setTimeout will only work if the server instance remains active.
-                    // For a robust solution, this should also be handled by the cron job.
-                    const delay = protectionStartTime.getTime() - now.getTime();
-                    setTimeout(() => {
-                        const payload = JSON.stringify({
-                            title: 'PrEPy: Protection active!',
-                            body: 'Vous êtes protégé par la PrEP.',
-                            icon: '/shield-check.png',
-                        });
-                        sendNotification(sessionData.subscriptionEndpoint, payload);
-                    }, delay);
-                }
+                // This is a new session
+                await sessionRef.set({
+                    lastDoseTime: sessionData.lastDoseTime,
+                    firstDoseTime: sessionData.firstDoseTime,
+                    subscriptionEndpoint: sessionData.subscriptionEndpoint,
+                    protectionNotified: false, // Set to false on new session
+                });
+            } else {
+                // This is an update to an existing session (new dose)
+                await sessionRef.update({
+                    lastDoseTime: sessionData.lastDoseTime,
+                });
             }
+            
+            console.log("Session saved to Firestore for endpoint:", sessionData.subscriptionEndpoint);
             return true;
         } catch (error) {
             console.error("Error saving session to Firestore:", error);
@@ -196,13 +193,33 @@ export const checkAndSendReminders = ai.defineFlow(
         let sentCount = 0;
         for (const doc of sessionsSnapshot.docs) {
             const session = doc.data() as SessionData;
-            const lastDoseTime = new Date(session.lastDoseTime);
-            
-            const nextDoseTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
-            const reminderWindowEnd = add(nextDoseTime, { hours: GRACE_PERIOD_HOURS });
+            const docRef = doc.ref;
 
-            // Check if we are within the reminder window (24h to 30h after last dose)
-            if (isAfter(now, nextDoseTime) && isAfter(reminderWindowEnd, now)) {
+            // 1. Check for "Protection Active" notification
+            if (!session.protectionNotified) {
+                const firstDoseTime = new Date(session.firstDoseTime);
+                const protectionStartTime = add(firstDoseTime, { hours: PROTECTION_START_HOURS });
+                if (isAfter(now, protectionStartTime)) {
+                    const payload = JSON.stringify({
+                        title: 'PrEPy: Protection active!',
+                        body: 'Vous êtes protégé par la PrEP.',
+                        icon: '/shield-check.png',
+                    });
+                    await sendNotification(session.subscriptionEndpoint, payload);
+                    await docRef.update({ protectionNotified: true });
+                    sentCount++;
+                    // Continue to next user, as dose reminder is not due yet
+                    continue; 
+                }
+            }
+            
+            // 2. Check for dose reminders
+            const lastDoseTime = new Date(session.lastDoseTime);
+            const reminderWindowStart = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
+            const reminderWindowEnd = add(reminderWindowStart, { hours: GRACE_PERIOD_HOURS });
+
+            // Check if we are within the reminder window
+            if (isAfter(now, reminderWindowStart) && isBefore(now, reminderWindowEnd)) {
                 const minutesRemaining = differenceInMinutes(reminderWindowEnd, now);
                 const hours = Math.floor(minutesRemaining / 60);
                 const mins = minutesRemaining % 60;
@@ -212,7 +229,7 @@ export const checkAndSendReminders = ai.defineFlow(
                     title: "C'est l'heure de prendre la PrEP",
                     body: timeLeft,
                     icon: '/pill.png',
-                    tag: 'prep-reminder' // Tag ensures new reminders replace old ones
+                    tag: 'prep-reminder'
                 });
 
                 await sendNotification(session.subscriptionEndpoint, payload);
