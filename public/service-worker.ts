@@ -1,37 +1,42 @@
+/// <reference lib="webworker" />
+declare const self: ServiceWorkerGlobalScope;
 
-// This is a placeholder service worker file.
-// It's the foundation for handling background tasks like push notifications.
-
-// The 'install' event is fired when the service worker is first installed.
-self.addEventListener('install', (event) => {
-  console.log('Service Worker: Installed');
-  // Pre-caching assets can be done here.
-});
-
-// The 'activate' event is fired when the service worker becomes active.
-self.addEventListener('activate', (event) => {
-  console.log('Service Worker: Active');
-  // Clean up old caches here.
-});
-
-// The 'push' event is where we'll handle incoming push notifications.
 self.addEventListener('push', (event) => {
-  console.log('Service Worker: Push Received.');
-  // For now, we'll just log it. In the next step, we'll show a notification.
-  const data = event.data ? event.data.json() : { title: 'Default Title', body: 'Default body.' };
+  console.log('[Service Worker] Push Received.');
+  if (!event.data) {
+    console.log('[Service Worker] Push event but no data');
+    return;
+  }
   
-  const title = data.title;
+  const data = event.data.json();
+  const title = data.title || 'PrEPy';
   const options = {
-    body: data.body,
-    icon: '/icon-192x192.png' // Example icon
+    body: data.body || 'Notification body',
+    icon: data.icon || '/pill.png', // Default icon
+    badge: '/badge.png', // Badge for the notification bar
+    tag: data.tag || 'prepy-notification',
+    renotify: true,
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// The 'notificationclick' event is fired when a user clicks on a notification.
 self.addEventListener('notificationclick', (event) => {
-  console.log('Service Worker: Notification clicked.');
+  console.log('[Service Worker] Notification click Received.');
+
   event.notification.close();
-  // Add logic here to open the app or a specific URL.
+
+  event.waitUntil(
+    clients.openWindow('/')
+  );
+});
+
+self.addEventListener('install', (event) => {
+    console.log('[Service Worker] Install');
+    // event.waitUntil(self.skipWaiting()); // Activate worker immediately
+});
+
+self.addEventListener('activate', (event) => {
+    console.log('[Service Worker] Activate');
+    // event.waitUntil(clients.claim()); // Become available to all pages
 });

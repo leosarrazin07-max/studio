@@ -68,7 +68,7 @@ export function PrepDashboard({
       <Card className="shadow-lg">
         <CardContent className="p-0">
           <div className={`flex flex-col items-center justify-center p-8 rounded-t-lg transition-colors duration-300 ${statusColor}`}>
-            <div className="mb-4 animate-pulse-slow">
+            <div className="mb-4">
               <StatusIcon />
             </div>
             <h2 className="text-3xl font-bold text-white font-headline">{statusText}</h2>
