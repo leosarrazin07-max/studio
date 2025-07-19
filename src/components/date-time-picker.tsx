@@ -49,7 +49,7 @@ export function DateTimePicker({ date, setDate }: DateTimePickerProps) {
         </PopoverContent>
       </Popover>
       <div className="flex items-center gap-2">
-        <Select onValueChange={handleHourChange} defaultValue={date.getHours().toString()}>
+        <Select onValueChange={handleHourChange} defaultValue={date.getHours().toString().padStart(2, '0')}>
             <SelectTrigger className="w-[80px]">
                 <SelectValue placeholder="Hour" />
             </SelectTrigger>
@@ -59,12 +59,12 @@ export function DateTimePicker({ date, setDate }: DateTimePickerProps) {
                 ))}
             </SelectContent>
         </Select>
-        <Select onValueChange={handleMinuteChange} defaultValue={(Math.floor(date.getMinutes()/15)*15).toString()}>
+        <Select onValueChange={handleMinuteChange} defaultValue={(Math.floor(date.getMinutes()/15)*15).toString().padStart(2, '0')}>
             <SelectTrigger className="w-[80px]">
                 <SelectValue placeholder="Minute" />
             </SelectTrigger>
             <SelectContent>
-                <SelectItem value="0">00</SelectItem>
+                <SelectItem value="00">00</SelectItem>
                 <SelectItem value="15">15</SelectItem>
                 <SelectItem value="30">30</SelectItem>
                 <SelectItem value="45">45</SelectItem>
