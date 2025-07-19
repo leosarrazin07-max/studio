@@ -5,7 +5,7 @@ import { add, sub, formatDistanceToNowStrict, isAfter, isBefore } from 'date-fns
 import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { saveSubscription, scheduleDoseReminders } from '@/ai/flows/notification-flow';
+import { saveSubscription, scheduleDoseReminders, endSessionForUser } from '@/ai/flows/notification-flow';
 
 const VAPID_PUBLIC_KEY = 'BGEPqO_1POfO9s3j01tpkLdYd-v1jYYtMGTcwaxgQ2I_exGj155R8Xk-sXeyV6ORHIq8n4XhGzAsaKxV9wJzO6w';
 
@@ -33,43 +33,64 @@ const safelyParseJSON = (jsonString: string | null) => {
   }
 };
 
-const requestNotificationPermission = async () => {
-    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-        return false;
-    }
-
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') {
-        return false;
-    }
-
-    const registration = await navigator.serviceWorker.ready;
-    const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-    });
-
-    await saveSubscription(subscription.toJSON());
-
-    return true;
-}
-
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
+  const [subscription, setSubscription] = useState<PushSubscriptionJSON | null>(null);
 
   const [state, setState] = useState<PrepState>({
     doses: [],
     sessionActive: false,
   });
+  
+  const requestNotificationPermission = useCallback(async () => {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+        return false;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    const currentSubscription = await registration.pushManager.getSubscription();
+
+    if(currentSubscription){
+        setSubscription(currentSubscription.toJSON());
+        await saveSubscription(currentSubscription.toJSON());
+        return true;
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+        toast({
+            title: "Notifications refusées",
+            description: "Les rappels ne fonctionneront pas. Vous pouvez les activer dans les paramètres de votre navigateur.",
+            variant: "destructive"
+        });
+        return false;
+    }
+
+    const newSubscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+    
+    setSubscription(newSubscription.toJSON());
+    await saveSubscription(newSubscription.toJSON());
+
+    return true;
+  }, [toast]);
+
 
   useEffect(() => {
     setIsClient(true);
     
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker.ts')
-        .then(registration => console.log('Service Worker enregistré avec succès:', registration))
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(registration => {
+            console.log('Service Worker enregistré avec succès:', registration);
+            // We request permission as soon as the app loads and we have a SW
+            // to improve user experience, instead of asking on first action.
+            requestNotificationPermission();
+        })
         .catch(error => console.error('Erreur lors de l’enregistrement du Service Worker:', error));
     }
 
@@ -85,7 +106,7 @@ export function usePrepState(): UsePrepStateReturn {
     return () => {
         clearInterval(timer);
     };
-  }, []);
+  }, [requestNotificationPermission]);
 
   useEffect(() => {
     if (isClient) {
@@ -98,6 +119,15 @@ export function usePrepState(): UsePrepStateReturn {
   }, [state, isClient]);
 
   const addDose = useCallback((dose: { time: Date; pills: number }) => {
+    if(!subscription?.endpoint) {
+        toast({
+            title: "Action impossible",
+            description: "Les notifications ne sont pas activées. Impossible de planifier des rappels.",
+            variant: "destructive"
+        });
+        return;
+    }
+    
     setState(prevState => {
       const newDoses = [...prevState.doses, { time: dose.time, pills: dose.pills }]
         .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
@@ -106,42 +136,49 @@ export function usePrepState(): UsePrepStateReturn {
         scheduleDoseReminders({
             lastDoseTime: newDoses[newDoses.length - 1].time.toISOString(),
             firstDoseTime: newDoses[0].time.toISOString(),
-            isFirstDose: false
+            isFirstDose: false,
+            subscriptionEndpoint: subscription.endpoint,
         });
       }
 
       return { ...prevState, doses: newDoses };
     });
-  }, []);
+  }, [subscription, toast]);
 
   const startSession = useCallback(async (time: Date) => {
     const permissionGranted = await requestNotificationPermission();
-    if (!permissionGranted) {
+    if (!permissionGranted || !subscription?.endpoint) {
         toast({
-            title: "Notifications refusées",
-            description: "Les rappels ne fonctionneront pas. Vous pouvez les activer dans les paramètres de votre navigateur.",
+            title: "Action impossible",
+            description: "L'autorisation de notification est requise pour démarrer une session.",
             variant: "destructive"
-        })
+        });
+        return;
     }
+    
     const newDose = { time, pills: 2 };
     setState({
       doses: [newDose],
       sessionActive: true,
     });
+    
     scheduleDoseReminders({
         lastDoseTime: newDose.time.toISOString(),
         firstDoseTime: newDose.time.toISOString(),
-        isFirstDose: true
+        isFirstDose: true,
+        subscriptionEndpoint: subscription.endpoint,
     });
-  }, [toast]);
+  }, [requestNotificationPermission, subscription, toast]);
 
   const endSession = useCallback(() => {
-    // Here you might want to call a flow to clear server-side notifications
+    if (subscription?.endpoint) {
+        endSessionForUser({ subscriptionEndpoint: subscription.endpoint });
+    }
     setState({
       doses: [],
       sessionActive: false,
     });
-  }, []);
+  }, [subscription]);
   
   const lastDose = state.doses.length > 0 ? state.doses[state.doses.length - 1] : null;
 

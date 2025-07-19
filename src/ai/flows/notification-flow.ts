@@ -4,6 +4,7 @@
  *
  * - saveSubscription - Saves a user's push notification subscription to Firestore.
  * - scheduleDoseReminders - Schedules reminders for the next dose.
+ * - endSessionForUser - Clears a user's session data from Firestore.
  */
 
 import { ai } from '@/ai/genkit';
@@ -14,17 +15,20 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { DOSE_INTERVAL_HOURS, GRACE_PERIOD_HOURS, PROTECTION_START_HOURS } from '@/lib/constants';
 
+// --- Types ---
+interface SessionData {
+    lastDoseTime: string; // ISO string
+    firstDoseTime: string; // ISO string
+    isFirstDose: boolean;
+    subscriptionEndpoint: string; // To link session to subscription
+}
+
 // --- Firebase Admin SDK Setup ---
-// In a real production environment, you would use environment variables
-// to configure the SDK, especially for service account credentials.
-// For App Hosting, this configuration is often handled automatically.
 try {
     if (!getApps().length) {
         if (process.env.FIREBASE_CONFIG && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-             // Deployed on App Hosting
             initializeApp();
         } else {
-             // Local development - requires a service account key file
             const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || '{}');
             initializeApp({
                 credential: cert(serviceAccount)
@@ -33,15 +37,14 @@ try {
     }
 } catch (error) {
     console.error("Firebase Admin initialization error:", error);
-    // You might want to throw an error or handle this case gracefully
 }
 
 const db = getFirestore();
 const subscriptionsCollection = db.collection('subscriptions');
+const sessionsCollection = db.collection('sessions');
 
-// This remains in-memory as it's tied to the server's lifecycle.
-// A more robust solution would use a cron job service.
-const scheduledNotifications: NodeJS.Timeout[] = [];
+// In-memory store for timeout IDs to allow cancellation.
+const scheduledNotifications = new Map<string, NodeJS.Timeout[]>();
 
 // --- Web Push Configuration ---
 const vapidKeys = {
@@ -57,6 +60,89 @@ if (vapidKeys.publicKey && vapidKeys.privateKey) {
     );
 }
 
+// --- Helper Functions ---
+
+const sendNotification = async (endpoint: string, payload: string) => {
+    try {
+        const subDoc = await subscriptionsCollection.doc(encodeURIComponent(endpoint)).get();
+        if (!subDoc.exists) {
+            console.error(`Subscription not found for endpoint: ${endpoint}`);
+            return;
+        }
+        const subscription = subDoc.data() as webpush.PushSubscription;
+        await webpush.sendNotification(subscription, payload);
+    } catch (error: any) {
+        console.error('Error sending notification, removing subscription:', error);
+        if (error.statusCode === 410) { // 410 Gone
+            await subscriptionsCollection.doc(encodeURIComponent(endpoint)).delete();
+            await sessionsCollection.doc(encodeURIComponent(endpoint)).delete();
+        }
+    }
+};
+
+const clearScheduledNotificationsForUser = (endpoint: string) => {
+    const userTimeouts = scheduledNotifications.get(endpoint);
+    if (userTimeouts) {
+        userTimeouts.forEach(clearTimeout);
+    }
+    scheduledNotifications.set(endpoint, []);
+};
+
+const scheduleRemindersForSession = (sessionData: SessionData) => {
+    const endpoint = sessionData.subscriptionEndpoint;
+    clearScheduledNotificationsForUser(endpoint);
+
+    const now = new Date();
+    const lastDoseDate = new Date(sessionData.lastDoseTime);
+    const currentUserTimeouts: NodeJS.Timeout[] = [];
+
+    // 1. Schedule protection start notification
+    if (sessionData.isFirstDose) {
+        const protectionStartTime = add(new Date(sessionData.firstDoseTime), { hours: PROTECTION_START_HOURS });
+        if (isAfter(protectionStartTime, now)) {
+            const delay = protectionStartTime.getTime() - now.getTime();
+            const timeoutId = setTimeout(() => {
+                const payload = JSON.stringify({
+                    title: 'PrEPy: Protection active!',
+                    body: 'Vous êtes protégé par la PrEP.',
+                    icon: '/shield-check.png',
+                });
+                sendNotification(endpoint, payload);
+            }, delay);
+            currentUserTimeouts.push(timeoutId);
+        }
+    }
+
+    // 2. Schedule next dose reminders
+    const nextDoseTime = add(lastDoseDate, { hours: DOSE_INTERVAL_HOURS });
+    const reminderWindowEnd = add(nextDoseTime, { hours: GRACE_PERIOD_HOURS });
+
+    for (let i = 0; i < (GRACE_PERIOD_HOURS * 60); i += 15) {
+        const reminderTime = add(nextDoseTime, { minutes: i });
+
+        if (isAfter(reminderTime, now) && isAfter(reminderWindowEnd, reminderTime)) {
+            const delay = reminderTime.getTime() - now.getTime();
+            const timeoutId = setTimeout(() => {
+                const minutesRemaining = Math.round((reminderWindowEnd.getTime() - reminderTime.getTime()) / (1000 * 60));
+                const hours = Math.floor(minutesRemaining / 60);
+                const mins = minutesRemaining % 60;
+                const timeLeft = `Il vous reste ${hours}h${mins > 0 ? ` et ${mins}min` : ''}.`;
+                
+                const payload = JSON.stringify({
+                    title: "C'est l'heure de prendre la PrEP",
+                    body: timeLeft,
+                    icon: '/pill.png',
+                    tag: 'prep-reminder'
+                });
+                sendNotification(endpoint, payload);
+            }, delay);
+            currentUserTimeouts.push(timeoutId);
+        }
+    }
+    scheduledNotifications.set(endpoint, currentUserTimeouts);
+    console.log(`Scheduled ${currentUserTimeouts.length} notifications for ${endpoint}.`);
+};
+
 // --- Zod Schemas ---
 const SubscriptionSchema = z.object({
     endpoint: z.string(),
@@ -70,7 +156,13 @@ const ScheduleSchema = z.object({
     lastDoseTime: z.string().datetime(),
     firstDoseTime: z.string().datetime(),
     isFirstDose: z.boolean(),
+    subscriptionEndpoint: z.string(),
 });
+
+const EndSessionSchema = z.object({
+    subscriptionEndpoint: z.string(),
+});
+
 
 // --- Genkit Flows ---
 
@@ -82,7 +174,6 @@ export const saveSubscription = ai.defineFlow(
   },
   async (subscription) => {
     try {
-        // Use the endpoint as the document ID to prevent duplicates
         const subRef = subscriptionsCollection.doc(encodeURIComponent(subscription.endpoint));
         await subRef.set(subscription);
         console.log('Subscription saved to Firestore.');
@@ -94,28 +185,6 @@ export const saveSubscription = ai.defineFlow(
   }
 );
 
-const sendNotificationsToAll = async (payload: string) => {
-    try {
-        const snapshot = await subscriptionsCollection.get();
-        if (snapshot.empty) {
-            console.log('No subscriptions found.');
-            return;
-        }
-
-        snapshot.forEach(doc => {
-            const subscription = doc.data() as webpush.PushSubscription;
-            webpush.sendNotification(subscription, payload).catch(error => {
-                console.error('Error sending notification, removing subscription:', error);
-                // If a subscription is invalid (e.g., 410 Gone), remove it from Firestore.
-                if (error.statusCode === 410) {
-                    doc.ref.delete();
-                }
-            });
-        });
-    } catch (error) {
-        console.error("Error fetching subscriptions from Firestore:", error);
-    }
-};
 
 export const scheduleDoseReminders = ai.defineFlow(
     {
@@ -123,60 +192,57 @@ export const scheduleDoseReminders = ai.defineFlow(
         inputSchema: ScheduleSchema,
         outputSchema: z.boolean(),
     },
-    async ({ lastDoseTime, firstDoseTime, isFirstDose }) => {
-        // Clear any previously scheduled notifications
-        scheduledNotifications.forEach(clearTimeout);
-        scheduledNotifications.length = 0;
-
-        const now = new Date();
-        const lastDoseDate = new Date(lastDoseTime);
-
-        // 1. Schedule protection start notification
-        if (isFirstDose) {
-            const protectionStartTime = add(new Date(firstDoseTime), { hours: PROTECTION_START_HOURS });
-            if (isAfter(protectionStartTime, now)) {
-                const delay = protectionStartTime.getTime() - now.getTime();
-                const timeoutId = setTimeout(() => {
-                    const payload = JSON.stringify({
-                        title: 'PrEPy: Protection active!',
-                        body: 'Vous êtes protégé par la PrEP.',
-                        icon: '/shield-check.png',
-                    });
-                    sendNotificationsToAll(payload);
-                }, delay);
-                scheduledNotifications.push(timeoutId);
-            }
+    async (sessionData) => {
+        try {
+            const sessionRef = sessionsCollection.doc(encodeURIComponent(sessionData.subscriptionEndpoint));
+            await sessionRef.set(sessionData);
+            scheduleRemindersForSession(sessionData);
+            return true;
+        } catch (error) {
+            console.error("Error saving session to Firestore:", error);
+            return false;
         }
-
-        // 2. Schedule next dose reminders
-        const nextDoseTime = add(lastDoseDate, { hours: DOSE_INTERVAL_HOURS });
-        const reminderWindowEnd = add(nextDoseTime, { hours: GRACE_PERIOD_HOURS });
-
-        // Schedule reminders every 15 minutes within the grace period
-        for (let i = 0; i < (GRACE_PERIOD_HOURS * 60); i += 15) {
-            const reminderTime = add(nextDoseTime, { minutes: i });
-
-            if (isAfter(reminderTime, now) && isAfter(reminderWindowEnd, reminderTime)) {
-                const delay = reminderTime.getTime() - now.getTime();
-                const timeoutId = setTimeout(() => {
-                    const minutesRemaining = Math.round((reminderWindowEnd.getTime() - reminderTime.getTime()) / (1000 * 60));
-                    const hours = Math.floor(minutesRemaining / 60);
-                    const mins = minutesRemaining % 60;
-                    const timeLeft = `Il vous reste ${hours}h${mins > 0 ? ` et ${mins}min` : ''}.`;
-                    
-                    const payload = JSON.stringify({
-                        title: "C'est l'heure de prendre la PrEP",
-                        body: timeLeft,
-                        icon: '/pill.png',
-                        tag: 'prep-reminder' // Tag to replace previous reminders
-                    });
-                     sendNotificationsToAll(payload);
-                }, delay);
-                scheduledNotifications.push(timeoutId);
-            }
-        }
-
-        console.log(`Scheduled ${scheduledNotifications.length} notifications.`);
-        return true;
     }
 );
+
+export const endSessionForUser = ai.defineFlow(
+    {
+        name: 'endSessionForUser',
+        inputSchema: EndSessionSchema,
+        outputSchema: z.boolean(),
+    },
+    async ({ subscriptionEndpoint }) => {
+        try {
+            clearScheduledNotificationsForUser(subscriptionEndpoint);
+            const sessionRef = sessionsCollection.doc(encodeURIComponent(subscriptionEndpoint));
+            await sessionRef.delete();
+            console.log(`Session ended for ${subscriptionEndpoint}`);
+            return true;
+        } catch (error) {
+            console.error("Error ending session:", error);
+            return false;
+        }
+    }
+);
+
+// --- Server Startup Logic ---
+const rescheduleNotificationsOnStartup = async () => {
+    console.log("Server starting, re-scheduling notifications from Firestore...");
+    try {
+        const snapshot = await sessionsCollection.get();
+        if (snapshot.empty) {
+            console.log('No active sessions found to reschedule.');
+            return;
+        }
+
+        snapshot.forEach(doc => {
+            const sessionData = doc.data() as SessionData;
+            console.log(`Rescheduling for endpoint: ${sessionData.subscriptionEndpoint}`);
+            scheduleRemindersForSession(sessionData);
+        });
+    } catch (error) {
+        console.error("Error rescheduling notifications from Firestore:", error);
+    }
+};
+
+rescheduleNotificationsOnStartup();
