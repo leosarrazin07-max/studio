@@ -1,6 +1,11 @@
-
 import { nextHandler } from '@genkit-ai/next';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 export const dynamic = 'force-dynamic';
 
-export const { GET, POST, OPTIONS } = nextHandler();
+const handler = nextHandler();
+
+export {
+    handler as GET,
+    handler as POST
+};
