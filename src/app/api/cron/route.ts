@@ -9,14 +9,7 @@ import { add } from 'date-fns';
 // Initialize Firebase Admin SDK
 // Check if the app is already initialized to prevent errors
 if (!getApps().length) {
-  try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY as string);
-    initializeApp({
-      credential: cert(serviceAccount),
-    });
-  } catch (error) {
-    console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:", error);
-  }
+  initializeApp();
 }
 const db = getFirestore();
 

@@ -4,14 +4,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 if (!getApps().length) {
-    try {
-        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY as string);
-        initializeApp({
-            credential: cert(serviceAccount),
-        });
-    } catch (error) {
-        console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:", error);
-    }
+    initializeApp();
 }
 const db = getFirestore();
 
