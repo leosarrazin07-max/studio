@@ -3,7 +3,7 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import * as webpush from "web-push";
 import {z} from "zod";
-import { add, sub } from 'date-fns';
+import { add, sub, isAfter } from 'date-fns';
 
 
 admin.initializeApp();
@@ -112,13 +112,13 @@ export const deleteState = functions.https.onRequest(async (req, res) => {
 
 
 // Scheduled function to check for reminders
-export const checkAndSendReminders = functions.runWith({secrets: ["VAPID_PRIVATE_KEY"]}).pubsub
-  .schedule("every 30 minutes")
-  .onRun(async (context) => {
-    functions.logger.info("Running checkAndSendReminders cron job");
+export const checkAndSendReminders = functions.runWith({secrets: ["VAPID_PRIVATE_KEY"]}).https
+  .onRequest(async (req, res) => {
+    functions.logger.info("Running checkAndSendReminders on request");
 
     if (!VAPID_PRIVATE_KEY) {
       functions.logger.error("VAPID_PRIVATE_KEY is not set.");
+      res.status(500).send("VAPID_PRIVATE_KEY is not set.");
       return;
     }
 
@@ -139,9 +139,7 @@ export const checkAndSendReminders = functions.runWith({secrets: ["VAPID_PRIVATE
         if (!lastDose) continue;
         
         const lastDoseTime = new Date(lastDose.time);
-        // 22 hours later
         const nextDoseDueTime = add(lastDoseTime, { hours: 22 });
-        // 4 hours after due
         const gracePeriodEndTime = add(nextDoseDueTime, { hours: 4 });
 
         if (now >= nextDoseDueTime && now <= gracePeriodEndTime) {
@@ -177,5 +175,7 @@ export const checkAndSendReminders = functions.runWith({secrets: ["VAPID_PRIVATE
         functions.logger.error(`Failed to process state for doc ${doc.id}:`, error);
       }
     }
-    functions.logger.info("Finished checkAndSendReminders cron job");
+    functions.logger.info("Finished checkAndSendReminders job");
+    res.status(200).send("Reminders check finished.");
   });
+    
