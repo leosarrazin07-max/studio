@@ -276,7 +276,11 @@ export function usePrepState(): UsePrepStateReturn {
       });
     }
     localStorage.removeItem('prepState');
-    setState(defaultState);
+    // Keep pushEnabled state but reset everything else
+    setState(prevState => ({
+        ...defaultState,
+        pushEnabled: prevState.pushEnabled
+    }));
     updateSubscriptionObject();
     toast({ title: "Données effacées", description: "Votre historique local a été supprimé." });
   }, [updateSubscriptionObject, toast, subscription]);

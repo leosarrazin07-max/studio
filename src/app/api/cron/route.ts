@@ -2,12 +2,16 @@
 import { NextResponse } from 'next/server';
 import * as webpush from 'web-push';
 import { z } from 'zod';
-import { add } from 'date-fns';
-import { PROTECTION_START_HOURS } from '@/lib/constants';
+import { add, sub } from 'date-fns';
+import { PROTECTION_START_HOURS, DOSE_INTERVAL_HOURS } from '@/lib/constants';
 
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY as string;
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string;
 const projectId = process.env.GCP_PROJECT || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+
+// The cron job runs every 5 minutes, so we define a window slightly larger than that
+// to ensure we catch the event without sending it multiple times.
+const CRON_JOB_INTERVAL_MINUTES = 5;
 
 if (VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY) {
     webpush.setVapidDetails(
@@ -69,6 +73,14 @@ async function sendNotification(subscription: any, payload: string) {
     } catch (error: any) {
         return { success: false, error };
     }
+}
+
+async function deleteSubscriptionAndState(docId: string, accessToken: string) {
+    console.warn(`Subscription for doc ${docId} is no longer valid. Deleting.`);
+    const deleteSubUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/subscriptions/${docId}`;
+    const deleteStateUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/states/${docId}`;
+    await fetch(deleteSubUrl, { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
+    await fetch(deleteStateUrl, { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
 }
 
 export async function GET(request: Request) {
@@ -143,12 +155,14 @@ export async function GET(request: Request) {
 
         if (!lastDose || !firstDose) continue;
 
-        // --- Logic for Protection Start Notification ---
+        // --- Logic for Protection Start Notification (at 2 hours) ---
         if (!parsedState.protectionNotified) {
             const protectionStartTime = add(new Date(firstDose.time), { hours: PROTECTION_START_HOURS });
-            const protectionNotifWindowEnd = add(protectionStartTime, { hours: 1 }); // Send within 1h of protection start
+            // This window ensures we send the notification only on the first cron run after the 2-hour mark.
+            const notificationWindowStart = protectionStartTime;
+            const notificationWindowEnd = add(protectionStartTime, { minutes: CRON_JOB_INTERVAL_MINUTES }); 
             
-            if (now >= protectionStartTime && now <= protectionNotifWindowEnd) {
+            if (now >= notificationWindowStart && now <= notificationWindowEnd) {
                 const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
                 const { success, error } = await sendNotification(subscription, payload);
 
@@ -161,18 +175,21 @@ export async function GET(request: Request) {
                         headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify({ fields: { protectionNotified: { booleanValue: true } } })
                     });
+                } else if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
+                    errorsEncountered++;
+                    await deleteSubscriptionAndState(docId, accessToken);
                 } else {
                     errorsEncountered++;
-                    // Handle subscription deletion on error
+                    console.error(`Failed to send protection notification to ${subscription.endpoint}:`, error);
                 }
                 continue; // Skip daily reminder check if this was sent
             }
         }
 
-        // --- Logic for Daily Dose Reminder ---
+        // --- Logic for Daily Dose Reminder (22-26h window) ---
         const lastDoseTime = new Date(lastDose.time);
-        const reminderWindowStart = add(lastDoseTime, { hours: 22 });
-        const reminderWindowEnd = add(lastDoseTime, { hours: 26 });
+        const reminderWindowStart = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS - 2 }); // 22h
+        const reminderWindowEnd = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS + 2 }); // 26h
 
         if (now >= reminderWindowStart && now <= reminderWindowEnd) {
             const payload = JSON.stringify({ title: "Rappel PrEP", body: "Il est temps de prendre votre prochaine dose !" });
@@ -180,17 +197,12 @@ export async function GET(request: Request) {
 
             if (success) {
                 notificationsSent++;
+            } else if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
+                errorsEncountered++;
+                await deleteSubscriptionAndState(docId, accessToken);
             } else {
                 errorsEncountered++;
-                if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
-                    console.warn(`Subscription ${subscription.endpoint} is no longer valid. Deleting.`);
-                    const deleteSubUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/subscriptions/${docId}`;
-                    const deleteStateUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/states/${docId}`;
-                    await fetch(deleteSubUrl, { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
-                    await fetch(deleteStateUrl, { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
-                } else {
-                    console.error(`Failed to send notification to ${subscription.endpoint}:`, error);
-                }
+                console.error(`Failed to send reminder to ${subscription.endpoint}:`, error);
             }
         }
 
