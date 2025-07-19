@@ -24,6 +24,7 @@ const SubscriptionSchema = z.object({
       p256dh: z.string(),
       auth: z.string(),
     }),
+    timezone: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
 
         const endpointHash = btoa(subscription.endpoint).replace(/=/g, '');
 
-        await setDoc(doc(firestore, "subscriptions", endpointHash), subscription);
+        await setDoc(doc(firestore, "subscriptions", endpointHash), subscription, { merge: true });
 
         return NextResponse.json({ success: true });
     } catch (error) {

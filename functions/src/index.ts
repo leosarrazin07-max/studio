@@ -3,7 +3,8 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import * as webpush from "web-push";
 import { z } from "zod";
-import { add, formatDistance, isWithinInterval } from "date-fns";
+import { add } from "date-fns";
+import { formatInTimeZone, zonedTimeToUtc, utcToZonedTime, formatDistance } from "date-fns-tz";
 import { fr } from "date-fns/locale";
 
 // Initialize Firebase Admin SDK
@@ -11,8 +12,6 @@ admin.initializeApp();
 const db = admin.firestore();
 
 // Initialize web-push
-// These variables are loaded from Firebase environment config.
-// The config is set in `firebase.json` for App Hosting and picked up here.
 if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
     "mailto:contact@prepy.app",
@@ -41,11 +40,28 @@ const StateSchema = z.object({
   protectionNotified: z.boolean().optional(),
 });
 
+const SubscriptionSchema = z.object({
+    endpoint: z.string(),
+    expirationTime: z.any().nullable(),
+    keys: z.object({
+      p256dh: z.string(),
+      auth: z.string(),
+    }),
+    timezone: z.string().optional().default('Europe/Paris'), // Default to Paris if not provided
+});
+
 const constants = {
   PROTECTION_START_HOURS: 2,
   DOSE_INTERVAL_HOURS: 24,
   LAPSES_AFTER_HOURS: 28,
 };
+
+// Helper function to check if a target time falls within the next N minutes from now (in the user's timezone)
+function isWithinNextMinutes(targetTime: Date, userNow: Date, minutes: number): boolean {
+    const windowEnd = add(userNow, { minutes });
+    return targetTime >= userNow && targetTime < windowEnd;
+}
+
 
 async function sendNotification(subscription: any, payload: string) {
     try {
@@ -71,7 +87,7 @@ async function processCron() {
         throw new Error("VAPID keys are not set. Cannot proceed.");
     }
 
-    const now = new Date();
+    const serverNow = new Date();
     const statesSnapshot = await db.collection('states').get();
 
     if (statesSnapshot.empty) {
@@ -101,21 +117,27 @@ async function processCron() {
             if (!subscriptionDoc.exists) {
                 continue;
             }
-            const subscription = subscriptionDoc.data();
+
+            const subParseResult = SubscriptionSchema.safeParse(subscriptionDoc.data());
+             if (!subParseResult.success) {
+                console.warn(`Invalid subscription for doc ${docId}:`, subParseResult.error.flatten());
+                continue;
+            }
+            const subscription = subParseResult.data;
+            const userTimezone = subscription.timezone;
+            const userNow = utcToZonedTime(serverNow, userTimezone);
 
             const firstDose = state.doses.find(d => d.type === 'start');
             const lastDose = state.doses.filter(d => d.type !== "stop").sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())[0];
 
             if (!lastDose || !firstDose) continue;
-
-            const cronWindow = {
-                start: now,
-                end: add(now, { minutes: CRON_JOB_INTERVAL_MINUTES })
-            };
-
+            
+            const firstDoseTimeInUserTz = zonedTimeToUtc(firstDose.time, userTimezone);
+            const lastDoseTimeInUserTz = zonedTimeToUtc(lastDose.time, userTimezone);
+            
             // --- Protection Start Notification ---
-            const protectionStartTime = add(new Date(firstDose.time), { hours: constants.PROTECTION_START_HOURS });
-            if (!state.protectionNotified && isWithinInterval(protectionStartTime, cronWindow)) {
+            const protectionStartTime = add(firstDoseTimeInUserTz, { hours: constants.PROTECTION_START_HOURS });
+            if (!state.protectionNotified && isWithinNextMinutes(protectionStartTime, userNow, CRON_JOB_INTERVAL_MINUTES)) {
                  const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
                  const { success, error, shouldDelete } = await sendNotification(subscription, payload);
                  if (success) {
@@ -130,11 +152,10 @@ async function processCron() {
             }
             
             // --- Dose Reminder Notification ---
-            const lastDoseTime = new Date(lastDose.time);
-            const reminderTime = add(lastDoseTime, { hours: constants.DOSE_INTERVAL_HOURS });
-            if (isWithinInterval(reminderTime, cronWindow)) {
-                const protectionLapsesTime = add(lastDoseTime, { hours: constants.LAPSES_AFTER_HOURS });
-                const timeRemaining = formatDistance(protectionLapsesTime, now, { locale: fr, addSuffix: false });
+            const reminderTime = add(lastDoseTimeInUserTz, { hours: constants.DOSE_INTERVAL_HOURS });
+            if (isWithinNextMinutes(reminderTime, userNow, CRON_JOB_INTERVAL_MINUTES)) {
+                const protectionLapsesTime = add(lastDoseTimeInUserTz, { hours: constants.LAPSES_AFTER_HOURS });
+                const timeRemaining = formatDistance(protectionLapsesTime, userNow, { locale: fr, addSuffix: false });
                 const title = "Rappel PrEP : il est temps !";
                 const body = `Prenez votre dose pour rester protégé. Il vous reste environ ${timeRemaining}.`;
                 const payload = JSON.stringify({ title, body });
@@ -157,7 +178,7 @@ async function processCron() {
     return { notificationsSent, errorsEncountered };
 }
 
-export const cronJob = functions.region("us-central1").runWith({
+export const cronJob = functions.region("europe-west9").runWith({
     secrets: ["CRON_SECRET", "VAPID_PRIVATE_KEY"],
     env: {
         NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string,

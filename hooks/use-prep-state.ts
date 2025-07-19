@@ -42,7 +42,8 @@ const safelyParseJSON = (jsonString: string | null) => {
 const defaultState: PrepState = {
     doses: [],
     sessionActive: false,
-    pushEnabled: false
+    pushEnabled: false,
+    protectionNotified: false,
 };
 
 
@@ -54,17 +55,22 @@ export function usePrepState(): UsePrepStateReturn {
 
   const [state, setState] = useState<PrepState>(defaultState);
   
-  const updateSubscriptionOnServer = useCallback(async (sub: PushSubscription | null, currentState: PrepState) => {
+  const updateSubscriptionOnServer = useCallback(async (sub: PushSubscription | null) => {
     if (sub) {
         try {
-            await fetch('/api/saveSubscription', {
+            const subJson = sub.toJSON();
+            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            
+            const response = await fetch('/api/saveSubscription', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(sub.toJSON()),
+                body: JSON.stringify({ ...subJson, timezone }),
             });
-            // We'll save the state in a separate call after this
+            if (!response.ok) {
+                throw new Error('Server response was not ok.');
+            }
         } catch (e) {
             console.error("Failed to save subscription", e);
             toast({
@@ -148,8 +154,7 @@ export function usePrepState(): UsePrepStateReturn {
         }
         
         setSubscription(currentSubscription);
-        // Pass the current state when saving the subscription for the first time
-        await updateSubscriptionOnServer(currentSubscription, state);
+        await updateSubscriptionOnServer(currentSubscription);
         
         setState(prevState => ({...prevState, pushEnabled: true}));
         toast({ title: "Notifications activées!" });
@@ -164,7 +169,7 @@ export function usePrepState(): UsePrepStateReturn {
         setState(prevState => ({...prevState, pushEnabled: false}));
         return false;
     }
-  }, [toast, updateSubscriptionOnServer, state]);
+  }, [toast, updateSubscriptionOnServer]);
 
 
   useEffect(() => {
@@ -217,9 +222,10 @@ export function usePrepState(): UsePrepStateReturn {
 
   const addDose = useCallback((dose: { time: Date; pills: number }) => {
     setState(prevState => {
-      const newDoses = [...prevState.doses, { ...dose, type: 'dose' as const }]
+      const newDose = { ...dose, type: 'dose' as const, id: new Date().toISOString() };
+      const newDoses = [...prevState.doses, newDose]
         .sort((a, b) => a.time.getTime() - b.time.getTime());
-
+      
       return { ...prevState, sessionActive: true, doses: newDoses };
     });
   }, []);
@@ -235,15 +241,16 @@ export function usePrepState(): UsePrepStateReturn {
         return;
     }
     
-    const newDose = { time, pills: 2, type: 'start' as const };
+    const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
     
     setState(prevState => {
         const updatedDoses = [newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
         const newState = {
-            ...prevState,
+            ...defaultState, // Reset state but keep push settings
+            pushEnabled: prevState.pushEnabled,
             doses: updatedDoses,
             sessionActive: true,
-            pushEnabled: true,
+            protectionNotified: false,
         };
         return newState;
     });
@@ -252,7 +259,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   const endSession = useCallback(() => {
     setState(prevState => {
-        const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const };
+        const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
         const updatedDoses = [...prevState.doses, stopEvent].sort((a, b) => a.time.getTime() - b.time.getTime());
         return { ...prevState, sessionActive: false, doses: updatedDoses };
     });
@@ -273,7 +280,11 @@ export function usePrepState(): UsePrepStateReturn {
       });
     }
     localStorage.removeItem('prepState');
-    setState(defaultState);
+    // Keep pushEnabled state but reset everything else
+    setState(prevState => ({
+        ...defaultState,
+        pushEnabled: prevState.pushEnabled
+    }));
     updateSubscriptionObject();
     toast({ title: "Données effacées", description: "Votre historique local a été supprimé." });
   }, [updateSubscriptionObject, toast, subscription]);
