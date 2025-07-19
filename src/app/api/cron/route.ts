@@ -2,8 +2,9 @@
 import { NextResponse } from 'next/server';
 import * as webpush from 'web-push';
 import { z } from 'zod';
-import { add } from 'date-fns';
-import { PROTECTION_START_HOURS, DOSE_INTERVAL_HOURS } from '@/lib/constants';
+import { add, sub, formatDistance, isAfter } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import { PROTECTION_START_HOURS, DOSE_INTERVAL_HOURS, LAPSES_AFTER_HOURS } from '@/lib/constants';
 
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY as string;
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string;
@@ -31,7 +32,6 @@ const StateSchema = z.object({
   sessionActive: z.boolean(),
   pushEnabled: z.boolean(),
   protectionNotified: z.boolean().optional(),
-  reminderNotifiedForDoseId: z.string().nullable().optional(),
 });
 
 type FirestoreStateDocument = {
@@ -54,7 +54,6 @@ type FirestoreStateDocument = {
         sessionActive: { booleanValue: boolean },
         pushEnabled: { booleanValue: boolean },
         protectionNotified?: { booleanValue: boolean },
-        reminderNotifiedForDoseId?: { stringValue: string } | { nullValue: null },
     }
 };
 
@@ -132,7 +131,6 @@ export async function GET(request: Request) {
             sessionActive: doc.fields.sessionActive.booleanValue,
             pushEnabled: doc.fields.pushEnabled.booleanValue,
             protectionNotified: doc.fields.protectionNotified?.booleanValue ?? false,
-            reminderNotifiedForDoseId: doc.fields.reminderNotifiedForDoseId?.stringValue ?? null,
         };
 
         const parseResult = StateSchema.safeParse(state);
@@ -165,7 +163,7 @@ export async function GET(request: Request) {
             const notificationWindowStart = protectionStartTime;
             const notificationWindowEnd = add(protectionStartTime, { minutes: CRON_JOB_INTERVAL_MINUTES }); 
             
-            if (now >= notificationWindowStart && now <= notificationWindowEnd) {
+            if (isAfter(now, notificationWindowStart) && now <= notificationWindowEnd) {
                 const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
                 const { success, error } = await sendNotification(subscription, payload);
 
@@ -177,27 +175,27 @@ export async function GET(request: Request) {
                 } else {
                     console.error(`Failed to send protection notification to ${subscription.endpoint}:`, error);
                 }
+                // Continue to next user to avoid sending a dose reminder at the same time
                 continue; 
             }
         }
-
-        // --- Logic for Daily Dose Reminder (22-26h window) ---
-        // Check if a reminder has already been sent for the last dose
-        if (parsedState.reminderNotifiedForDoseId === lastDose.id) {
-            continue;
-        }
-
+        
+        // --- Logic for Recurring Dose Reminder (22-26h window) ---
         const lastDoseTime = new Date(lastDose.time);
-        const reminderWindowStart = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS - 2 }); // 22h
-        const reminderWindowEnd = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS + 2 });   // 26h
+        // Window starts 22h after last dose
+        const reminderWindowStart = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS - 2 });
+        // Window ends 26h after last dose (using LAPSES_AFTER_HOURS)
+        const reminderWindowEnd = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
 
-        if (now >= reminderWindowStart && now <= reminderWindowEnd) {
-            const payload = JSON.stringify({ title: "Rappel PrEP", body: "Il est temps de prendre votre prochaine dose !" });
+        if (isAfter(now, reminderWindowStart) && now <= reminderWindowEnd) {
+            const timeRemaining = formatDistance(now, reminderWindowEnd, { locale: fr, addSuffix: false });
+            const title = "Rappel PrEP : il est temps !";
+            const body = `Prenez votre dose pour rester protégé. Il vous reste environ ${timeRemaining}.`;
+            const payload = JSON.stringify({ title, body });
             const { success, error } = await sendNotification(subscription, payload);
 
             if (success) {
                 notificationsSent++;
-                await updateFirestoreField(doc.name, 'reminderNotifiedForDoseId', { stringValue: lastDose.id }, accessToken);
             } else if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
                 await deleteSubscriptionAndState(docId, accessToken);
             } else {

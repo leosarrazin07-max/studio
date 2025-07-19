@@ -16,7 +16,6 @@ export interface PrepState {
   sessionActive: boolean;
   pushEnabled: boolean;
   protectionNotified?: boolean; 
-  reminderNotifiedForDoseId?: string | null; // ID of the dose for which a reminder was sent
 }
 
 export interface PrepLogic {

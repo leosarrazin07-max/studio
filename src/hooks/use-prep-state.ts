@@ -44,7 +44,6 @@ const defaultState: PrepState = {
     sessionActive: false,
     pushEnabled: false,
     protectionNotified: false,
-    reminderNotifiedForDoseId: null,
 };
 
 
@@ -224,8 +223,7 @@ export function usePrepState(): UsePrepStateReturn {
       const newDoses = [...prevState.doses, newDose]
         .sort((a, b) => a.time.getTime() - b.time.getTime());
       
-      // Reset reminder flag when a new dose is taken
-      return { ...prevState, sessionActive: true, doses: newDoses, reminderNotifiedForDoseId: null };
+      return { ...prevState, sessionActive: true, doses: newDoses };
     });
   }, []);
 
@@ -250,7 +248,6 @@ export function usePrepState(): UsePrepStateReturn {
             doses: updatedDoses,
             sessionActive: true,
             protectionNotified: false,
-            reminderNotifiedForDoseId: null,
         };
         return newState;
     });
