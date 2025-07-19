@@ -50,7 +50,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   const [state, setState] = useState<PrepState>(defaultState);
   
-  const updatePushEnabledState = async () => {
+  const updatePushEnabledState = useCallback(async () => {
      if ('permissions' in navigator) {
         const permissionStatus = await navigator.permissions.query({name: 'notifications'});
         const enabled = permissionStatus.state === 'granted';
@@ -59,9 +59,11 @@ export function usePrepState(): UsePrepStateReturn {
             const registration = await navigator.serviceWorker.ready;
             const sub = await registration.pushManager.getSubscription();
             setSubscription(sub);
+        } else {
+            setSubscription(null);
         }
      }
-  }
+  }, []);
 
   const unsubscribeFromNotifications = useCallback(async () => {
     if (subscription) {
@@ -149,7 +151,7 @@ export function usePrepState(): UsePrepStateReturn {
     return () => {
         clearInterval(timer);
     };
-  }, []);
+  }, [updatePushEnabledState]);
 
   useEffect(() => {
     if (isClient) {
@@ -245,7 +247,7 @@ export function usePrepState(): UsePrepStateReturn {
     setState(defaultState);
     updatePushEnabledState();
     toast({ title: "Données effacées", description: "Votre historique local a été supprimé." });
-  }, [subscription, toast]);
+  }, [subscription, toast, updatePushEnabledState]);
   
   const lastDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
 
@@ -279,7 +281,7 @@ export function usePrepState(): UsePrepStateReturn {
     } else {
       status = 'missed';
       statusColor = 'bg-destructive';
-      statusText = 'Session terminée';
+      statusText = 'Dose manquée';
       const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
