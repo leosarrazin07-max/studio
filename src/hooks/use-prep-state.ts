@@ -53,6 +53,13 @@ export function usePrepState(): UsePrepStateReturn {
 
   useEffect(() => {
     setIsClient(true);
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.ts')
+        .then(registration => console.log('Service Worker enregistré avec succès:', registration))
+        .catch(error => console.error('Erreur lors de l’enregistrement du Service Worker:', error));
+    }
+
     const savedState = safelyParseJSON(localStorage.getItem('prepState'));
     if (savedState) {
       setState({
@@ -216,5 +223,3 @@ export function usePrepState(): UsePrepStateReturn {
     endSession,
   };
 }
-
-    
