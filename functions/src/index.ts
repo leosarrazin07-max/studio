@@ -184,18 +184,17 @@ export const cronJob = functions.region("europe-west9").runWith({
         NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string,
     }
 }).https.onRequest(async (req, res) => {
-    if (req.method !== 'POST') {
-        res.status(405).send('Method Not Allowed');
-        return;
-    }
+    // Secure the function with a secret header check.
     const cronSecret = req.headers['x-cron-secret'];
     if (cronSecret !== process.env.CRON_SECRET) {
+      console.error('Unauthorized attempt to run cron job. Missing or invalid secret.');
       res.status(401).send('Unauthorized');
       return;
     }
     
     try {
         const result = await processCron();
+        console.log('Cron job finished successfully.', result);
         res.status(200).json(result);
     } catch (error: any) {
         console.error("Cron job function failed catastrophically:", error);
