@@ -13,7 +13,9 @@
         "maxInstances": 1
       },
       "env": {
-        "CRON_SECRET": "8f4a7c1b-a8d2-4e9f-8b1c-6d2e5a0f9b3c"
+        "CRON_SECRET": "8f4a7c1b-a8d2-4e9f-8b1c-6d2e5a0f9b3c",
+        "VAPID_PRIVATE_KEY": "YOUR_VAPID_PRIVATE_KEY",
+        "NEXT_PUBLIC_VAPID_PUBLIC_KEY": "BGEPqO_1POfO9s3j01tpkLdYd-v1jYYtMGTcwaxgQ2I_exGj155R8Xk-sXeyV6ORHIq8n4XhGzAsaKxV9wJzO6w"
       }
     }
   }

@@ -1,22 +1,22 @@
 
 import { NextResponse } from 'next/server';
-import { getFirestore, collection, getDocs, doc, getDoc, deleteDoc } from 'firebase/firestore';
 import { initializeServerApp } from '@/lib/firebase-server';
 import * as webpush from 'web-push';
 import { z } from 'zod';
-import { add } from 'date-fns';
+import { add, sub, isWithinInterval } from 'date-fns';
+import { getFirestore } from 'firebase-admin/firestore';
+import { DOSE_INTERVAL_HOURS } from '@/lib/constants';
 
-const app = initializeServerApp();
-const db = getFirestore(app);
+const { db } = initializeServerApp();
 
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY as string;
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string;
 
-if (process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+if (VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY) {
     webpush.setVapidDetails(
       'mailto:contact@prepy.app',
-      process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-      process.env.VAPID_PRIVATE_KEY
+      VAPID_PUBLIC_KEY,
+      VAPID_PRIVATE_KEY
     );
 }
 
@@ -29,7 +29,7 @@ const SubscriptionSchema = z.object({
 });
 
 const DoseStateSchema = z.object({
-  time: z.string(),
+  time: z.string().datetime(),
   pills: z.number(),
   type: z.string(),
 });
@@ -46,21 +46,27 @@ export async function GET(request: Request) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  if (!process.env.VAPID_PRIVATE_KEY) {
+  if (!VAPID_PRIVATE_KEY) {
     console.error("VAPID_PRIVATE_KEY is not set.");
     return NextResponse.json({ success: false, error: "VAPID_PRIVATE_KEY is not set." }, { status: 500 });
   }
 
   try {
     const now = new Date();
-    const statesSnapshot = await getDocs(collection(db, "states"));
+    const firestore = getFirestore(db);
+    const statesSnapshot = await firestore.collection("states").get();
 
     let notificationsSent = 0;
     let errorsEncountered = 0;
 
     for (const docSnapshot of statesSnapshot.docs) {
       try {
-        const state = StateSchema.parse(docSnapshot.data());
+        const parseResult = StateSchema.safeParse(docSnapshot.data());
+        if (!parseResult.success) {
+            console.warn(`Invalid state for doc ${docSnapshot.id}:`, parseResult.error);
+            continue;
+        }
+        const state = parseResult.data;
         
         if (!state.sessionActive || !state.pushEnabled) {
             continue;
@@ -73,14 +79,18 @@ export async function GET(request: Request) {
         if (!lastDose) continue;
         
         const lastDoseTime = new Date(lastDose.time);
-        const nextDoseDueTime = add(lastDoseTime, { hours: 22 });
-        const gracePeriodEndTime = add(nextDoseDueTime, { hours: 4 });
+        const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
 
-        if (now >= nextDoseDueTime && now <= gracePeriodEndTime) {
-          const subscriptionRef = doc(db, "subscriptions", docSnapshot.id);
-          const subscriptionSnapshot = await getDoc(subscriptionRef);
+        // Reminder window: 2h before and 2h after the due time
+        const reminderWindowStart = sub(nextDoseDueTime, { hours: 2 });
+        const reminderWindowEnd = add(nextDoseDueTime, { hours: 2 });
+        
+        // Check if `now` is within the reminder window
+        if (isWithinInterval(now, { start: reminderWindowStart, end: reminderWindowEnd })) {
+          const subscriptionRef = firestore.collection("subscriptions").doc(docSnapshot.id);
+          const subscriptionSnapshot = await subscriptionRef.get();
 
-          if (!subscriptionSnapshot.exists()) continue;
+          if (!subscriptionSnapshot.exists) continue;
 
           const subscription = SubscriptionSchema.parse(subscriptionSnapshot.data());
           const payload = JSON.stringify({
@@ -94,8 +104,8 @@ export async function GET(request: Request) {
           } catch (error: any) {
               if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
                   console.warn(`Subscription ${subscription.endpoint} is no longer valid. Deleting.`);
-                  await deleteDoc(doc(db, "subscriptions", docSnapshot.id));
-                  await deleteDoc(doc(db, "states", docSnapshot.id));
+                  await firestore.collection("subscriptions").doc(docSnapshot.id).delete();
+                  await firestore.collection("states").doc(docSnapshot.id).delete();
               } else {
                 console.error(`Failed to send notification to ${subscription.endpoint}:`, error);
                 errorsEncountered++;

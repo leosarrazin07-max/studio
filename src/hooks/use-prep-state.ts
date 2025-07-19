@@ -8,7 +8,7 @@ import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/type
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
 
-const VAPID_PUBLIC_KEY = 'BGEPqO_1POfO9s3j01tpkLdYd-v1jYYtMGTcwaxgQ2I_exGj155R8Xk-sXeyV6ORHIq8n4XhGzAsaKxV9wJzO6w';
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -57,7 +57,6 @@ export function usePrepState(): UsePrepStateReturn {
   const updateSubscriptionOnServer = useCallback(async (sub: PushSubscription | null) => {
     if (sub) {
         try {
-            // This now calls the new Firebase Cloud Function
             const response = await fetch('/api/saveSubscription', {
                 method: 'POST',
                 headers: {
@@ -109,6 +108,12 @@ export function usePrepState(): UsePrepStateReturn {
 
 
   const requestNotificationPermission = useCallback(async () => {
+    if (!VAPID_PUBLIC_KEY) {
+        console.error("VAPID public key not found.");
+        toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
+        return false;
+    }
+
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
         return false;
@@ -172,7 +177,7 @@ export function usePrepState(): UsePrepStateReturn {
       setState(savedState);
     }
 
-    const timer = setInterval(() => setNow(new Date()), 1000 * 60); // Update every minute
+    const timer = setInterval(() => setNow(new Date()), 1000 * 60);
     return () => {
         clearInterval(timer);
     };
