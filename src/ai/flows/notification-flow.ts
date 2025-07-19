@@ -137,6 +137,8 @@ export const scheduleDoseReminders = ai.defineFlow(
                 const now = new Date();
                 const protectionStartTime = add(new Date(sessionData.firstDoseTime), { hours: PROTECTION_START_HOURS });
                  if (isAfter(protectionStartTime, now)) {
+                    // NOTE: This setTimeout will only work if the server instance remains active.
+                    // For a robust solution, this should also be handled by the cron job.
                     const delay = protectionStartTime.getTime() - now.getTime();
                     setTimeout(() => {
                         const payload = JSON.stringify({
