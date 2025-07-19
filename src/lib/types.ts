@@ -1,5 +1,6 @@
+
 export interface Dose {
-  time: string; // Stored as ISO string
+  time: Date; // Stored as Date object in state, ISO string in storage
   pills: number;
 }
 
@@ -23,3 +24,5 @@ export interface PrepLogic {
 }
 
 export type UsePrepStateReturn = PrepState & PrepLogic;
+
+    

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -29,9 +30,9 @@ export function LogDoseDialog({
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
 
-  const pillCount = isInitialDose ? '2 pills' : '1 pill';
-  const title = isInitialDose ? 'Start Your Session' : 'Log Your Dose';
-  const description = `Confirm when you took your dose. ${isInitialDose ? "You'll start with 2 pills." : ""}`;
+  const pillCount = isInitialDose ? '2 comprimés' : '1 comprimé';
+  const title = isInitialDose ? 'Démarrer votre session' : 'Enregistrer votre prise';
+  const description = `Confirmez quand vous avez pris votre dose. ${isInitialDose ? "Vous commencerez avec 2 comprimés." : ""}`;
 
   const handleLogDose = (time: Date) => {
     onLogDose(time);
@@ -70,7 +71,7 @@ export function LogDoseDialog({
 
         {showTimePicker ? (
           <div className="py-4 flex flex-col items-center gap-4">
-            <p className="text-sm text-muted-foreground">Select the date and time you took {pillCount}.</p>
+            <p className="text-sm text-muted-foreground">Sélectionnez la date et l'heure de la prise de {pillCount}.</p>
             <DateTimePicker date={selectedDate} setDate={setSelectedDate} />
           </div>
         ) : null}
@@ -78,15 +79,15 @@ export function LogDoseDialog({
         <DialogFooter className="sm:justify-between flex-col sm:flex-row gap-2">
             {!showTimePicker && (
                 <Button variant="outline" onClick={handleEarlier}>
-                    <Calendar className="mr-2 h-4 w-4" /> I took {pillCount} earlier
+                    <Calendar className="mr-2 h-4 w-4" /> J'ai pris {pillCount} plus tôt
                 </Button>
             )}
             
             {showTimePicker ? (
-                 <Button onClick={handlePickerConfirm}>Confirm Time</Button>
+                 <Button onClick={handlePickerConfirm}>Confirmer l'heure</Button>
             ) : (
                 <Button onClick={handleNow}>
-                    <Clock className="mr-2 h-4 w-4" /> I took {pillCount} now
+                    <Clock className="mr-2 h-4 w-4" /> J'ai pris {pillCount} maintenant
                 </Button>
             )}
         </DialogFooter>
@@ -94,3 +95,5 @@ export function LogDoseDialog({
     </Dialog>
   );
 }
+
+    

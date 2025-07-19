@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from "react";
@@ -5,7 +6,7 @@ import { usePrepState } from "@/hooks/use-prep-state";
 import { Button } from "@/components/ui/button";
 import { LogDoseDialog } from "@/components/log-dose-dialog";
 import { PrepDashboard } from "@/components/prep-dashboard";
-import { Pill, Sun, Moon } from 'lucide-react';
+import { Pill } from 'lucide-react';
 
 export default function Home() {
   const prepState = usePrepState();
@@ -19,17 +20,17 @@ export default function Home() {
             <Pill className="text-primary" size={80} strokeWidth={1.5}/>
         </div>
       <h1 className="text-4xl md:text-5xl font-bold text-primary font-headline mb-4">
-        Welcome to PrEPy
+        Bienvenue sur PrEPy
       </h1>
       <p className="max-w-md text-muted-foreground mb-8">
-        Your smart companion for on-demand PrEP. Track your doses, stay protected, and manage your sessions with confidence.
+        Votre compagnon intelligent pour la PrEP à la demande. Suivez vos prises, restez protégé et gérez vos sessions en toute confiance.
       </p>
       <Button
         size="lg"
         className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full px-8 py-6 text-lg"
         onClick={() => setIsLogDoseOpen(true)}
       >
-        Start PrEP Session
+        Démarrer une session PrEP
       </Button>
       <LogDoseDialog
         isOpen={isLogDoseOpen}
@@ -58,3 +59,5 @@ export default function Home() {
     </div>
   );
 }
+
+    

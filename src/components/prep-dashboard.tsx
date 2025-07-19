@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -48,15 +49,19 @@ export function PrepDashboard({
   const StatusDetails = () => {
     switch (status) {
       case 'loading':
-        return <p className="text-white/80">Protection starts {protectionStartsIn}</p>;
+        return <p className="text-white/80">La protection commence {protectionStartsIn}</p>;
       case 'effective':
-        return <p className="text-white/80">Next dose {nextDoseIn}</p>;
+        return <p className="text-white/80">Prochaine dose {nextDoseIn}</p>;
       case 'missed':
-        return <p className="text-white/80">Dose was due {timeSinceMissed}</p>;
+        return <p className="text-white/80">Dose due depuis {timeSinceMissed}</p>;
       default:
         return null;
     }
-  }
+  };
+
+  const handleDoseLogged = (time: Date) => {
+    addDose({ time, pills: 1 });
+  };
 
   return (
     <div className="flex flex-col gap-8 h-full">
@@ -75,26 +80,26 @@ export function PrepDashboard({
               className="bg-accent hover:bg-accent/90 text-accent-foreground w-full"
               onClick={() => setIsLogDoseOpen(true)}
             >
-              <CheckCircle2 className="mr-2 h-5 w-5" /> C'est Pris !
+              <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris ma dose
             </Button>
 
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button size="lg" variant="destructive" className="w-full">
-                  End Session
+                  Terminer la session
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>End your PrEP session?</AlertDialogTitle>
+                  <AlertDialogTitle>Terminer votre session PrEP?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    For continued protection, you should take one pill daily for two days after your last potential exposure. Ending the session will clear your history.
+                    Pour une protection continue, vous devriez prendre un comprimé par jour pendant deux jours après votre dernière exposition potentielle. La fin de la session effacera votre historique.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogCancel>Annuler</AlertDialogCancel>
                   <AlertDialogAction onClick={endSession} className="bg-destructive hover:bg-destructive/90">
-                    Yes, End Session
+                    Oui, Terminer
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -108,7 +113,7 @@ export function PrepDashboard({
       <LogDoseDialog
         isOpen={isLogDoseOpen}
         onOpenChange={setIsLogDoseOpen}
-        onLogDose={(time) => addDose({ time, pills: 1 })}
+        onLogDose={handleDoseLogged}
         isInitialDose={false}
       />
     </div>
