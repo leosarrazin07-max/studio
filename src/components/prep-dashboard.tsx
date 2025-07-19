@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Pill, AlertTriangle, ShieldCheck, Clock, CheckCircle2 } from 'lucide-react';
+import { Pill, AlertTriangle, ShieldCheck, Clock, CheckCircle2, ShieldOff } from 'lucide-react';
 import type { UsePrepStateReturn } from '@/lib/types';
 import { LogDoseDialog } from './log-dose-dialog';
 import { DoseHistory } from './dose-history';
@@ -27,10 +27,10 @@ export function PrepDashboard({
   statusText,
   nextDoseIn,
   protectionStartsIn,
-  timeSinceMissed,
   protectionEndsAtText,
   addDose,
   endSession,
+  sessionActive
 }: UsePrepStateReturn) {
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
 
@@ -39,7 +39,7 @@ export function PrepDashboard({
       case 'effective':
         return <ShieldCheck className="h-16 w-16 text-white" />;
       case 'missed':
-        return <AlertTriangle className="h-16 w-16 text-white" />;
+        return <ShieldOff className="h-16 w-16 text-white" />;
       case 'loading':
         return <Clock className="h-16 w-16 text-white" />;
       default:
@@ -59,7 +59,7 @@ export function PrepDashboard({
           </div>
         );
       case 'missed':
-        return <p className="text-white/80">{timeSinceMissed}</p>;
+        return <p className="text-white/90 font-medium">{protectionEndsAtText}</p>;
       default:
         return null;
     }
@@ -80,37 +80,39 @@ export function PrepDashboard({
             <h2 className="text-3xl font-bold text-white font-headline">{statusText}</h2>
             <StatusDetails />
           </div>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 bg-card">
-            <Button
-              size="lg"
-              className="bg-accent hover:bg-accent/90 text-accent-foreground w-full shadow-md"
-              onClick={() => setIsLogDoseOpen(true)}
-            >
-              <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris ma dose
-            </Button>
+          { sessionActive && (
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 bg-card">
+              <Button
+                size="lg"
+                className="bg-accent hover:bg-accent/90 text-accent-foreground w-full shadow-md"
+                onClick={() => setIsLogDoseOpen(true)}
+              >
+                <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris ma dose
+              </Button>
 
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button size="lg" variant="destructive" className="w-full shadow-md">
-                  Terminer la session
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Terminer votre session PrEP?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    N'oubliez pas: pour une protection complète, vous devez continuer à prendre un comprimé par jour pendant 48 heures après votre dernier rapport. Mettre fin à la session maintenant effacera tout l'historique.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Annuler</AlertDialogCancel>
-                  <AlertDialogAction onClick={endSession} className="bg-destructive hover:bg-destructive/90">
-                    Oui, Terminer
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="lg" variant="destructive" className="w-full shadow-md">
+                    Terminer la session
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Terminer votre session PrEP?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Cela arrêtera les rappels de notification. Votre protection finale sera calculée en fonction de votre dernière prise.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Annuler</AlertDialogCancel>
+                    <AlertDialogAction onClick={endSession} className="bg-destructive hover:bg-destructive/90">
+                      Oui, Terminer
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          )}
         </CardContent>
       </Card>
       
@@ -125,3 +127,5 @@ export function PrepDashboard({
     </div>
   );
 }
+
+    

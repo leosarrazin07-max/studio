@@ -18,7 +18,6 @@ export interface PrepLogic {
   statusText: string;
   nextDoseIn: string;
   protectionStartsIn: string;
-  timeSinceMissed: string;
   protectionEndsAtText: string;
   addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;

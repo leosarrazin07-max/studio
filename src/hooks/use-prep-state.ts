@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
-import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS } from '@/lib/constants';
+import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
 import { saveSubscription, scheduleDoseReminders, endSessionForUser } from '@/ai/flows/notification-flow';
 
@@ -154,7 +154,7 @@ export function usePrepState(): UsePrepStateReturn {
         });
       }
 
-      return { ...prevState, doses: newDoses };
+      return { ...prevState, sessionActive: true, doses: newDoses };
     });
   }, [subscription, toast]);
 
@@ -184,15 +184,18 @@ export function usePrepState(): UsePrepStateReturn {
   }, [requestNotificationPermission, subscription, toast]);
 
   const endSession = useCallback(() => {
+    // Stop server-side reminders
     if (subscription?.endpoint) {
         endSessionForUser({ subscriptionEndpoint: subscription.endpoint });
     }
-    localStorage.removeItem('prepState');
-    setState({
-      doses: [],
-      sessionActive: false,
+    // Deactivate the session locally to change UI state, but keep dose history
+    // This allows showing the final protection end date.
+    setState(prevState => ({ ...prevState, sessionActive: false }));
+    toast({
+        title: "Session terminée",
+        description: "Les rappels de notification sont maintenant arrêtés."
     });
-  }, [subscription]);
+  }, [subscription, toast]);
   
   const lastDose = state.doses.length > 0 ? state.doses[state.doses.length - 1] : null;
 
@@ -201,7 +204,6 @@ export function usePrepState(): UsePrepStateReturn {
   let statusText = 'Inactive';
   let nextDoseIn = '';
   let protectionStartsIn = '';
-  let timeSinceMissed = '';
   let protectionEndsAtText = '';
 
   if (isClient && state.sessionActive && lastDose) {
@@ -209,26 +211,35 @@ export function usePrepState(): UsePrepStateReturn {
     const protectionStartTime = add(new Date(state.doses[0].time), { hours: PROTECTION_START_HOURS });
     const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
     const protectionLapsesTime = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
-    const protectionEndsAt = add(lastDoseTime, { hours: 48 }); // Protection ends 48h after last dose
 
     if (isBefore(now, protectionStartTime)) {
       status = 'loading';
-      statusColor = 'bg-primary'; // Using primary color for loading state
+      statusColor = 'bg-primary';
       statusText = 'Protection en cours...';
       protectionStartsIn = `Sera active ${formatDistanceToNowStrict(protectionStartTime, { addSuffix: true, locale: fr })}`;
     } else if (isBefore(now, protectionLapsesTime)) {
       status = 'effective';
-      statusColor = 'bg-accent'; // Using accent for effective state
+      statusColor = 'bg-accent'; 
       statusText = 'Protection active';
       nextDoseIn = `Prochaine dose ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
+      const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     } else {
       status = 'missed';
       statusColor = 'bg-destructive';
-      statusText = 'Dose manquée';
-      timeSinceMissed = `Dose due depuis ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
+      statusText = 'Session terminée';
+      const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
+      protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
+  } else if (isClient && !state.sessionActive && lastDose) {
+    // Handle case where session has been manually stopped
+    status = 'missed';
+    statusColor = 'bg-destructive';
+    statusText = 'Session terminée';
+    const protectionEndsAt = add(new Date(lastDose.time), { hours: FINAL_PROTECTION_HOURS });
+    protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
+
 
   if (!isClient) {
     statusText = "Chargement...";
@@ -244,10 +255,11 @@ export function usePrepState(): UsePrepStateReturn {
     statusText,
     nextDoseIn,
     protectionStartsIn,
-    timeSinceMissed,
     protectionEndsAtText,
     addDose,
     startSession,
     endSession,
   };
 }
+
+    
