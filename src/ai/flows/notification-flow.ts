@@ -28,25 +28,17 @@ interface SessionData {
 // --- Firebase Admin SDK Setup ---
 let db: ReturnType<typeof getFirestore>;
 try {
-    console.log("Attempting to initialize Firebase Admin SDK...");
     if (!getApps().length) {
         if (process.env.FIREBASE_CONFIG && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
             initializeApp();
-            console.log("Firebase Admin SDK initialized using default credentials.");
         } else if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
             const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
             initializeApp({
                 credential: cert(serviceAccount)
             });
-            console.log("Firebase Admin SDK initialized using service account key.");
-        } else {
-            console.error("Firebase Admin initialization failed: No credentials found.");
         }
-    } else {
-        console.log("Firebase Admin SDK already initialized.");
     }
     db = getFirestore();
-    console.log("Firestore instance obtained successfully.");
 } catch (error) {
     console.error("CRITICAL: Firebase Admin initialization error:", error);
 }
@@ -76,7 +68,6 @@ const sendNotification = async (endpoint: string, payload: string) => {
         }
         const subscription = subDoc.data() as webpush.PushSubscription;
         await webpush.sendNotification(subscription, payload);
-        console.log(`Notification sent to ${endpoint}`);
     } catch (error: any) {
         console.error('Error sending notification, removing subscription:', error.body || error.message);
         if (error.statusCode === 410) { // 410 Gone
@@ -119,7 +110,6 @@ export const saveSubscription = ai.defineFlow(
     try {
         const subRef = db.collection('subscriptions').doc(encodeURIComponent(subscription.endpoint));
         await subRef.set(subscription);
-        console.log('Subscription saved to Firestore.');
         return true;
     } catch (error) {
         console.error("Error saving subscription to Firestore:", error);
@@ -153,7 +143,6 @@ export const scheduleDoseReminders = ai.defineFlow(
                 });
             }
             
-            console.log("Session saved to Firestore for endpoint:", sessionData.subscriptionEndpoint);
             return true;
         } catch (error) {
             console.error("Error saving session to Firestore:", error);
@@ -172,7 +161,6 @@ export const endSessionForUser = ai.defineFlow(
         try {
             const sessionRef = db.collection('sessions').doc(encodeURIComponent(subscriptionEndpoint));
             await sessionRef.delete();
-            console.log(`Session ended for ${subscriptionEndpoint}`);
             return true;
         } catch (error) {
             console.error("Error ending session:", error);
@@ -191,23 +179,18 @@ export const checkAndSendReminders = ai.defineFlow(
         authPolicy: (auth, input) => {},
     },
     async () => {
-        console.log("CRON JOB START: checkAndSendReminders flow initiated.");
-        const now = new Date();
-        
         if (!db) {
             const errorMessage = "CRON JOB FAILED: Firestore database is not initialized.";
             console.error(errorMessage);
             return errorMessage;
         }
-        console.log(`Cron job running at ${now.toISOString()}`);
         
+        const now = new Date();
         const sessionsCollection = db.collection('sessions');
         const sessionsSnapshot = await sessionsCollection.get();
-        console.log(`Found ${sessionsSnapshot.size} session(s) to check.`);
 
 
         if (sessionsSnapshot.empty) {
-            console.log("CRON JOB END: No active sessions to process.");
             return "No active sessions.";
         }
         
@@ -215,15 +198,12 @@ export const checkAndSendReminders = ai.defineFlow(
         for (const doc of sessionsSnapshot.docs) {
             const session = doc.data() as SessionData;
             const docRef = doc.ref;
-            console.log(`Processing session for endpoint: ...${session.subscriptionEndpoint.slice(-10)}`);
-
 
             // 1. Check for "Protection Active" notification
             if (!session.protectionNotified) {
                 const firstDoseTime = new Date(session.firstDoseTime);
                 const protectionStartTime = add(firstDoseTime, { hours: PROTECTION_START_HOURS });
                 if (isAfter(now, protectionStartTime)) {
-                    console.log("-> Sending 'Protection Active' notification.");
                     const payload = JSON.stringify({
                         title: 'PrEPy: Protection active!',
                         body: 'Vous êtes protégé par la PrEP.',
@@ -249,7 +229,6 @@ export const checkAndSendReminders = ai.defineFlow(
                 const mins = minutesRemaining % 60;
                 const timeLeft = `Il vous reste ${hours}h${mins > 0 ? `${mins}min` : ''}.`;
                 
-                console.log(`-> Sending dose reminder. Time left: ${timeLeft}`);
                 const payload = JSON.stringify({
                     title: "C'est l'heure de prendre la PrEP",
                     body: timeLeft,
@@ -263,7 +242,6 @@ export const checkAndSendReminders = ai.defineFlow(
         }
         
         const successMessage = `CRON JOB FINISHED: Sent ${sentCount} reminder(s).`;
-        console.log(successMessage);
         return successMessage;
     }
 );
