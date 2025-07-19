@@ -9,7 +9,7 @@
  * - checkAndSendReminders - (FOR CRON JOB) Checks all active sessions and sends notifications if due.
  */
 
-import { defineFlow, run, startFlow } from 'genkit';
+import { defineFlow, run, startFlow, Flow, FlowAuthPolicy } from 'genkit';
 import { z } from 'zod';
 import { add, isAfter, differenceInMinutes, isBefore } from 'date-fns';
 import * as webpush from 'web-push';
@@ -17,7 +17,6 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { DOSE_INTERVAL_HOURS, GRACE_PERIOD_HOURS, PROTECTION_START_HOURS } from '@/lib/constants';
 import { GenkitError } from 'genkit/errors';
-import { Flow, FlowAuthPolicy } from 'genkit/flow';
 
 // --- Types ---
 interface SessionData {
@@ -182,12 +181,12 @@ export const endSessionForUser = defineFlow(
 );
 
 // THIS IS THE FLOW FOR THE CRON JOB
-export const checkAndSendReminders: Flow<null, string> = defineFlow(
+export const checkAndSendReminders = defineFlow(
     {
         name: 'checkAndSendReminders',
         inputSchema: z.null(), // No input needed
         outputSchema: z.string(),
-        authPolicy: publicAuthPolicy
+        auth: publicAuthPolicy // Corrected property for older genkit versions
     },
     async () => {
         return await run('cron-job-execution', async () => {
