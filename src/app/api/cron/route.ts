@@ -2,15 +2,12 @@
 import { NextResponse } from 'next/server';
 import * as webpush from 'web-push';
 import { z } from 'zod';
-import { add, sub, isWithinInterval } from 'date-fns';
+import { add } from 'date-fns';
 import { DOSE_INTERVAL_HOURS } from '@/lib/constants';
-import { initializeServerApp } from '@/lib/firebase-server';
-
-const { db } = initializeServerApp();
 
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY as string;
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string;
-const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+const projectId = process.env.GCP_PROJECT || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 
 if (VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY) {
     webpush.setVapidDetails(
@@ -20,22 +17,12 @@ if (VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY) {
     );
 }
 
-const SubscriptionSchema = z.object({
-  endpoint: z.string(),
-  keys: z.object({
-    p256dh: z.string(),
-    auth: z.string(),
-  }),
-});
-
-const DoseStateSchema = z.object({
-  time: z.string().datetime(),
-  pills: z.number(),
-  type: z.string(),
-});
-
 const StateSchema = z.object({
-  doses: z.array(DoseStateSchema),
+  doses: z.array(z.object({
+    time: z.string().datetime(),
+    pills: z.number(),
+    type: z.string(),
+  })),
   sessionActive: z.boolean(),
   pushEnabled: z.boolean(),
 });
@@ -45,7 +32,7 @@ type FirestoreStateDocument = {
     fields: {
         doses: {
             arrayValue: {
-                values: {
+                values?: {
                     mapValue: {
                         fields: {
                             time: { stringValue: string };
@@ -62,11 +49,15 @@ type FirestoreStateDocument = {
 };
 
 async function getAccessToken() {
+    // This function will only work in a Google Cloud environment (like App Hosting)
     const response = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token', {
         headers: {
             'Metadata-Flavor': 'Google',
         },
     });
+    if (!response.ok) {
+        throw new Error(`Failed to get access token: ${await response.text()}`);
+    }
     const data = await response.json();
     return data.access_token;
 }
@@ -129,13 +120,12 @@ export async function GET(request: Request) {
         if (!lastDose) continue;
         
         const lastDoseTime = new Date(lastDose.time);
-        const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
 
-        // Reminder window: 2h before and 2h after the due time
-        const reminderWindowStart = sub(nextDoseDueTime, { hours: 2 });
-        const reminderWindowEnd = add(nextDoseDueTime, { hours: 2 });
-        
-        if (isWithinInterval(now, { start: reminderWindowStart, end: reminderWindowEnd })) {
+        // Your specific reminder window: between 22 and 26 hours after the last dose.
+        const reminderWindowStart = add(lastDoseTime, { hours: 22 });
+        const reminderWindowEnd = add(lastDoseTime, { hours: 26 });
+
+        if (now >= reminderWindowStart && now <= reminderWindowEnd) {
             const subscriptionResponse = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/subscriptions/${docId}`, {
                 headers: { 'Authorization': `Bearer ${accessToken}` }
             });
@@ -179,8 +169,8 @@ export async function GET(request: Request) {
     }
     
     return NextResponse.json({ success: true, message: `Cron job finished. Sent ${notificationsSent} notifications. Encountered ${errorsEncountered} errors.` });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Cron job failed:', error);
-    return NextResponse.json({ success: false, error: 'Cron job failed' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Cron job failed', details: error.message }, { status: 500 });
   }
 }
