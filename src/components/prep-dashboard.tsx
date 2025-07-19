@@ -28,6 +28,7 @@ export function PrepDashboard({
   nextDoseIn,
   protectionStartsIn,
   timeSinceMissed,
+  protectionEndsAtText,
   addDose,
   endSession,
 }: UsePrepStateReturn) {
@@ -49,11 +50,16 @@ export function PrepDashboard({
   const StatusDetails = () => {
     switch (status) {
       case 'loading':
-        return <p className="text-white/80">La protection commence {protectionStartsIn}</p>;
+        return <p className="text-white/80">{protectionStartsIn}</p>;
       case 'effective':
-        return <p className="text-white/80">Prochaine dose {nextDoseIn}</p>;
+        return (
+          <>
+            <p className="text-white/80">{nextDoseIn}</p>
+            {protectionEndsAtText && <p className="text-xs text-white/70 mt-1">{protectionEndsAtText}</p>}
+          </>
+        );
       case 'missed':
-        return <p className="text-white/80">Dose due depuis {timeSinceMissed}</p>;
+        return <p className="text-white/80">{timeSinceMissed}</p>;
       default:
         return null;
     }

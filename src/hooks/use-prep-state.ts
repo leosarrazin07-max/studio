@@ -1,7 +1,9 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { add, sub, formatDistanceToNowStrict, isAfter, isBefore } from 'date-fns';
+import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format } from 'date-fns';
+import { fr } from 'date-fns/locale';
 import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
@@ -188,33 +190,36 @@ export function usePrepState(): UsePrepStateReturn {
   let nextDoseIn = '';
   let protectionStartsIn = '';
   let timeSinceMissed = '';
+  let protectionEndsAtText = '';
 
   if (isClient && state.sessionActive && lastDose) {
     const lastDoseTime = new Date(lastDose.time);
     const protectionStartTime = add(new Date(state.doses[0].time), { hours: PROTECTION_START_HOURS });
     const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
     const protectionLapsesTime = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
+    const protectionEndsAt = add(lastDoseTime, { hours: 48 }); // Protection ends 48h after last dose
 
     if (isBefore(now, protectionStartTime)) {
       status = 'loading';
       statusColor = 'bg-yellow-500';
-      statusText = 'Loading...';
-      protectionStartsIn = formatDistanceToNowStrict(protectionStartTime, { addSuffix: true });
+      statusText = 'Protection en cours...';
+      protectionStartsIn = `Sera active ${formatDistanceToNowStrict(protectionStartTime, { addSuffix: true, locale: fr })}`;
     } else if (isBefore(now, protectionLapsesTime)) {
       status = 'effective';
       statusColor = 'bg-blue-500';
-      statusText = 'Effective';
-      nextDoseIn = formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true });
+      statusText = 'Protection active';
+      nextDoseIn = `Prochaine dose ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
+      protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     } else {
       status = 'missed';
       statusColor = 'bg-destructive';
-      statusText = 'Dose Missed';
-      timeSinceMissed = formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true });
+      statusText = 'Dose manquée';
+      timeSinceMissed = `Dose due depuis ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
     }
   }
 
   if (!isClient) {
-    statusText = "Loading...";
+    statusText = "Chargement...";
     statusColor = "bg-gray-300";
   }
 
@@ -228,6 +233,7 @@ export function usePrepState(): UsePrepStateReturn {
     nextDoseIn,
     protectionStartsIn,
     timeSinceMissed,
+    protectionEndsAtText,
     addDose,
     startSession,
     endSession,
