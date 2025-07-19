@@ -58,7 +58,7 @@ export function usePrepState(): UsePrepStateReturn {
     if (sub) {
         try {
             // This now calls the Firebase Function endpoint which is still active for this purpose
-            const response = await fetch(`https://europe-west9-${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.cloudfunctions.net/saveSubscription`, {
+            const response = await fetch('/api/saveSubscription', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -186,7 +186,7 @@ export function usePrepState(): UsePrepStateReturn {
         }));
 
         if (state.sessionActive && subscription) {
-            fetch(`https://europe-west9-${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.cloudfunctions.net/saveState`, {
+            fetch(`/api/saveState`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -252,7 +252,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   const clearHistory = useCallback(() => {
     if (subscription) {
-      fetch(`https://europe-west9-${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.cloudfunctions.net/deleteState`, {
+      fetch(`/api/deleteState`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

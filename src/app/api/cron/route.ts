@@ -9,10 +9,14 @@ import { add } from 'date-fns';
 // Initialize Firebase Admin SDK
 // Check if the app is already initialized to prevent errors
 if (!getApps().length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY as string);
-  initializeApp({
-    credential: cert(serviceAccount),
-  });
+  try {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY as string);
+    initializeApp({
+      credential: cert(serviceAccount),
+    });
+  } catch (error) {
+    console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:", error);
+  }
 }
 const db = getFirestore();
 
@@ -101,7 +105,7 @@ export async function GET(request: Request) {
           try {
             await webpush.sendNotification(subscription, payload);
             notificationsSent++;
-          } catch (error) {
+          } catch (error: any) {
               if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
                   console.warn(`Subscription ${subscription.endpoint} is no longer valid. Deleting.`);
                   await db.collection("subscriptions").doc(doc.id).delete();
