@@ -3,8 +3,6 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import * as webpush from "web-push";
 import {z} from "zod";
-import { add } from 'date-fns';
-
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -29,20 +27,9 @@ const SubscriptionSchema = z.object({
   }),
 });
 
-const DoseStateSchema = z.object({
-  time: z.string(),
-  pills: z.number(),
-  type: z.string(),
-});
+// This file is now only used for simple API calls from the client, not for the cron job.
+// The cron logic has been moved to /api/cron/route.ts in the Next.js app.
 
-const StateSchema = z.object({
-  doses: z.array(DoseStateSchema),
-  sessionActive: z.boolean(),
-  pushEnabled: z.boolean(),
-});
-
-
-// Proxied API endpoints for client to call
 export const saveSubscription = functions.region("europe-west9").https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
@@ -109,78 +96,3 @@ export const deleteState = functions.region("europe-west9").https.onRequest(asyn
       res.status(500).send({success: false});
     }
   });
-
-
-// Scheduled function to check for reminders
-export const checkAndSendReminders = functions.region("europe-west9").runWith({secrets: ["VAPID_PRIVATE_KEY"]}).https.onRequest(async (req, res) => {
-    functions.logger.info("Running checkAndSendReminders on request");
-
-    if (!VAPID_PRIVATE_KEY) {
-      functions.logger.error("VAPID_PRIVATE_KEY is not set.");
-      res.status(500).send("VAPID_PRIVATE_KEY is not set.");
-      return;
-    }
-
-    const now = new Date();
-    // This query was causing an error because it requires a composite index.
-    // Fetch all documents and filter in the function's code instead.
-    const statesSnapshot = await db.collection("states").get();
-
-    for (const doc of statesSnapshot.docs) {
-      try {
-        const state = StateSchema.parse(doc.data());
-        
-        // Filter for active sessions with push enabled here
-        if (!state.sessionActive || !state.pushEnabled) {
-            continue;
-        }
-
-        const lastDose = state.doses
-          .filter((d) => d.type !== "stop")
-          .sort((a, b) => (
-            new Date(b.time).getTime() - new Date(a.time).getTime()
-          ))[0] ?? null;
-
-        if (!lastDose) continue;
-        
-        const lastDoseTime = new Date(lastDose.time);
-        const nextDoseDueTime = add(lastDoseTime, { hours: 22 });
-        const gracePeriodEndTime = add(nextDoseDueTime, { hours: 4 });
-
-        if (now >= nextDoseDueTime && now <= gracePeriodEndTime) {
-          const subscriptionSnapshot = await db
-            .collection("subscriptions")
-            .doc(doc.id)
-            .get();
-
-          if (!subscriptionSnapshot.exists) continue;
-
-          const subscription = SubscriptionSchema.parse(
-            subscriptionSnapshot.data(),
-          );
-          const payload = JSON.stringify({
-            title: "Rappel PrEP",
-            body: "Il est temps de prendre votre prochaine dose !",
-          });
-
-          try {
-            await webpush.sendNotification(subscription, payload);
-            functions.logger.info(`Sent notification to ${subscription.endpoint}`);
-          } catch (error) {
-              if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
-                  functions.logger.warn(`Subscription ${subscription.endpoint} is no longer valid. Deleting.`);
-                  await db.collection("subscriptions").doc(doc.id).delete();
-                  await db.collection("states").doc(doc.id).delete();
-              } else {
-                functions.logger.error(`Failed to send notification to ${subscription.endpoint}:`, error);
-              }
-          }
-        }
-      } catch (error) {
-        functions.logger.error(`Failed to process state for doc ${doc.id}:`, error);
-      }
-    }
-    functions.logger.info("Finished checkAndSendReminders job");
-    res.status(200).send("Reminders check finished.");
-  });
-    
