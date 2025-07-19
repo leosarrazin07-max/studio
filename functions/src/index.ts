@@ -112,8 +112,7 @@ export const deleteState = functions.region("europe-west9").https.onRequest(asyn
 
 
 // Scheduled function to check for reminders
-export const checkAndSendReminders = functions.region("europe-west9").runWith({secrets: ["VAPID_PRIVATE_KEY"]}).https
-  .onRequest(async (req, res) => {
+export const checkAndSendReminders = functions.region("europe-west9").runWith({secrets: ["VAPID_PRIVATE_KEY"]}).https.onRequest(async (req, res) => {
     functions.logger.info("Running checkAndSendReminders on request");
 
     if (!VAPID_PRIVATE_KEY) {
