@@ -123,12 +123,19 @@ export const checkAndSendReminders = functions.region("europe-west9").runWith({s
     }
 
     const now = new Date();
-    const statesSnapshot = await db.collection("states").where("sessionActive", "==", true).where("pushEnabled", "==", true).get();
+    // This query was causing an error because it requires a composite index.
+    // Fetch all documents and filter in the function's code instead.
+    const statesSnapshot = await db.collection("states").get();
 
     for (const doc of statesSnapshot.docs) {
       try {
         const state = StateSchema.parse(doc.data());
         
+        // Filter for active sessions with push enabled here
+        if (!state.sessionActive || !state.pushEnabled) {
+            continue;
+        }
+
         const lastDose = state.doses
           .filter((d) => d.type !== "stop")
           .sort((a, b) => (
