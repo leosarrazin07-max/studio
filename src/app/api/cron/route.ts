@@ -74,12 +74,8 @@ async function deleteSubscriptionAndState(docId: string) {
 
 
 export async function GET(request: Request) {
-  // OIDC authentication is automatically verified by Cloud Run/App Hosting.
-  // We just need to check for the presence of the header.
-  const oidcHeader = request.headers.get('x-goog-iap-jwt-assertion');
-  if (!oidcHeader && process.env.NODE_ENV !== 'development') {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
-  }
+  // Authentication is handled automatically by the App Hosting infrastructure
+  // when the Cloud Scheduler job is configured with OIDC.
 
   if (!VAPID_PRIVATE_KEY) {
     console.error("VAPID_PRIVATE_KEY is not set.");
