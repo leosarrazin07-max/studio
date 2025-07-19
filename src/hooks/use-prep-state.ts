@@ -56,6 +56,7 @@ export function usePrepState(): UsePrepStateReturn {
 
     if(currentSubscription){
         setSubscription(currentSubscription.toJSON());
+        // No need to save again if it exists, but doesn't hurt.
         await saveSubscription(currentSubscription.toJSON());
         return true;
     }
@@ -70,22 +71,32 @@ export function usePrepState(): UsePrepStateReturn {
         return false;
     }
 
-    const newSubscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-    });
-    
-    setSubscription(newSubscription.toJSON());
-    await saveSubscription(newSubscription.toJSON());
+    try {
+        const newSubscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
+        
+        setSubscription(newSubscription.toJSON());
+        await saveSubscription(newSubscription.toJSON());
 
-    return true;
+        return true;
+    } catch (error) {
+        console.error("Error subscribing to push notifications:", error);
+        toast({
+            title: "Erreur d'abonnement",
+            description: "Impossible de s'abonner aux notifications. Veuillez réessayer.",
+            variant: "destructive"
+        });
+        return false;
+    }
   }, [toast]);
 
 
   useEffect(() => {
     setIsClient(true);
     
-    if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator && window.Worker) {
       navigator.serviceWorker.register('/service-worker.js')
         .then(registration => {
             console.log('Service Worker enregistré avec succès:', registration);
@@ -134,7 +145,7 @@ export function usePrepState(): UsePrepStateReturn {
       const newDoses = [...prevState.doses, { time: dose.time, pills: dose.pills }]
         .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 
-      if (newDoses.length > 0) {
+      if (newDoses.length > 0 && subscription.endpoint) {
         scheduleDoseReminders({
             lastDoseTime: newDoses[newDoses.length - 1].time.toISOString(),
             firstDoseTime: newDoses[0].time.toISOString(),
@@ -148,8 +159,8 @@ export function usePrepState(): UsePrepStateReturn {
   }, [subscription, toast]);
 
   const startSession = useCallback(async (time: Date) => {
-    const permissionGranted = await requestNotificationPermission();
-    if (!permissionGranted || !subscription?.endpoint) {
+    const hasPermission = await requestNotificationPermission();
+    if (!hasPermission || !subscription?.endpoint) {
         toast({
             title: "Action impossible",
             description: "L'autorisation de notification est requise pour démarrer une session.",
@@ -176,6 +187,7 @@ export function usePrepState(): UsePrepStateReturn {
     if (subscription?.endpoint) {
         endSessionForUser({ subscriptionEndpoint: subscription.endpoint });
     }
+    localStorage.removeItem('prepState');
     setState({
       doses: [],
       sessionActive: false,
@@ -201,12 +213,12 @@ export function usePrepState(): UsePrepStateReturn {
 
     if (isBefore(now, protectionStartTime)) {
       status = 'loading';
-      statusColor = 'bg-yellow-500';
+      statusColor = 'bg-primary'; // Using primary color for loading state
       statusText = 'Protection en cours...';
       protectionStartsIn = `Sera active ${formatDistanceToNowStrict(protectionStartTime, { addSuffix: true, locale: fr })}`;
     } else if (isBefore(now, protectionLapsesTime)) {
       status = 'effective';
-      statusColor = 'bg-blue-500';
+      statusColor = 'bg-accent'; // Using accent for effective state
       statusText = 'Protection active';
       nextDoseIn = `Prochaine dose ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
@@ -220,7 +232,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   if (!isClient) {
     statusText = "Chargement...";
-    statusColor = "bg-gray-300";
+    statusColor = "bg-muted";
   }
 
 

@@ -27,7 +27,7 @@ export default function Home() {
       </p>
       <Button
         size="lg"
-        className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full px-8 py-6 text-lg"
+        className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full px-8 py-6 text-lg shadow-lg"
         onClick={() => setIsLogDoseOpen(true)}
       >
         Démarrer une session PrEP
@@ -59,5 +59,3 @@ export default function Home() {
     </div>
   );
 }
-
-    

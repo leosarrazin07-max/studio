@@ -53,10 +53,10 @@ export function PrepDashboard({
         return <p className="text-white/80">{protectionStartsIn}</p>;
       case 'effective':
         return (
-          <>
-            <p className="text-white/80">{nextDoseIn}</p>
+          <div className="text-center">
+            <p className="text-white/90">{nextDoseIn}</p>
             {protectionEndsAtText && <p className="text-xs text-white/70 mt-1">{protectionEndsAtText}</p>}
-          </>
+          </div>
         );
       case 'missed':
         return <p className="text-white/80">{timeSinceMissed}</p>;
@@ -71,19 +71,19 @@ export function PrepDashboard({
 
   return (
     <div className="flex flex-col gap-8 h-full">
-      <Card className="shadow-lg">
+      <Card className="shadow-lg rounded-xl overflow-hidden">
         <CardContent className="p-0">
-          <div className={`flex flex-col items-center justify-center p-8 rounded-t-lg transition-colors duration-300 ${statusColor}`}>
+          <div className={`flex flex-col items-center justify-center p-8 transition-colors duration-500 ${statusColor}`}>
             <div className="mb-4">
               <StatusIcon />
             </div>
             <h2 className="text-3xl font-bold text-white font-headline">{statusText}</h2>
             <StatusDetails />
           </div>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 bg-card">
             <Button
               size="lg"
-              className="bg-accent hover:bg-accent/90 text-accent-foreground w-full"
+              className="bg-accent hover:bg-accent/90 text-accent-foreground w-full shadow-md"
               onClick={() => setIsLogDoseOpen(true)}
             >
               <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris ma dose
@@ -91,7 +91,7 @@ export function PrepDashboard({
 
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="lg" variant="destructive" className="w-full">
+                <Button size="lg" variant="destructive" className="w-full shadow-md">
                   Terminer la session
                 </Button>
               </AlertDialogTrigger>
@@ -99,7 +99,7 @@ export function PrepDashboard({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Terminer votre session PrEP?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Pour une protection continue, vous devriez prendre un comprimé par jour pendant deux jours après votre dernière exposition potentielle. La fin de la session effacera votre historique.
+                    N'oubliez pas: pour une protection complète, vous devez continuer à prendre un comprimé par jour pendant 48 heures après votre dernier rapport. Mettre fin à la session maintenant effacera tout l'historique.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
