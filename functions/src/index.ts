@@ -89,7 +89,7 @@ export const deleteState = functions.https.onRequest(async (req, res) => {
 
 
 // Scheduled function to check for reminders
-export const checkAndSendReminders = functions.pubsub
+export const checkAndSendReminders = functions.runWith({secrets: ["VAPID_PRIVATE_KEY"]}).pubsub
   .schedule("every 30 minutes")
   .onRun(async (context) => {
     functions.logger.info("Running checkAndSendReminders cron job");
@@ -141,15 +141,26 @@ export const checkAndSendReminders = functions.pubsub
             body: "Il est temps de prendre votre prochaine dose !",
           });
 
-          await webpush.sendNotification(subscription, payload);
-          functions.logger.info(`Sent notification to ${subscription.endpoint}`);
+          try {
+            await webpush.sendNotification(subscription, payload);
+            functions.logger.info(`Sent notification to ${subscription.endpoint}`);
+          } catch (error) {
+              // This is a crucial error handling block.
+              // If a push subscription is no longer valid (e.g., user uninstalled the app),
+              // web-push will throw an error, often with statusCode 410 (Gone).
+              // We must catch it to prevent the entire cron job from failing.
+              functions.logger.error(`Failed to send notification to ${subscription.endpoint}:`, error);
+              if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
+                  functions.logger.warn(`Subscription ${subscription.endpoint} is no longer valid. Deleting.`);
+                  // Clean up the invalid subscription and its associated state.
+                  await db.collection("subscriptions").doc(doc.id).delete();
+                  await db.collection("states").doc(doc.id).delete();
+              }
+          }
         }
       } catch (error) {
-        functions.logger.error(`Failed to process sub ${doc.id}:`, error);
-        if (error instanceof webpush.WebPushError && error.statusCode === 410) {
-          await db.collection("subscriptions").doc(doc.id).delete();
-          await db.collection("states").doc(doc.id).delete();
-        }
+        // This outer catch handles errors like parsing the state, which are less common.
+        functions.logger.error(`Failed to process state for doc ${doc.id}:`, error);
       }
     }
     functions.logger.info("Finished checkAndSendReminders cron job");
