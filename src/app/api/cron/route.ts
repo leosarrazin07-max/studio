@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import * as webpush from 'web-push';
 import { z } from 'zod';
-import { add, sub, formatDistance, isAfter, isBefore } from 'date-fns';
+import { add, formatDistance, isAfter, isBefore } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -52,8 +52,6 @@ const StateSchema = z.object({
   protectionNotified: z.boolean().optional(),
 });
 
-type ParsedState = z.infer<typeof StateSchema>;
-
 async function sendNotification(subscription: any, payload: string) {
     try {
         await webpush.sendNotification(subscription, payload);
@@ -76,14 +74,11 @@ async function deleteSubscriptionAndState(docId: string) {
 
 
 export async function GET(request: Request) {
-  // OIDC authentication is handled by the Cloud Scheduler configuration.
-  // The 'x-forwarded-for' check is a basic security measure for cron jobs.
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  if (!forwardedFor) {
-      // Allow direct invocations for testing in dev environment.
-      if (process.env.NODE_ENV !== 'development') {
-        return NextResponse.json({ success: false, error: "Not a valid cron request." }, { status: 403 });
-      }
+  // OIDC authentication is automatically verified by Cloud Run/App Hosting.
+  // We just need to check for the presence of the header.
+  const oidcHeader = request.headers.get('x-goog-iap-jwt-assertion');
+  if (!oidcHeader && process.env.NODE_ENV !== 'development') {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
   }
 
   if (!VAPID_PRIVATE_KEY) {
