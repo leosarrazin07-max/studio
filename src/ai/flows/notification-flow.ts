@@ -111,17 +111,15 @@ export const saveSubscription = defineFlow(
     outputSchema: z.boolean(),
   },
   async (subscription) => {
-    return await run('save-subscription-to-db', async () => {
-        try {
-            if (!db) throw new Error("Firestore not initialized");
-            const subRef = db.collection('subscriptions').doc(encodeURIComponent(subscription.endpoint));
-            await subRef.set(subscription);
-            return true;
-        } catch (error) {
-            console.error("Error saving subscription to Firestore:", error);
-            return false;
-        }
-    });
+    try {
+        if (!db) throw new Error("Firestore not initialized");
+        const subRef = db.collection('subscriptions').doc(encodeURIComponent(subscription.endpoint));
+        await subRef.set(subscription);
+        return true;
+    } catch (error) {
+        console.error("Error saving subscription to Firestore:", error);
+        return false;
+    }
   }
 );
 
@@ -132,30 +130,28 @@ export const scheduleDoseReminders = defineFlow(
         outputSchema: z.boolean(),
     },
     async (sessionData) => {
-        return await run('save-session-to-db', async () => {
-            try {
-                if (!db) throw new Error("Firestore not initialized");
-                const sessionRef = db.collection('sessions').doc(encodeURIComponent(sessionData.subscriptionEndpoint));
+        try {
+            if (!db) throw new Error("Firestore not initialized");
+            const sessionRef = db.collection('sessions').doc(encodeURIComponent(sessionData.subscriptionEndpoint));
 
-                if (sessionData.isFirstDose) {
-                    await sessionRef.set({
-                        lastDoseTime: sessionData.lastDoseTime,
-                        firstDoseTime: sessionData.firstDoseTime,
-                        subscriptionEndpoint: sessionData.subscriptionEndpoint,
-                        protectionNotified: false,
-                    });
-                } else {
-                    await sessionRef.update({
-                        lastDoseTime: sessionData.lastDoseTime,
-                    });
-                }
-
-                return true;
-            } catch (error) {
-                console.error("Error saving session to Firestore:", error);
-                return false;
+            if (sessionData.isFirstDose) {
+                await sessionRef.set({
+                    lastDoseTime: sessionData.lastDoseTime,
+                    firstDoseTime: sessionData.firstDoseTime,
+                    subscriptionEndpoint: sessionData.subscriptionEndpoint,
+                    protectionNotified: false,
+                });
+            } else {
+                await sessionRef.update({
+                    lastDoseTime: sessionData.lastDoseTime,
+                });
             }
-        });
+
+            return true;
+        } catch (error) {
+            console.error("Error saving session to Firestore:", error);
+            return false;
+        }
     }
 );
 
@@ -166,17 +162,15 @@ export const endSessionForUser = defineFlow(
         outputSchema: z.boolean(),
     },
     async ({ subscriptionEndpoint }) => {
-        return await run('delete-session-from-db', async () => {
-            try {
-                if (!db) throw new Error("Firestore not initialized");
-                const sessionRef = db.collection('sessions').doc(encodeURIComponent(subscriptionEndpoint));
-                await sessionRef.delete();
-                return true;
-            } catch (error) {
-                console.error("Error ending session:", error);
-                return false;
-            }
-        });
+        try {
+            if (!db) throw new Error("Firestore not initialized");
+            const sessionRef = db.collection('sessions').doc(encodeURIComponent(subscriptionEndpoint));
+            await sessionRef.delete();
+            return true;
+        } catch (error) {
+            console.error("Error ending session:", error);
+            return false;
+        }
     }
 );
 
@@ -186,72 +180,70 @@ export const checkAndSendReminders = defineFlow(
         name: 'checkAndSendReminders',
         inputSchema: z.null(), // No input needed
         outputSchema: z.string(),
-        auth: publicAuthPolicy // Corrected property for older genkit versions
+        authPolicy: publicAuthPolicy 
     },
     async () => {
-        return await run('cron-job-execution', async () => {
-            if (!db) {
-                const errorMessage = "CRON JOB FAILED: Firestore database is not initialized.";
-                console.error(errorMessage);
-                return errorMessage;
-            }
-            
-            const now = new Date();
-            const sessionsCollection = db.collection('sessions');
-            const sessionsSnapshot = await sessionsCollection.get();
+        if (!db) {
+            const errorMessage = "CRON JOB FAILED: Firestore database is not initialized.";
+            console.error(errorMessage);
+            return errorMessage;
+        }
+        
+        const now = new Date();
+        const sessionsCollection = db.collection('sessions');
+        const sessionsSnapshot = await sessionsCollection.get();
 
 
-            if (sessionsSnapshot.empty) {
-                return "No active sessions.";
-            }
-            
-            let sentCount = 0;
-            for (const doc of sessionsSnapshot.docs) {
-                const session = doc.data() as SessionData;
-                const docRef = doc.ref;
+        if (sessionsSnapshot.empty) {
+            return "No active sessions.";
+        }
+        
+        let sentCount = 0;
+        for (const doc of sessionsSnapshot.docs) {
+            const session = doc.data() as SessionData;
+            const docRef = doc.ref;
 
-                // 1. Check for "Protection Active" notification
-                if (!session.protectionNotified) {
-                    const firstDoseTime = new Date(session.firstDoseTime);
-                    const protectionStartTime = add(firstDoseTime, { hours: PROTECTION_START_HOURS });
-                    if (isAfter(now, protectionStartTime)) {
-                        const payload = JSON.stringify({
-                            title: 'PrEPy: Protection active!',
-                            body: 'Vous êtes protégé par la PrEP.',
-                            icon: '/shield-check.png',
-                        });
-                        await sendNotification(session.subscriptionEndpoint, payload);
-                        await docRef.update({ protectionNotified: true });
-                        sentCount++;
-                        continue;
-                    }
-                }
-                
-                // 2. Check for dose reminders
-                const lastDoseTime = new Date(session.lastDoseTime);
-                const reminderWindowStart = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
-                const reminderWindowEnd = add(reminderWindowStart, { hours: GRACE_PERIOD_HOURS });
-
-                if (isAfter(now, reminderWindowStart) && isBefore(now, reminderWindowEnd)) {
-                    const minutesRemaining = differenceInMinutes(reminderWindowEnd, now);
-                    const hours = Math.floor(minutesRemaining / 60);
-                    const mins = minutesRemaining % 60;
-                    const timeLeft = `Il vous reste ${hours}h${mins > 0 ? `${mins}min` : ''}.`;
-                    
+            // 1. Check for "Protection Active" notification
+            if (!session.protectionNotified) {
+                const firstDoseTime = new Date(session.firstDoseTime);
+                const protectionStartTime = add(firstDoseTime, { hours: PROTECTION_START_HOURS });
+                if (isAfter(now, protectionStartTime)) {
                     const payload = JSON.stringify({
-                        title: "C'est l'heure de prendre la PrEP",
-                        body: timeLeft,
-                        icon: '/pill.png',
-                        tag: 'prep-reminder'
+                        title: 'PrEPy: Protection active!',
+                        body: 'Vous êtes protégé par la PrEP.',
+                        icon: '/shield-check.png',
                     });
-
                     await sendNotification(session.subscriptionEndpoint, payload);
+                    await docRef.update({ protectionNotified: true });
                     sentCount++;
+                    continue;
                 }
             }
             
-            const successMessage = `CRON JOB FINISHED: Sent ${sentCount} reminder(s).`;
-            return successMessage;
-        });
+            // 2. Check for dose reminders
+            const lastDoseTime = new Date(session.lastDoseTime);
+            const reminderWindowStart = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
+            const reminderWindowEnd = add(reminderWindowStart, { hours: GRACE_PERIOD_HOURS });
+
+            if (isAfter(now, reminderWindowStart) && isBefore(now, reminderWindowEnd)) {
+                const minutesRemaining = differenceInMinutes(reminderWindowEnd, now);
+                const hours = Math.floor(minutesRemaining / 60);
+                const mins = minutesRemaining % 60;
+                const timeLeft = `Il vous reste ${hours}h${mins > 0 ? `${mins}min` : ''}.`;
+                
+                const payload = JSON.stringify({
+                    title: "C'est l'heure de prendre la PrEP",
+                    body: timeLeft,
+                    icon: '/pill.png',
+                    tag: 'prep-reminder'
+                });
+
+                await sendNotification(session.subscriptionEndpoint, payload);
+                sentCount++;
+            }
+        }
+        
+        const successMessage = `CRON JOB FINISHED: Sent ${sentCount} reminder(s).`;
+        return successMessage;
     }
 );
