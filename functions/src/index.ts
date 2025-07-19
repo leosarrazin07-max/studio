@@ -3,6 +3,8 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import * as webpush from "web-push";
 import {z} from "zod";
+import { add, sub } from 'date-fns';
+
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -42,6 +44,13 @@ const StateSchema = z.object({
 
 // Proxied API endpoints for client to call
 export const saveSubscription = functions.https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Methods', 'POST');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    res.status(204).send('');
+    return;
+  }
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
     return;
@@ -57,6 +66,13 @@ export const saveSubscription = functions.https.onRequest(async (req, res) => {
 });
 
 export const saveState = functions.https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Methods', 'POST');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    res.status(204).send('');
+    return;
+  }
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
     return;
@@ -72,6 +88,13 @@ export const saveState = functions.https.onRequest(async (req, res) => {
 });
 
 export const deleteState = functions.https.onRequest(async (req, res) => {
+    res.set('Access-control-Allow-Origin', '*');
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Methods', 'POST');
+      res.set('Access-Control-Allow-Headers', 'Content-Type');
+      res.status(204).send('');
+      return;
+    }
     if (req.method !== "POST") {
       res.status(405).send("Method Not Allowed");
       return;
@@ -117,13 +140,9 @@ export const checkAndSendReminders = functions.runWith({secrets: ["VAPID_PRIVATE
         
         const lastDoseTime = new Date(lastDose.time);
         // 22 hours later
-        const nextDoseDueTime = new Date(
-          lastDoseTime.getTime() + 22 * 60 * 60 * 1000,
-        );
+        const nextDoseDueTime = add(lastDoseTime, { hours: 22 });
         // 4 hours after due
-        const gracePeriodEndTime = new Date(
-          nextDoseDueTime.getTime() + 4 * 60 * 60 * 1000,
-        );
+        const gracePeriodEndTime = add(nextDoseDueTime, { hours: 4 });
 
         if (now >= nextDoseDueTime && now <= gracePeriodEndTime) {
           const subscriptionSnapshot = await db
