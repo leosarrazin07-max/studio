@@ -12,8 +12,11 @@ export async function POST(request: Request) {
         if (!endpoint) {
             return NextResponse.json({ success: false, error: 'Missing endpoint' }, { status: 400 });
         }
-        await deleteDoc(doc(db, "states", endpoint));
-        await deleteDoc(doc(db, "subscriptions", endpoint));
+        
+        const endpointHash = btoa(endpoint).replace(/=/g, '');
+
+        await deleteDoc(doc(db, "states", endpointHash));
+        await deleteDoc(doc(db, "subscriptions", endpointHash));
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error("Failed to delete state:", error);

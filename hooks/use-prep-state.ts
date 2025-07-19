@@ -57,7 +57,6 @@ export function usePrepState(): UsePrepStateReturn {
   const updateSubscriptionOnServer = useCallback(async (sub: PushSubscription | null) => {
     if (sub) {
         try {
-            // This now calls the Firebase Function endpoint which is still active for this purpose
             const response = await fetch('/api/saveSubscription', {
                 method: 'POST',
                 headers: {
@@ -172,7 +171,7 @@ export function usePrepState(): UsePrepStateReturn {
       setState(savedState);
     }
 
-    const timer = setInterval(() => setNow(new Date()), 1000 * 60); // Update every minute
+    const timer = setInterval(() => setNow(new Date()), 1000 * 60);
     return () => {
         clearInterval(timer);
     };
@@ -186,7 +185,7 @@ export function usePrepState(): UsePrepStateReturn {
         }));
 
         if (state.sessionActive && subscription) {
-            fetch(`/api/saveState`, {
+            fetch('/api/saveState', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

@@ -6,18 +6,17 @@ import * as webpush from 'web-push';
 import { z } from 'zod';
 import { add } from 'date-fns';
 
-// Initialize Firebase App
 const app = initializeServerApp();
 const db = getFirestore(app);
 
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY as string;
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string;
 
-if (VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY) {
+if (process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
     webpush.setVapidDetails(
       'mailto:contact@prepy.app',
-      VAPID_PUBLIC_KEY,
-      VAPID_PRIVATE_KEY
+      process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+      process.env.VAPID_PRIVATE_KEY
     );
 }
 
@@ -47,7 +46,7 @@ export async function GET(request: Request) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  if (!VAPID_PRIVATE_KEY) {
+  if (!process.env.VAPID_PRIVATE_KEY) {
     console.error("VAPID_PRIVATE_KEY is not set.");
     return NextResponse.json({ success: false, error: "VAPID_PRIVATE_KEY is not set." }, { status: 500 });
   }

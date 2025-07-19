@@ -12,7 +12,10 @@ export async function POST(request: Request) {
         if (!endpoint || !state) {
             return NextResponse.json({ success: false, error: 'Missing endpoint or state' }, { status: 400 });
         }
-        await setDoc(doc(db, "states", endpoint), state);
+        
+        const endpointHash = btoa(endpoint).replace(/=/g, '');
+        
+        await setDoc(doc(db, "states", endpointHash), state);
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error("Failed to save state:", error);

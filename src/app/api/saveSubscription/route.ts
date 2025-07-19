@@ -19,7 +19,10 @@ export async function POST(request: Request) {
     try {
         const body = await request.json();
         const subscription = SubscriptionSchema.parse(body);
-        await setDoc(doc(db, "subscriptions", subscription.endpoint), subscription);
+
+        const endpointHash = btoa(subscription.endpoint).replace(/=/g, '');
+
+        await setDoc(doc(db, "subscriptions", endpointHash), subscription);
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error("Failed to save subscription:", error);
