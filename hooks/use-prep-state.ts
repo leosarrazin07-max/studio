@@ -252,7 +252,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   const clearHistory = useCallback(() => {
     if (subscription) {
-      fetch(`/api/deleteState`, {
+      fetch('/api/deleteState', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
