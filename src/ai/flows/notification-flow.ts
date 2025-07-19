@@ -9,13 +9,15 @@
  * - checkAndSendReminders - (FOR CRON JOB) Checks all active sessions and sends notifications if due.
  */
 
-import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { defineFlow, run, startFlow } from 'genkit';
+import { z } from 'zod';
 import { add, isAfter, differenceInMinutes, isBefore } from 'date-fns';
 import * as webpush from 'web-push';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { DOSE_INTERVAL_HOURS, GRACE_PERIOD_HOURS, PROTECTION_START_HOURS } from '@/lib/constants';
+import { GenkitError } from 'genkit/errors';
+import { Flow, FlowAuthPolicy } from 'genkit/flow';
 
 // --- Types ---
 interface SessionData {
@@ -99,152 +101,158 @@ const EndSessionSchema = z.object({
 
 
 // --- Genkit Flows ---
+const publicAuthPolicy: FlowAuthPolicy = (auth, input) => {
+    // Allow all access for this flow.
+};
 
-export const saveSubscription = ai.defineFlow(
+export const saveSubscription = defineFlow(
   {
     name: 'saveSubscription',
     inputSchema: SubscriptionSchema,
     outputSchema: z.boolean(),
   },
   async (subscription) => {
-    try {
-        const subRef = db.collection('subscriptions').doc(encodeURIComponent(subscription.endpoint));
-        await subRef.set(subscription);
-        return true;
-    } catch (error) {
-        console.error("Error saving subscription to Firestore:", error);
-        return false;
-    }
+    return await run('save-subscription-to-db', async () => {
+        try {
+            if (!db) throw new Error("Firestore not initialized");
+            const subRef = db.collection('subscriptions').doc(encodeURIComponent(subscription.endpoint));
+            await subRef.set(subscription);
+            return true;
+        } catch (error) {
+            console.error("Error saving subscription to Firestore:", error);
+            return false;
+        }
+    });
   }
 );
 
-export const scheduleDoseReminders = ai.defineFlow(
+export const scheduleDoseReminders = defineFlow(
     {
         name: 'scheduleDoseReminders',
         inputSchema: ScheduleSchema,
         outputSchema: z.boolean(),
     },
     async (sessionData) => {
-        try {
-            const sessionRef = db.collection('sessions').doc(encodeURIComponent(sessionData.subscriptionEndpoint));
-            
-            if (sessionData.isFirstDose) {
-                // This is a new session
-                await sessionRef.set({
-                    lastDoseTime: sessionData.lastDoseTime,
-                    firstDoseTime: sessionData.firstDoseTime,
-                    subscriptionEndpoint: sessionData.subscriptionEndpoint,
-                    protectionNotified: false, // Set to false on new session
-                });
-            } else {
-                // This is an update to an existing session (new dose)
-                await sessionRef.update({
-                    lastDoseTime: sessionData.lastDoseTime,
-                });
+        return await run('save-session-to-db', async () => {
+            try {
+                if (!db) throw new Error("Firestore not initialized");
+                const sessionRef = db.collection('sessions').doc(encodeURIComponent(sessionData.subscriptionEndpoint));
+
+                if (sessionData.isFirstDose) {
+                    await sessionRef.set({
+                        lastDoseTime: sessionData.lastDoseTime,
+                        firstDoseTime: sessionData.firstDoseTime,
+                        subscriptionEndpoint: sessionData.subscriptionEndpoint,
+                        protectionNotified: false,
+                    });
+                } else {
+                    await sessionRef.update({
+                        lastDoseTime: sessionData.lastDoseTime,
+                    });
+                }
+
+                return true;
+            } catch (error) {
+                console.error("Error saving session to Firestore:", error);
+                return false;
             }
-            
-            return true;
-        } catch (error) {
-            console.error("Error saving session to Firestore:", error);
-            return false;
-        }
+        });
     }
 );
 
-export const endSessionForUser = ai.defineFlow(
+export const endSessionForUser = defineFlow(
     {
         name: 'endSessionForUser',
         inputSchema: EndSessionSchema,
         outputSchema: z.boolean(),
     },
     async ({ subscriptionEndpoint }) => {
-        try {
-            const sessionRef = db.collection('sessions').doc(encodeURIComponent(subscriptionEndpoint));
-            await sessionRef.delete();
-            return true;
-        } catch (error) {
-            console.error("Error ending session:", error);
-            return false;
-        }
+        return await run('delete-session-from-db', async () => {
+            try {
+                if (!db) throw new Error("Firestore not initialized");
+                const sessionRef = db.collection('sessions').doc(encodeURIComponent(subscriptionEndpoint));
+                await sessionRef.delete();
+                return true;
+            } catch (error) {
+                console.error("Error ending session:", error);
+                return false;
+            }
+        });
     }
 );
 
 // THIS IS THE FLOW FOR THE CRON JOB
-export const checkAndSendReminders = ai.defineFlow(
+export const checkAndSendReminders: Flow<null, string> = defineFlow(
     {
         name: 'checkAndSendReminders',
         inputSchema: z.null(), // No input needed
         outputSchema: z.string(),
-        // This allows Cloud Scheduler to call the flow without authentication
-        authPolicy: async (auth, input) => {
-            // In this version, we don't throw to allow public access.
-            // For a production app, you would add authentication logic here.
-        },
+        authPolicy: publicAuthPolicy
     },
     async () => {
-        if (!db) {
-            const errorMessage = "CRON JOB FAILED: Firestore database is not initialized.";
-            console.error(errorMessage);
-            return errorMessage;
-        }
-        
-        const now = new Date();
-        const sessionsCollection = db.collection('sessions');
-        const sessionsSnapshot = await sessionsCollection.get();
+        return await run('cron-job-execution', async () => {
+            if (!db) {
+                const errorMessage = "CRON JOB FAILED: Firestore database is not initialized.";
+                console.error(errorMessage);
+                return errorMessage;
+            }
+            
+            const now = new Date();
+            const sessionsCollection = db.collection('sessions');
+            const sessionsSnapshot = await sessionsCollection.get();
 
 
-        if (sessionsSnapshot.empty) {
-            return "No active sessions.";
-        }
-        
-        let sentCount = 0;
-        for (const doc of sessionsSnapshot.docs) {
-            const session = doc.data() as SessionData;
-            const docRef = doc.ref;
+            if (sessionsSnapshot.empty) {
+                return "No active sessions.";
+            }
+            
+            let sentCount = 0;
+            for (const doc of sessionsSnapshot.docs) {
+                const session = doc.data() as SessionData;
+                const docRef = doc.ref;
 
-            // 1. Check for "Protection Active" notification
-            if (!session.protectionNotified) {
-                const firstDoseTime = new Date(session.firstDoseTime);
-                const protectionStartTime = add(firstDoseTime, { hours: PROTECTION_START_HOURS });
-                if (isAfter(now, protectionStartTime)) {
+                // 1. Check for "Protection Active" notification
+                if (!session.protectionNotified) {
+                    const firstDoseTime = new Date(session.firstDoseTime);
+                    const protectionStartTime = add(firstDoseTime, { hours: PROTECTION_START_HOURS });
+                    if (isAfter(now, protectionStartTime)) {
+                        const payload = JSON.stringify({
+                            title: 'PrEPy: Protection active!',
+                            body: 'Vous êtes protégé par la PrEP.',
+                            icon: '/shield-check.png',
+                        });
+                        await sendNotification(session.subscriptionEndpoint, payload);
+                        await docRef.update({ protectionNotified: true });
+                        sentCount++;
+                        continue;
+                    }
+                }
+                
+                // 2. Check for dose reminders
+                const lastDoseTime = new Date(session.lastDoseTime);
+                const reminderWindowStart = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
+                const reminderWindowEnd = add(reminderWindowStart, { hours: GRACE_PERIOD_HOURS });
+
+                if (isAfter(now, reminderWindowStart) && isBefore(now, reminderWindowEnd)) {
+                    const minutesRemaining = differenceInMinutes(reminderWindowEnd, now);
+                    const hours = Math.floor(minutesRemaining / 60);
+                    const mins = minutesRemaining % 60;
+                    const timeLeft = `Il vous reste ${hours}h${mins > 0 ? `${mins}min` : ''}.`;
+                    
                     const payload = JSON.stringify({
-                        title: 'PrEPy: Protection active!',
-                        body: 'Vous êtes protégé par la PrEP.',
-                        icon: '/shield-check.png',
+                        title: "C'est l'heure de prendre la PrEP",
+                        body: timeLeft,
+                        icon: '/pill.png',
+                        tag: 'prep-reminder'
                     });
+
                     await sendNotification(session.subscriptionEndpoint, payload);
-                    await docRef.update({ protectionNotified: true });
                     sentCount++;
-                    // Continue to next user, as dose reminder is not due yet
-                    continue; 
                 }
             }
             
-            // 2. Check for dose reminders
-            const lastDoseTime = new Date(session.lastDoseTime);
-            const reminderWindowStart = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
-            const reminderWindowEnd = add(reminderWindowStart, { hours: GRACE_PERIOD_HOURS });
-
-            // Check if we are within the reminder window
-            if (isAfter(now, reminderWindowStart) && isBefore(now, reminderWindowEnd)) {
-                const minutesRemaining = differenceInMinutes(reminderWindowEnd, now);
-                const hours = Math.floor(minutesRemaining / 60);
-                const mins = minutesRemaining % 60;
-                const timeLeft = `Il vous reste ${hours}h${mins > 0 ? `${mins}min` : ''}.`;
-                
-                const payload = JSON.stringify({
-                    title: "C'est l'heure de prendre la PrEP",
-                    body: timeLeft,
-                    icon: '/pill.png',
-                    tag: 'prep-reminder'
-                });
-
-                await sendNotification(session.subscriptionEndpoint, payload);
-                sentCount++;
-            }
-        }
-        
-        const successMessage = `CRON JOB FINISHED: Sent ${sentCount} reminder(s).`;
-        return successMessage;
+            const successMessage = `CRON JOB FINISHED: Sent ${sentCount} reminder(s).`;
+            return successMessage;
+        });
     }
 );

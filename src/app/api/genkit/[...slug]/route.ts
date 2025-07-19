@@ -1,5 +1,4 @@
 import { nextHandler } from '@genkit-ai/next';
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 export const dynamic = 'force-dynamic';
 
