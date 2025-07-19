@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import * as webpush from 'web-push';
 import { z } from 'zod';
-import { add, sub, formatDistance, isAfter } from 'date-fns';
+import { add, sub, formatDistance, isAfter, isBefore } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { PROTECTION_START_HOURS, DOSE_INTERVAL_HOURS, LAPSES_AFTER_HOURS } from '@/lib/constants';
 
@@ -83,7 +83,7 @@ async function deleteSubscriptionAndState(docId: string, accessToken: string) {
     await fetch(deleteStateUrl, { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
 }
 
-async function updateFirestoreField(docName: string, fieldName: string, value: { booleanValue: boolean } | { stringValue: string }, accessToken: string) {
+async function updateFirestoreField(docName: string, fieldName: string, value: { booleanValue: boolean }, accessToken: string) {
     const updateUrl = `https://firestore.googleapis.com/v1/${docName}?updateMask.fieldPaths=${fieldName}`;
     await fetch(updateUrl, {
         method: 'PATCH',
@@ -140,7 +140,7 @@ export async function GET(request: Request) {
         }
         const parsedState = parseResult.data;
         
-        if (!parsedState.sessionActive || !parsedState.pushEnabled) continue;
+        if (!parsedState.sessionActive || !parsedState.pushEnabled || parsedState.doses.length === 0) continue;
 
         const subscriptionResponse = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/subscriptions/${docId}`, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -153,17 +153,17 @@ export async function GET(request: Request) {
         };
 
         const firstDose = parsedState.doses.find(d => d.type === 'start');
-        const lastDose = parsedState.doses.filter(d => d.type !== "stop").sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())[0] ?? null;
+        const lastDose = parsedState.doses.filter(d => d.type !== "stop").sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())[0];
 
         if (!lastDose || !firstDose) continue;
 
         // --- Logic for Protection Start Notification (at 2 hours) ---
         if (!parsedState.protectionNotified) {
             const protectionStartTime = add(new Date(firstDose.time), { hours: PROTECTION_START_HOURS });
-            // This window ensures we only send the notification once, on the first cron run after the 2-hour mark.
-            const notificationWindowEnd = add(protectionStartTime, { minutes: CRON_JOB_INTERVAL_MINUTES }); 
+            const notificationWindowStart = protectionStartTime;
+            const notificationWindowEnd = add(notificationWindowStart, { minutes: CRON_JOB_INTERVAL_MINUTES }); 
             
-            if (isAfter(now, protectionStartTime) && now <= notificationWindowEnd) {
+            if (isAfter(now, notificationWindowStart) && isBefore(now, notificationWindowEnd)) {
                 const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
                 const { success, error } = await sendNotification(subscription, payload);
 
@@ -175,20 +175,17 @@ export async function GET(request: Request) {
                 } else {
                     console.error(`Failed to send protection notification to ${subscription.endpoint}:`, error);
                 }
-                // Continue to next user to avoid sending a dose reminder at the same time
                 continue; 
             }
         }
         
         // --- Logic for Recurring Dose Reminder (22-26h window) ---
         const lastDoseTime = new Date(lastDose.time);
-        // Window starts 22h after last dose
         const reminderWindowStart = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS - 2 });
-        // Window ends 26h after last dose (using LAPSES_AFTER_HOURS)
         const reminderWindowEnd = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
 
-        if (isAfter(now, reminderWindowStart) && now <= reminderWindowEnd) {
-            const timeRemaining = formatDistance(now, reminderWindowEnd, { locale: fr, addSuffix: false });
+        if (isAfter(now, reminderWindowStart) && isBefore(now, reminderWindowEnd)) {
+            const timeRemaining = formatDistance(reminderWindowEnd, now, { locale: fr, addSuffix: false });
             const title = "Rappel PrEP : il est temps !";
             const body = `Prenez votre dose pour rester protégé. Il vous reste environ ${timeRemaining}.`;
             const payload = JSON.stringify({ title, body });
