@@ -1,7 +1,7 @@
 
 import { NextResponse } from 'next/server';
 import { initializeServerApp } from '@/lib/firebase-server';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, doc, setDoc } from 'firebase/firestore';
 
 const { db } = initializeServerApp();
 
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
         const endpointHash = btoa(endpoint).replace(/=/g, '');
         const firestore = getFirestore(db);
         
-        await firestore.collection("states").doc(endpointHash).set(state);
+        await setDoc(doc(firestore, "states", endpointHash), state);
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error("Failed to save state:", error);

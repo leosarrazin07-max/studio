@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { initializeServerApp } from '@/lib/firebase-server';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, doc, setDoc } from 'firebase/firestore';
 
 const { db } = initializeServerApp();
 
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
         const endpointHash = btoa(subscription.endpoint).replace(/=/g, '');
         const firestore = getFirestore(db);
 
-        await firestore.collection("subscriptions").doc(endpointHash).set(subscription);
+        await setDoc(doc(firestore, "subscriptions", endpointHash), subscription);
 
         return NextResponse.json({ success: true });
     } catch (error) {
