@@ -176,7 +176,10 @@ export const checkAndSendReminders = ai.defineFlow(
         inputSchema: z.null(), // No input needed
         outputSchema: z.string(),
         // This allows Cloud Scheduler to call the flow without authentication
-        authPolicy: async (auth, input) => {},
+        authPolicy: async (auth, input) => {
+            // For a public cron job, an empty async function is sufficient
+            // to mark it as publicly callable.
+        },
     },
     async () => {
         if (!db) {
