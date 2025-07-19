@@ -1,2 +1,30 @@
+
 {
+  "name": "prepy-functions",
+  "description": "Cloud Functions for PrEPy",
+  "main": "lib/index.js",
+  "dependencies": {
+    "date-fns": "^3.6.0",
+    "firebase-admin": "^12.1.1",
+    "firebase-functions": "^5.0.1",
+    "web-push": "^3.6.7",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/web-push": "^3.6.3",
+    "typescript": "^5",
+    "firebase-functions-test": "^3.3.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "shell": "npm run build && firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "engines": {
+    "node": "18"
+  },
+  "private": true
 }

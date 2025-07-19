@@ -1,46 +1,33 @@
 
-'use server';
+import * as functions from "firebase-functions";
+import * as admin from "firebase-admin";
+import * as webpush from "web-push";
+import { z } from "zod";
+import { add, formatDistance, isWithinInterval } from "date-fns";
+import { fr } from "date-fns/locale";
 
-import * as webpush from 'web-push';
-import { z } from 'zod';
-import { add, formatDistance, isWithinInterval } from 'date-fns';
-import { fr } from 'date-fns/locale';
-import admin from 'firebase-admin';
-import { getFirestore } from 'firebase-admin/firestore';
-import { PROTECTION_START_HOURS, DOSE_INTERVAL_HOURS, LAPSES_AFTER_HOURS } from '@/lib/constants';
+// Initialize Firebase Admin SDK
+admin.initializeApp();
+const db = admin.firestore();
 
-// These are automatically populated by App Hosting.
-const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY as string;
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string;
-
-const CRON_JOB_INTERVAL_MINUTES = 5;
-
-let isInitialized = false;
-
-function initializeServices() {
-    if (isInitialized) return;
-
-    // Initialize Firebase Admin SDK
-    if (admin.apps.length === 0) {
-        // App Hosting provides configuration automatically.
-        admin.initializeApp();
-    }
-
-    // Initialize web-push
-    if (VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY) {
-        webpush.setVapidDetails(
-            'mailto:contact@prepy.app',
-            VAPID_PUBLIC_KEY,
-            VAPID_PRIVATE_KEY
-        );
-    } else {
-        console.error("VAPID keys are missing. Push notifications will fail.");
-    }
-    
-    isInitialized = true;
+// Initialize web-push
+// These variables must be set in the Firebase environment config
+// firebase functions:config:set webpush.vapid_public_key="..."
+// firebase functions:config:set webpush.vapid_private_key="..."
+const vapidKeys = functions.config().webpush;
+if (vapidKeys) {
+  webpush.setVapidDetails(
+    "mailto:contact@prepy.app",
+    vapidKeys.vapid_public_key,
+    vapidKeys.vapid_private_key
+  );
+} else {
+  console.error(
+    "VAPID keys are missing from Firebase functions config. Push notifications will fail."
+  );
 }
 
-const db = getFirestore();
+const CRON_JOB_INTERVAL_MINUTES = 5;
 
 const DoseSchema = z.object({
   time: z.string().datetime(),
@@ -56,12 +43,18 @@ const StateSchema = z.object({
   protectionNotified: z.boolean().optional(),
 });
 
+const constants = {
+  PROTECTION_START_HOURS: 2,
+  DOSE_INTERVAL_HOURS: 24,
+  LAPSES_AFTER_HOURS: 28,
+};
+
 async function sendNotification(subscription: any, payload: string) {
     try {
         await webpush.sendNotification(subscription, payload);
         return { success: true };
     } catch (error: any) {
-        if (error instanceof webpush.WebPushError && (error.statusCode === 410 || error.statusCode === 404)) {
+        if (error.statusCode === 410 || error.statusCode === 404) {
             return { success: false, error, shouldDelete: true };
         }
         return { success: false, error, shouldDelete: false };
@@ -75,11 +68,9 @@ async function deleteSubscriptionAndState(docId: string) {
     await db.batch().delete(subRef).delete(stateRef).commit();
 }
 
-export async function handleCron() {
-    initializeServices();
-    
-    if (!VAPID_PRIVATE_KEY) {
-        throw new Error("VAPID_PRIVATE_KEY is not set. Cannot proceed.");
+async function processCron() {
+    if (!vapidKeys) {
+        throw new Error("VAPID keys are not set. Cannot proceed.");
     }
 
     const now = new Date();
@@ -125,7 +116,7 @@ export async function handleCron() {
             };
 
             // --- Protection Start Notification ---
-            const protectionStartTime = add(new Date(firstDose.time), { hours: PROTECTION_START_HOURS });
+            const protectionStartTime = add(new Date(firstDose.time), { hours: constants.PROTECTION_START_HOURS });
             if (!state.protectionNotified && isWithinInterval(protectionStartTime, cronWindow)) {
                  const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
                  const { success, error, shouldDelete } = await sendNotification(subscription, payload);
@@ -142,9 +133,9 @@ export async function handleCron() {
             
             // --- Dose Reminder Notification ---
             const lastDoseTime = new Date(lastDose.time);
-            const reminderTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS }); // Exactly 24h after last dose
+            const reminderTime = add(lastDoseTime, { hours: constants.DOSE_INTERVAL_HOURS });
             if (isWithinInterval(reminderTime, cronWindow)) {
-                const protectionLapsesTime = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
+                const protectionLapsesTime = add(lastDoseTime, { hours: constants.LAPSES_AFTER_HOURS });
                 const timeRemaining = formatDistance(protectionLapsesTime, now, { locale: fr, addSuffix: false });
                 const title = "Rappel PrEP : il est temps !";
                 const body = `Prenez votre dose pour rester protégé. Il vous reste environ ${timeRemaining}.`;
@@ -167,3 +158,25 @@ export async function handleCron() {
 
     return { notificationsSent, errorsEncountered };
 }
+
+export const cronJob = functions.region("us-central1").runWith({
+    secrets: ["CRON_SECRET"],
+}).https.onRequest(async (req, res) => {
+    if (req.method !== 'POST') {
+        res.status(405).send('Method Not Allowed');
+        return;
+    }
+    const cronSecret = req.headers['x-cron-secret'];
+    if (cronSecret !== process.env.CRON_SECRET) {
+      res.status(401).send('Unauthorized');
+      return;
+    }
+    
+    try {
+        const result = await processCron();
+        res.status(200).json(result);
+    } catch (error: any) {
+        console.error("Cron job function failed catastrophically:", error);
+        res.status(500).json({ success: false, error: 'Cron job failed', details: error.message });
+    }
+});
