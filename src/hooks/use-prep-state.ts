@@ -7,7 +7,7 @@ import { fr } from 'date-fns/locale';
 import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { saveSubscription, scheduleDoseReminders, endSessionForUser } from '@/ai/flows/notification-flow';
+
 
 const VAPID_PUBLIC_KEY = 'BGEPqO_1POfO9s3j01tpkLdYd-v1jYYtMGTcwaxgQ2I_exGj155R8Xk-sXeyV6ORHIq8n4XhGzAsaKxV9wJzO6w';
 
@@ -70,7 +70,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   const unsubscribeFromNotifications = useCallback(async () => {
     if (subscription) {
-      await endSessionForUser({ subscriptionEndpoint: subscription.endpoint });
+      
       await subscription.unsubscribe();
       setSubscription(null);
       setState(prevState => ({...prevState, pushEnabled: false}));
@@ -108,7 +108,7 @@ export function usePrepState(): UsePrepStateReturn {
         }
         
         setSubscription(currentSubscription);
-        await saveSubscription(currentSubscription.toJSON());
+        
         setState(prevState => ({...prevState, pushEnabled: true}));
         toast({ title: "Notifications activées!" });
         return true;
@@ -164,25 +164,15 @@ export function usePrepState(): UsePrepStateReturn {
   const addDose = useCallback((dose: { time: Date; pills: number }) => {
     if(!state.pushEnabled || !subscription?.endpoint) {
         toast({
-            title: "Action impossible",
-            description: "Les notifications ne sont pas activées. Impossible de planifier des rappels.",
+            title: "Notifications désactivées",
+            description: "Veuillez activer les notifications pour planifier des rappels.",
             variant: "destructive"
         });
-        return;
     }
     
     setState(prevState => {
       const newDoses = [...prevState.doses, { ...dose, type: 'dose' as const }]
         .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-
-      if (newDoses.length > 0 && subscription.endpoint) {
-        scheduleDoseReminders({
-            lastDoseTime: newDoses[newDoses.length - 1].time.toISOString(),
-            firstDoseTime: newDoses[0].time.toISOString(),
-            isFirstDose: false,
-            subscriptionEndpoint: subscription.endpoint,
-        });
-      }
 
       return { ...prevState, sessionActive: true, doses: newDoses };
     });
@@ -208,24 +198,12 @@ export function usePrepState(): UsePrepStateReturn {
             doses: updatedDoses,
             sessionActive: true,
         };
-
-        if (subscription?.endpoint) {
-            scheduleDoseReminders({
-                lastDoseTime: newDose.time.toISOString(),
-                firstDoseTime: newDose.time.toISOString(),
-                isFirstDose: true,
-                subscriptionEndpoint: subscription.endpoint,
-            });
-        }
         return newState;
     });
     
-  }, [requestNotificationPermission, subscription, toast, state.pushEnabled]);
+  }, [requestNotificationPermission, state.pushEnabled, toast]);
 
   const endSession = useCallback(() => {
-    if (subscription?.endpoint) {
-        endSessionForUser({ subscriptionEndpoint: subscription.endpoint });
-    }
     setState(prevState => {
         const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const };
         const updatedDoses = [...prevState.doses, stopEvent].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
@@ -235,17 +213,15 @@ export function usePrepState(): UsePrepStateReturn {
         title: "Session terminée",
         description: "Les rappels de notification sont maintenant arrêtés."
     });
-  }, [subscription, toast]);
+  }, [toast]);
 
   const clearHistory = useCallback(() => {
-    if (subscription?.endpoint) {
-      endSessionForUser({ subscriptionEndpoint: subscription.endpoint });
-    }
+    
     localStorage.removeItem('prepState');
     setState(defaultState); // Reset to the very default state
     updateSubscriptionObject();
     toast({ title: "Données effacées", description: "Votre historique local a été supprimé." });
-  }, [subscription, toast, updateSubscriptionObject]);
+  }, [updateSubscriptionObject, toast]);
   
   const lastDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
 
