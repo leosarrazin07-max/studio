@@ -4,26 +4,39 @@ import * as webpush from 'web-push';
 import { z } from 'zod';
 import { add, sub, formatDistance, isAfter, isBefore } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { initializeAdminApp } from '@/lib/firebase-admin';
+import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 import { PROTECTION_START_HOURS, DOSE_INTERVAL_HOURS, LAPSES_AFTER_HOURS } from '@/lib/constants';
 
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY as string;
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string;
 
-const CRON_JOB_INTERVAL_MINUTES = 5; 
+const CRON_JOB_INTERVAL_MINUTES = 5;
 
-if (VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY) {
-    webpush.setVapidDetails(
-      'mailto:contact@prepy.app',
-      VAPID_PUBLIC_KEY,
-      VAPID_PRIVATE_KEY
-    );
+// Helper function to initialize the app, ensuring it's only done once.
+const initializeAdminApp = () => {
+    if (admin.apps.length === 0) {
+        // When running on App Hosting, the SDK automatically discovers the service account credentials.
+        admin.initializeApp();
+    }
+    return admin;
+};
+
+// Initialize Firebase Admin SDK and web-push
+try {
+    initializeAdminApp();
+    if (VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY) {
+        webpush.setVapidDetails(
+          'mailto:contact@prepy.app',
+          VAPID_PUBLIC_KEY,
+          VAPID_PRIVATE_KEY
+        );
+    }
+} catch (error) {
+    console.error("Failed to initialize Firebase Admin or web-push", error);
 }
 
-// Initialize Firebase Admin SDK
-const adminApp = initializeAdminApp();
-const db = getFirestore(adminApp);
+const db = getFirestore();
 
 const DoseSchema = z.object({
   time: z.string().datetime(),
@@ -63,8 +76,15 @@ async function deleteSubscriptionAndState(docId: string) {
 
 
 export async function GET(request: Request) {
-  // OIDC authentication is now handled by the Cloud Scheduler configuration,
-  // so the manual bearer token check is removed.
+  // OIDC authentication is handled by the Cloud Scheduler configuration.
+  // The 'x-forwarded-for' check is a basic security measure for cron jobs.
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  if (!forwardedFor) {
+      // Allow direct invocations for testing in dev environment.
+      if (process.env.NODE_ENV !== 'development') {
+        return NextResponse.json({ success: false, error: "Not a valid cron request." }, { status: 403 });
+      }
+  }
 
   if (!VAPID_PRIVATE_KEY) {
     console.error("VAPID_PRIVATE_KEY is not set.");
