@@ -3,7 +3,8 @@
   "functions": {
     "source": "functions",
     "runtime": "nodejs20",
-    "region": "europe-west9"
+    "region": "europe-west9",
+    "platform": "gcfv2"
   },
   "hosting": {
     "source": ".",
