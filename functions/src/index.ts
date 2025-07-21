@@ -10,7 +10,9 @@ import { utcToZonedTime } from "date-fns-tz";
 
 
 // Initialize Firebase Admin SDK
-admin.initializeApp();
+if (admin.apps.length === 0) {
+  admin.initializeApp();
+}
 const db = admin.firestore();
 
 // Initialize web-push
@@ -179,7 +181,6 @@ async function processCron() {
 
     return { notificationsSent, errorsEncountered };
 }
-
 
 const runtimeOpts: functions.RuntimeOptions = {
     timeoutSeconds: 120,
