@@ -4,8 +4,10 @@ import * as admin from "firebase-admin";
 import * as webpush from "web-push";
 import { z } from "zod";
 import { add } from "date-fns";
-import { formatInTimeZone, zonedTimeToUtc, utcToZonedTime, formatDistance } from "date-fns-tz";
+import { formatDistance } from "date-fns-tz";
 import { fr } from "date-fns/locale";
+import { utcToZonedTime, zonedTimeToUtc } from "date-fns-tz";
+
 
 // Initialize Firebase Admin SDK
 admin.initializeApp();
