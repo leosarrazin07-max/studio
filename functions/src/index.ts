@@ -40,7 +40,6 @@ const StateSchema = z.object({
   sessionActive: z.boolean(),
   pushEnabled: z.boolean(),
   protectionNotified: z.boolean().optional(),
-  // NEW: Add a field to query for users needing notifications.
   nextNotificationTime: z.string().datetime().optional().nullable(),
 });
 
@@ -87,7 +86,6 @@ async function processCron() {
     const serverNow = new Date();
     const windowEnd = add(serverNow, { minutes: CRON_JOB_INTERVAL_MINUTES });
 
-    // OPTIMIZED QUERY: Only get states that need a notification in the next 5 minutes.
     const statesSnapshot = await db.collection('states')
         .where('sessionActive', '==', true)
         .where('pushEnabled', '==', true)
@@ -144,6 +142,7 @@ async function processCron() {
             const protectionStartTime = add(firstDoseTime, { hours: constants.PROTECTION_START_HOURS });
 
             // Is it time for the protection start notification?
+            // Compare timestamps to avoid timezone issues.
             if (!state.protectionNotified && nextNotificationTime.getTime() === protectionStartTime.getTime()) {
                  const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
                  const { success, error, shouldDelete } = await sendNotification(subscription, payload);
@@ -156,7 +155,7 @@ async function processCron() {
                     console.error(`Failed to send protection notification to ${docId}:`, error);
                  }
             } else { // It must be a dose reminder
-                const userNow = utcToZonedTime(serverNow, userTimezone);
+                const userNow = utcToZonedTime(new Date(), userTimezone);
                 const protectionLapsesTime = add(lastDoseTime, { hours: constants.LAPSES_AFTER_HOURS });
                 const timeRemaining = formatDistance(protectionLapsesTime, userNow, { locale: fr, addSuffix: false });
                 const title = "Rappel PrEP : il est temps !";

@@ -28,8 +28,7 @@
         "node_modules",
         ".git",
         "firebase-debug.log",
-        "firebase-debug.*.log",
-        "src"
+        "firebase-debug.*.log"
       ],
       "predeploy": [
         "npm --prefix \"$RESOURCE_DIR\" install",
