@@ -44,6 +44,7 @@ const defaultState: PrepState = {
     sessionActive: false,
     pushEnabled: false,
     protectionNotified: false,
+    nextNotificationTime: null,
 };
 
 
@@ -54,6 +55,30 @@ export function usePrepState(): UsePrepStateReturn {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
 
   const [state, setState] = useState<PrepState>(defaultState);
+
+  const calculateNextNotificationTime = (doses: Dose[], protectionNotified: boolean | undefined): Date | null => {
+    if (!doses || doses.length === 0) return null;
+
+    const firstDose = doses.find(d => d.type === 'start');
+    const lastDose = doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
+    
+    if (!firstDose) return null;
+
+    // Is the protection start notification pending?
+    if (!protectionNotified) {
+      const protectionStartTime = add(firstDose.time, { hours: PROTECTION_START_HOURS });
+      if (isAfter(protectionStartTime, new Date())) {
+        return protectionStartTime;
+      }
+    }
+
+    // Otherwise, schedule the next dose reminder
+    if (lastDose) {
+      return add(lastDose.time, { hours: DOSE_INTERVAL_HOURS });
+    }
+    
+    return null;
+  }
   
   const updateSubscriptionOnServer = useCallback(async (sub: PushSubscription | null) => {
     if (sub) {
@@ -197,10 +222,14 @@ export function usePrepState(): UsePrepStateReturn {
 
   useEffect(() => {
     if (isClient) {
-        localStorage.setItem('prepState', JSON.stringify({
-            ...state,
-            doses: state.doses.map(d => ({...d, time: d.time.toISOString()}))
-        }));
+        const nextNotificationTime = calculateNextNotificationTime(state.doses, state.protectionNotified);
+        const stateToSave = {
+          ...state,
+          nextNotificationTime: nextNotificationTime ? nextNotificationTime.toISOString() : null,
+          doses: state.doses.map(d => ({...d, time: d.time.toISOString()}))
+        }
+
+        localStorage.setItem('prepState', JSON.stringify(stateToSave));
 
         if (state.sessionActive && subscription) {
             fetch('/api/saveState', {
@@ -210,10 +239,7 @@ export function usePrepState(): UsePrepStateReturn {
                 },
                 body: JSON.stringify({
                     endpoint: subscription.endpoint,
-                    state: {
-                        ...state,
-                        doses: state.doses.map(d => ({...d, time: d.time.toISOString()}))
-                    }
+                    state: stateToSave
                 })
             });
         }
@@ -226,7 +252,9 @@ export function usePrepState(): UsePrepStateReturn {
       const newDoses = [...prevState.doses, newDose]
         .sort((a, b) => a.time.getTime() - b.time.getTime());
       
-      return { ...prevState, sessionActive: true, doses: newDoses };
+      const nextNotificationTime = calculateNextNotificationTime(newDoses, prevState.protectionNotified);
+
+      return { ...prevState, sessionActive: true, doses: newDoses, nextNotificationTime };
     });
   }, []);
 
@@ -245,12 +273,14 @@ export function usePrepState(): UsePrepStateReturn {
     
     setState(prevState => {
         const updatedDoses = [newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
+        const nextNotificationTime = calculateNextNotificationTime(updatedDoses, false);
         const newState = {
             ...defaultState, // Reset state but keep push settings
             pushEnabled: prevState.pushEnabled,
             doses: updatedDoses,
             sessionActive: true,
             protectionNotified: false,
+            nextNotificationTime: nextNotificationTime
         };
         return newState;
     });
@@ -261,7 +291,7 @@ export function usePrepState(): UsePrepStateReturn {
     setState(prevState => {
         const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
         const updatedDoses = [...prevState.doses, stopEvent].sort((a, b) => a.time.getTime() - b.time.getTime());
-        return { ...prevState, sessionActive: false, doses: updatedDoses };
+        return { ...prevState, sessionActive: false, doses: updatedDoses, nextNotificationTime: null };
     });
     toast({
         title: "Session terminée",

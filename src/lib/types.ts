@@ -15,7 +15,8 @@ export interface PrepState {
   doses: Dose[];
   sessionActive: boolean;
   pushEnabled: boolean;
-  protectionNotified?: boolean; 
+  protectionNotified?: boolean;
+  nextNotificationTime: string | null; // Stored as ISO string in JSON, Date object in state
 }
 
 export interface PrepLogic {

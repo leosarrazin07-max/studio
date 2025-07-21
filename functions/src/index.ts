@@ -6,7 +6,7 @@ import { z } from "zod";
 import { add } from "date-fns";
 import { formatDistance } from "date-fns";
 import { fr } from "date-fns/locale";
-import { utcToZonedTime, zonedTimeToUtc } from "date-fns-tz";
+import { utcToZonedTime } from "date-fns-tz";
 
 
 // Initialize Firebase Admin SDK
@@ -40,6 +40,8 @@ const StateSchema = z.object({
   sessionActive: z.boolean(),
   pushEnabled: z.boolean(),
   protectionNotified: z.boolean().optional(),
+  // NEW: Add a field to query for users needing notifications.
+  nextNotificationTime: z.string().datetime().optional().nullable(),
 });
 
 const SubscriptionSchema = z.object({
@@ -49,7 +51,7 @@ const SubscriptionSchema = z.object({
       p256dh: z.string(),
       auth: z.string(),
     }),
-    timezone: z.string().optional().default('Europe/Paris'), // Default to Paris if not provided
+    timezone: z.string().optional().default('Europe/Paris'),
 });
 
 const constants = {
@@ -57,13 +59,6 @@ const constants = {
   DOSE_INTERVAL_HOURS: 24,
   LAPSES_AFTER_HOURS: 28,
 };
-
-// Helper function to check if a target time falls within the next N minutes from now (in the user's timezone)
-function isWithinNextMinutes(targetTime: Date, userNow: Date, minutes: number): boolean {
-    const windowEnd = add(userNow, { minutes });
-    return targetTime >= userNow && targetTime < windowEnd;
-}
-
 
 async function sendNotification(subscription: any, payload: string) {
     try {
@@ -90,10 +85,19 @@ async function processCron() {
     }
 
     const serverNow = new Date();
-    const statesSnapshot = await db.collection('states').get();
+    const windowEnd = add(serverNow, { minutes: CRON_JOB_INTERVAL_MINUTES });
+
+    // OPTIMIZED QUERY: Only get states that need a notification in the next 5 minutes.
+    const statesSnapshot = await db.collection('states')
+        .where('sessionActive', '==', true)
+        .where('pushEnabled', '==', true)
+        .where('nextNotificationTime', '>=', serverNow.toISOString())
+        .where('nextNotificationTime', '<', windowEnd.toISOString())
+        .get();
+
 
     if (statesSnapshot.empty) {
-        console.log("No states to process. Exiting.");
+        console.log("No states to process for this window. Exiting.");
         return { notificationsSent: 0, errorsEncountered: 0 };
     }
 
@@ -112,6 +116,7 @@ async function processCron() {
             }
             const state = parseResult.data;
 
+            // Basic checks (redundant due to query, but safe)
             if (!state.sessionActive || !state.pushEnabled || state.doses.length === 0) {
                 continue;
             }
@@ -135,13 +140,14 @@ async function processCron() {
 
             if (!lastDose || !firstDose) continue;
             
-            const firstDoseTime = new Date(firstDose.time);
             const lastDoseTime = new Date(lastDose.time);
-            const firstDoseTimeInUserTz = utcToZonedTime(firstDoseTime, userTimezone);
-            
-            // --- Protection Start Notification ---
-            const protectionStartTime = add(firstDoseTimeInUserTz, { hours: constants.PROTECTION_START_HOURS });
-            if (!state.protectionNotified && isWithinNextMinutes(protectionStartTime, userNow, CRON_JOB_INTERVAL_MINUTES)) {
+
+            // Determine which notification to send based on nextNotificationTime
+            const nextNotificationTime = new Date(state.nextNotificationTime!);
+            const protectionStartTime = add(new Date(firstDose.time), { hours: constants.PROTECTION_START_HOURS });
+
+            // Is it time for the protection start notification?
+            if (!state.protectionNotified && nextNotificationTime.getTime() === protectionStartTime.getTime()) {
                  const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
                  const { success, error, shouldDelete } = await sendNotification(subscription, payload);
                  if (success) {
@@ -152,14 +158,8 @@ async function processCron() {
                  } else {
                     console.error(`Failed to send protection notification to ${docId}:`, error);
                  }
-                 continue; // Process only one notification type per run
-            }
-            
-            // --- Dose Reminder Notification ---
-            const lastDoseTimeInUserTz = utcToZonedTime(lastDoseTime, userTimezone);
-            const reminderTime = add(lastDoseTimeInUserTz, { hours: constants.DOSE_INTERVAL_HOURS });
-            if (isWithinNextMinutes(reminderTime, userNow, CRON_JOB_INTERVAL_MINUTES)) {
-                const protectionLapsesTime = add(lastDoseTimeInUserTz, { hours: constants.LAPSES_AFTER_HOURS });
+            } else { // It must be a dose reminder
+                const protectionLapsesTime = add(lastDoseTime, { hours: constants.LAPSES_AFTER_HOURS });
                 const timeRemaining = formatDistance(protectionLapsesTime, userNow, { locale: fr, addSuffix: false });
                 const title = "Rappel PrEP : il est temps !";
                 const body = `Prenez votre dose pour rester protégé. Il vous reste environ ${timeRemaining}.`;
@@ -183,6 +183,7 @@ async function processCron() {
     return { notificationsSent, errorsEncountered };
 }
 
+
 const runtimeOpts: functions.RuntimeOptions = {
     timeoutSeconds: 120,
     memory: "512MB",
@@ -190,7 +191,6 @@ const runtimeOpts: functions.RuntimeOptions = {
 };
 
 export const cronJob = functions.region("europe-west9").runWith(runtimeOpts).https.onRequest(async (req, res) => {
-    // Secure the function with a secret header check.
     const cronSecret = req.headers['x-cron-secret'];
     if (cronSecret !== process.env.CRON_SECRET) {
       console.error('Unauthorized attempt to run cron job. Missing or invalid secret.');
