@@ -23,10 +23,13 @@
     {
       "source": "functions",
       "codebase": "default",
+      "runtime": "nodejs18",
       "ignore": [
+        "node_modules",
         ".git",
         "firebase-debug.log",
-        "firebase-debug.*.log"
+        "firebase-debug.*.log",
+        "src"
       ],
       "predeploy": [
         "npm --prefix \"$RESOURCE_DIR\" install",
