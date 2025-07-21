@@ -16,7 +16,7 @@ export interface PrepState {
   sessionActive: boolean;
   pushEnabled: boolean;
   protectionNotified?: boolean;
-  nextNotificationTime: string | null; // Stored as ISO string in JSON
+  nextNotificationTime: Date | null;
 }
 
 export interface PrepLogic {

@@ -32,6 +32,13 @@ const safelyParseJSON = (jsonString: string | null) => {
     if (parsed.doses) {
         parsed.doses = parsed.doses.map((d: any) => ({...d, time: new Date(d.time)}));
     }
+    // Handle legacy states without nextNotificationTime
+    if (parsed.nextNotificationTime && typeof parsed.nextNotificationTime === 'object' && parsed.nextNotificationTime.value) {
+        parsed.nextNotificationTime = new Date(parsed.nextNotificationTime.value);
+    } else if (typeof parsed.nextNotificationTime === 'string') {
+        parsed.nextNotificationTime = new Date(parsed.nextNotificationTime);
+    }
+
     return parsed;
   } catch (e) {
     console.error("Failed to parse JSON from localStorage", e);
@@ -56,7 +63,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   const [state, setState] = useState<PrepState>(defaultState);
 
-  const calculateNextNotificationTime = (doses: Dose[], protectionNotified: boolean | undefined): Date | null => {
+  const calculateNextNotificationTime = useCallback((doses: Dose[], protectionNotified: boolean | undefined): Date | null => {
     if (!doses || doses.length === 0) return null;
 
     const firstDose = doses.find(d => d.type === 'start');
@@ -65,11 +72,9 @@ export function usePrepState(): UsePrepStateReturn {
     if (!firstDose) return null;
 
     // Is the protection start notification pending?
-    if (!protectionNotified) {
-      const protectionStartTime = add(firstDose.time, { hours: PROTECTION_START_HOURS });
-      if (isAfter(protectionStartTime, new Date())) {
+    const protectionStartTime = add(firstDose.time, { hours: PROTECTION_START_HOURS });
+    if (!protectionNotified && isAfter(protectionStartTime, new Date())) {
         return protectionStartTime;
-      }
     }
 
     // Otherwise, schedule the next dose reminder
@@ -78,7 +83,7 @@ export function usePrepState(): UsePrepStateReturn {
     }
     
     return null;
-  }
+  }, []);
   
   const updateSubscriptionOnServer = useCallback(async (sub: PushSubscription | null) => {
     if (sub) {
@@ -223,11 +228,12 @@ export function usePrepState(): UsePrepStateReturn {
   useEffect(() => {
     if (isClient) {
         const nextNotificationTime = calculateNextNotificationTime(state.doses, state.protectionNotified);
+        
         const stateToSave = {
           ...state,
+          doses: state.doses.map(d => ({...d, time: d.time.toISOString()})),
           nextNotificationTime: nextNotificationTime ? nextNotificationTime.toISOString() : null,
-          doses: state.doses.map(d => ({...d, time: d.time.toISOString()}))
-        }
+        };
 
         localStorage.setItem('prepState', JSON.stringify(stateToSave));
 
@@ -244,7 +250,7 @@ export function usePrepState(): UsePrepStateReturn {
             });
         }
     }
-  }, [state, isClient, subscription]);
+  }, [state, isClient, subscription, calculateNextNotificationTime]);
 
   const addDose = useCallback((dose: { time: Date; pills: number }) => {
     setState(prevState => {
@@ -254,9 +260,9 @@ export function usePrepState(): UsePrepStateReturn {
       
       const nextNotificationTime = calculateNextNotificationTime(newDoses, prevState.protectionNotified);
 
-      return { ...prevState, sessionActive: true, doses: newDoses, nextNotificationTime };
+      return { ...prevState, sessionActive: true, doses: newDoses, nextNotificationTime: nextNotificationTime };
     });
-  }, []);
+  }, [calculateNextNotificationTime]);
 
   const startSession = useCallback(async (time: Date) => {
     const hasPermission = await requestNotificationPermission();
@@ -274,18 +280,18 @@ export function usePrepState(): UsePrepStateReturn {
     setState(prevState => {
         const updatedDoses = [newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
         const nextNotificationTime = calculateNextNotificationTime(updatedDoses, false);
-        const newState = {
+        const newState: PrepState = {
             ...defaultState, // Reset state but keep push settings
             pushEnabled: prevState.pushEnabled,
             doses: updatedDoses,
             sessionActive: true,
             protectionNotified: false,
-            nextNotificationTime: nextNotificationTime
+            nextNotificationTime: nextNotificationTime,
         };
         return newState;
     });
     
-  }, [requestNotificationPermission, toast]);
+  }, [requestNotificationPermission, toast, calculateNextNotificationTime]);
 
   const endSession = useCallback(() => {
     setState(prevState => {
@@ -369,9 +375,13 @@ export function usePrepState(): UsePrepStateReturn {
   }
 
   const dosesAsDates = state.doses.map(d => ({ ...d, time: new Date(d.time) }));
+  
+  // Convert nextNotificationTime from string to Date for the component return
+  const nextNotificationTimeAsDate = state.nextNotificationTime ? new Date(state.nextNotificationTime) : null;
 
   return {
     ...state,
+    nextNotificationTime: nextNotificationTimeAsDate, // Return as Date object
     doses: dosesAsDates.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
