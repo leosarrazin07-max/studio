@@ -4,7 +4,7 @@ import * as admin from "firebase-admin";
 import * as webpush from "web-push";
 import { z } from "zod";
 import { add } from "date-fns";
-import { formatDistance } from "date-fns-tz";
+import { formatDistance } from "date-fns/locale";
 import { fr } from "date-fns/locale";
 import { utcToZonedTime, zonedTimeToUtc } from "date-fns-tz";
 
@@ -93,6 +93,7 @@ async function processCron() {
     const statesSnapshot = await db.collection('states').get();
 
     if (statesSnapshot.empty) {
+        console.log("No states to process. Exiting.");
         return { notificationsSent: 0, errorsEncountered: 0 };
     }
 
@@ -126,7 +127,7 @@ async function processCron() {
                 continue;
             }
             const subscription = subParseResult.data;
-            const userTimezone = subscription.timezone;
+            const userTimezone = subscription.timezone || 'Europe/Paris';
             const userNow = utcToZonedTime(serverNow, userTimezone);
 
             const firstDose = state.doses.find(d => d.type === 'start');
@@ -134,11 +135,12 @@ async function processCron() {
 
             if (!lastDose || !firstDose) continue;
             
-            const firstDoseTimeInUserTz = zonedTimeToUtc(firstDose.time, userTimezone);
-            const lastDoseTimeInUserTz = zonedTimeToUtc(lastDose.time, userTimezone);
+            // Correctly convert time strings to Date objects before using them
+            const firstDoseTime = new Date(firstDose.time);
+            const lastDoseTime = new Date(lastDose.time);
             
             // --- Protection Start Notification ---
-            const protectionStartTime = add(firstDoseTimeInUserTz, { hours: constants.PROTECTION_START_HOURS });
+            const protectionStartTime = add(firstDoseTime, { hours: constants.PROTECTION_START_HOURS });
             if (!state.protectionNotified && isWithinNextMinutes(protectionStartTime, userNow, CRON_JOB_INTERVAL_MINUTES)) {
                  const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
                  const { success, error, shouldDelete } = await sendNotification(subscription, payload);
@@ -154,9 +156,9 @@ async function processCron() {
             }
             
             // --- Dose Reminder Notification ---
-            const reminderTime = add(lastDoseTimeInUserTz, { hours: constants.DOSE_INTERVAL_HOURS });
+            const reminderTime = add(lastDoseTime, { hours: constants.DOSE_INTERVAL_HOURS });
             if (isWithinNextMinutes(reminderTime, userNow, CRON_JOB_INTERVAL_MINUTES)) {
-                const protectionLapsesTime = add(lastDoseTimeInUserTz, { hours: constants.LAPSES_AFTER_HOURS });
+                const protectionLapsesTime = add(lastDoseTime, { hours: constants.LAPSES_AFTER_HOURS });
                 const timeRemaining = formatDistance(protectionLapsesTime, userNow, { locale: fr, addSuffix: false });
                 const title = "Rappel PrEP : il est temps !";
                 const body = `Prenez votre dose pour rester protégé. Il vous reste environ ${timeRemaining}.`;
@@ -181,17 +183,12 @@ async function processCron() {
 }
 
 const runtimeOpts: functions.RuntimeOptions = {
-    timeoutSeconds: 120, // Increased timeout to 2 minutes
+    timeoutSeconds: 120,
     memory: "512MB",
+    secrets: ["CRON_SECRET", "VAPID_PRIVATE_KEY"],
 };
 
-export const cronJob = functions.region("europe-west9").runWith({
-    ...runtimeOpts,
-    secrets: ["CRON_SECRET", "VAPID_PRIVATE_KEY"],
-    env: {
-        NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string,
-    }
-}).https.onRequest(async (req, res) => {
+export const cronJob = functions.region("europe-west9").runWith(runtimeOpts).https.onRequest(async (req, res) => {
     // Secure the function with a secret header check.
     const cronSecret = req.headers['x-cron-secret'];
     if (cronSecret !== process.env.CRON_SECRET) {
@@ -201,6 +198,7 @@ export const cronJob = functions.region("europe-west9").runWith({
     }
     
     try {
+        console.log("Cron job started.");
         const result = await processCron();
         console.log('Cron job finished successfully.', result);
         res.status(200).json(result);
