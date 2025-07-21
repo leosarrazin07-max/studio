@@ -181,7 +181,7 @@ async function processCron() {
 }
 
 const runtimeOpts: functions.RuntimeOptions = {
-    timeoutSeconds: 60,
+    timeoutSeconds: 120, // Increased timeout to 2 minutes
     memory: "512MB",
 };
 
