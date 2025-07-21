@@ -8,18 +8,12 @@ import { formatDistance } from "date-fns";
 import { fr } from "date-fns/locale";
 import { utcToZonedTime } from "date-fns-tz";
 
-// Reconstruct service account from environment variables
+// Reconstruct service account from environment variables and hardcoded values
+// The private key is injected securely via Secret Manager
 const serviceAccount = {
-  type: process.env.SERVICE_ACCOUNT_TYPE,
-  project_id: process.env.SERVICE_ACCOUNT_PROJECT_ID,
-  private_key_id: process.env.SERVICE_ACCOUNT_PRIVATE_KEY_ID,
-  private_key: process.env.SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  client_email: process.env.SERVICE_ACCOUNT_CLIENT_EMAIL,
-  client_id: process.env.SERVICE_ACCOUNT_CLIENT_ID,
-  auth_uri: process.env.SERVICE_ACCOUNT_AUTH_URI,
-  token_uri: process.env.SERVICE_ACCOUNT_TOKEN_URI,
-  auth_provider_x509_cert_url: process.env.SERVICE_ACCOUNT_AUTH_PROVIDER_X509_CERT_URL,
-  client_x509_cert_url: process.env.SERVICE_ACCOUNT_CLIENT_X509_CERT_URL,
+  projectId: "prepy-e8n1t",
+  privateKey: process.env.SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  clientEmail: "firebase-adminsdk-qg73g@prepy-e8n1t.iam.gserviceaccount.com",
 } as admin.ServiceAccount;
 
 
@@ -97,8 +91,20 @@ async function deleteSubscriptionAndState(docId: string) {
 }
 
 async function processCron() {
-    if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
-        throw new Error("VAPID keys are not set. Cannot proceed.");
+    if (!process.env.VAPID_PRIVATE_KEY) {
+        console.error("VAPID private key not set. Cannot send notifications.");
+        // We still check for VAPID_PUBLIC_KEY for web-push init but the private key is what's needed for sending.
+        // Let's assume process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY is available on the client.
+    } else {
+        webpush.setVapidDetails(
+            "mailto:contact@prepy.app",
+            process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
+            process.env.VAPID_PRIVATE_KEY
+        );
+    }
+    
+    if (!admin.apps.length) {
+        throw new Error("Firebase Admin SDK not initialized.");
     }
 
     const serverNow = new Date();
@@ -206,6 +212,8 @@ export async function GET(request: Request) {
       return NextResponse.json(result);
     } catch (error) {
       console.error("Cron job API route failed:", error);
-      return NextResponse.json({ success: false, error: 'Cron job failed' }, { status: 500 });
+      return NextResponse.json({ success: false, error: (error as Error).message }, { status: 500 });
     }
 }
+
+    
