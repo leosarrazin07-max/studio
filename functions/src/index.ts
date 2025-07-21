@@ -180,7 +180,13 @@ async function processCron() {
     return { notificationsSent, errorsEncountered };
 }
 
+const runtimeOpts: functions.RuntimeOptions = {
+    timeoutSeconds: 60,
+    memory: "512MB",
+};
+
 export const cronJob = functions.region("europe-west9").runWith({
+    ...runtimeOpts,
     secrets: ["CRON_SECRET", "VAPID_PRIVATE_KEY"],
     env: {
         NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string,
