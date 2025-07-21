@@ -3,21 +3,17 @@ import { NextResponse } from 'next/server';
 import * as admin from "firebase-admin";
 import * as webpush from "web-push";
 import { z } from "zod";
-import { add } from "date-fns";
+import { add, isAfter } from "date-fns";
 import { formatDistance } from "date-fns";
 import { fr } from "date-fns/locale";
 import { utcToZonedTime } from "date-fns-tz";
 
-// Reconstruct service account from environment variables and hardcoded values
-// The private key is injected securely via Secret Manager
 const serviceAccount = {
   projectId: "prepy-e8n1t",
   privateKey: process.env.SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n'),
   clientEmail: "firebase-adminsdk-qg73g@prepy-e8n1t.iam.gserviceaccount.com",
 } as admin.ServiceAccount;
 
-
-// Initialize Firebase Admin SDK
 if (admin.apps.length === 0) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
@@ -25,7 +21,6 @@ if (admin.apps.length === 0) {
 }
 const db = admin.firestore();
 
-// Initialize web-push
 if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
     "mailto:contact@prepy.app",
@@ -33,8 +28,8 @@ if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
     process.env.VAPID_PRIVATE_KEY
   );
 } else {
-  console.error(
-    "VAPID keys are missing. Push notifications will fail."
+  console.log(
+    "VAPID private key for webpush not set on server, this is expected if not sending push notifs from here."
   );
 }
 
@@ -73,6 +68,15 @@ const constants = {
 
 async function sendNotification(subscription: any, payload: string) {
     try {
+        if (!process.env.VAPID_PRIVATE_KEY || !process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+            console.error("VAPID keys not configured on server. Cannot send notification.");
+            return { success: false, error: new Error("VAPID keys missing"), shouldDelete: false };
+        }
+        webpush.setVapidDetails(
+            "mailto:contact@prepy.app",
+            process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+            process.env.VAPID_PRIVATE_KEY
+        );
         await webpush.sendNotification(subscription, payload);
         return { success: true };
     } catch (error: any) {
@@ -91,22 +95,6 @@ async function deleteSubscriptionAndState(docId: string) {
 }
 
 async function processCron() {
-    if (!process.env.VAPID_PRIVATE_KEY) {
-        console.error("VAPID private key not set. Cannot send notifications.");
-        // We still check for VAPID_PUBLIC_KEY for web-push init but the private key is what's needed for sending.
-        // Let's assume process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY is available on the client.
-    } else {
-        webpush.setVapidDetails(
-            "mailto:contact@prepy.app",
-            process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-            process.env.VAPID_PRIVATE_KEY
-        );
-    }
-    
-    if (!admin.apps.length) {
-        throw new Error("Firebase Admin SDK not initialized.");
-    }
-
     const serverNow = new Date();
     const windowEnd = add(serverNow, { minutes: CRON_JOB_INTERVAL_MINUTES });
 
@@ -116,7 +104,6 @@ async function processCron() {
         .where('nextNotificationTime', '>=', serverNow.toISOString())
         .where('nextNotificationTime', '<', windowEnd.toISOString())
         .get();
-
 
     if (statesSnapshot.empty) {
         console.log("No states to process for this window. Exiting.");
@@ -158,13 +145,10 @@ async function processCron() {
 
             if (!lastDose || !firstDose || !state.nextNotificationTime) continue;
             
-            const lastDoseTime = new Date(lastDose.time);
             const firstDoseTime = new Date(firstDose.time);
-
-            const nextNotificationTime = new Date(state.nextNotificationTime);
             const protectionStartTime = add(firstDoseTime, { hours: constants.PROTECTION_START_HOURS });
 
-            if (!state.protectionNotified && nextNotificationTime.getTime() === protectionStartTime.getTime()) {
+            if (!state.protectionNotified && isAfter(new Date(state.nextNotificationTime), protectionStartTime) && !isAfter(new Date(), add(protectionStartTime, { minutes: CRON_JOB_INTERVAL_MINUTES }))) {
                  const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
                  const { success, error, shouldDelete } = await sendNotification(subscription, payload);
                  if (success) {
@@ -177,7 +161,7 @@ async function processCron() {
                  }
             } else { 
                 const userNow = utcToZonedTime(new Date(), userTimezone);
-                const protectionLapsesTime = add(lastDoseTime, { hours: constants.LAPSES_AFTER_HOURS });
+                const protectionLapsesTime = add(new Date(lastDose.time), { hours: constants.LAPSES_AFTER_HOURS });
                 const timeRemaining = formatDistance(protectionLapsesTime, userNow, { locale: fr, addSuffix: false });
                 const title = "Rappel PrEP : il est temps !";
                 const body = `Prenez votre dose pour rester protégé. Il vous reste environ ${timeRemaining}.`;
@@ -215,5 +199,3 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: (error as Error).message }, { status: 500 });
     }
 }
-
-    
