@@ -4,7 +4,7 @@ import * as admin from "firebase-admin";
 import * as webpush from "web-push";
 import { z } from "zod";
 import { add } from "date-fns";
-import { formatDistance } from "date-fns/locale";
+import { formatDistance } from "date-fns";
 import { fr } from "date-fns/locale";
 import { utcToZonedTime, zonedTimeToUtc } from "date-fns-tz";
 
@@ -135,12 +135,12 @@ async function processCron() {
 
             if (!lastDose || !firstDose) continue;
             
-            // Correctly convert time strings to Date objects before using them
             const firstDoseTime = new Date(firstDose.time);
             const lastDoseTime = new Date(lastDose.time);
+            const firstDoseTimeInUserTz = utcToZonedTime(firstDoseTime, userTimezone);
             
             // --- Protection Start Notification ---
-            const protectionStartTime = add(firstDoseTime, { hours: constants.PROTECTION_START_HOURS });
+            const protectionStartTime = add(firstDoseTimeInUserTz, { hours: constants.PROTECTION_START_HOURS });
             if (!state.protectionNotified && isWithinNextMinutes(protectionStartTime, userNow, CRON_JOB_INTERVAL_MINUTES)) {
                  const payload = JSON.stringify({ title: "PrEPy: Protection Active !", body: "Votre protection est maintenant active. Continuez à prendre vos doses régulièrement." });
                  const { success, error, shouldDelete } = await sendNotification(subscription, payload);
@@ -156,9 +156,10 @@ async function processCron() {
             }
             
             // --- Dose Reminder Notification ---
-            const reminderTime = add(lastDoseTime, { hours: constants.DOSE_INTERVAL_HOURS });
+            const lastDoseTimeInUserTz = utcToZonedTime(lastDoseTime, userTimezone);
+            const reminderTime = add(lastDoseTimeInUserTz, { hours: constants.DOSE_INTERVAL_HOURS });
             if (isWithinNextMinutes(reminderTime, userNow, CRON_JOB_INTERVAL_MINUTES)) {
-                const protectionLapsesTime = add(lastDoseTime, { hours: constants.LAPSES_AFTER_HOURS });
+                const protectionLapsesTime = add(lastDoseTimeInUserTz, { hours: constants.LAPSES_AFTER_HOURS });
                 const timeRemaining = formatDistance(protectionLapsesTime, userNow, { locale: fr, addSuffix: false });
                 const title = "Rappel PrEP : il est temps !";
                 const body = `Prenez votre dose pour rester protégé. Il vous reste environ ${timeRemaining}.`;
