@@ -17,7 +17,17 @@
       "env": {
         "CRON_SECRET": "8f4a7c1b-a8d2-4e9f-8b1c-6d2e5a0f9b3c",
         "VAPID_PRIVATE_KEY": "YOUR_VAPID_PRIVATE_KEY",
-        "NEXT_PUBLIC_VAPID_PUBLIC_KEY": "BGEPqO_1POfO9s3j01tpkLdYd-v1jYYtMGTcwaxgQ2I_exGj155R8Xk-sXeyV6ORHIq8n4XhGzAsaKxV9wJzO6w"
+        "NEXT_PUBLIC_VAPID_PUBLIC_KEY": "BGEPqO_1POfO9s3j01tpkLdYd-v1jYYtMGTcwaxgQ2I_exGj155R8Xk-sXeyV6ORHIq8n4XhGzAsaKxV9wJzO6w",
+        "SERVICE_ACCOUNT_TYPE": "service_account",
+        "SERVICE_ACCOUNT_PROJECT_ID": "prepy-e8n1t",
+        "SERVICE_ACCOUNT_PRIVATE_KEY_ID": "***",
+        "SERVICE_ACCOUNT_PRIVATE_KEY": "***",
+        "SERVICE_ACCOUNT_CLIENT_EMAIL": "firebase-adminsdk-qg73g@prepy-e8n1t.iam.gserviceaccount.com",
+        "SERVICE_ACCOUNT_CLIENT_ID": "104928929731679313988",
+        "SERVICE_ACCOUNT_AUTH_URI": "https://accounts.google.com/o/oauth2/auth",
+        "SERVICE_ACCOUNT_TOKEN_URI": "https://oauth2.googleapis.com/token",
+        "SERVICE_ACCOUNT_AUTH_PROVIDER_X509_CERT_URL": "https://www.googleapis.com/oauth2/v1/certs",
+        "SERVICE_ACCOUNT_CLIENT_X509_CERT_URL": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-qg73g%40prepy-e8n1t.iam.gserviceaccount.com"
       }
     }
   }
