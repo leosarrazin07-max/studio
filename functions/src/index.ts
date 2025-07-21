@@ -101,6 +101,7 @@ async function processCron() {
         return { notificationsSent: 0, errorsEncountered: 0 };
     }
 
+    console.log(`Processing ${statesSnapshot.size} states for notifications.`);
     let notificationsSent = 0;
     let errorsEncountered = 0;
 
@@ -116,13 +117,9 @@ async function processCron() {
             }
             const state = parseResult.data;
 
-            // Basic checks (redundant due to query, but safe)
-            if (!state.sessionActive || !state.pushEnabled || state.doses.length === 0) {
-                continue;
-            }
-
             const subscriptionDoc = await db.collection('subscriptions').doc(docId).get();
             if (!subscriptionDoc.exists) {
+                console.warn(`Subscription not found for state ${docId}. Skipping.`);
                 continue;
             }
 
@@ -133,18 +130,18 @@ async function processCron() {
             }
             const subscription = subParseResult.data;
             const userTimezone = subscription.timezone || 'Europe/Paris';
-            const userNow = utcToZonedTime(serverNow, userTimezone);
-
+            
             const firstDose = state.doses.find(d => d.type === 'start');
             const lastDose = state.doses.filter(d => d.type !== "stop").sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())[0];
 
-            if (!lastDose || !firstDose) continue;
+            if (!lastDose || !firstDose || !state.nextNotificationTime) continue;
             
             const lastDoseTime = new Date(lastDose.time);
+            const firstDoseTime = new Date(firstDose.time);
 
             // Determine which notification to send based on nextNotificationTime
-            const nextNotificationTime = new Date(state.nextNotificationTime!);
-            const protectionStartTime = add(new Date(firstDose.time), { hours: constants.PROTECTION_START_HOURS });
+            const nextNotificationTime = new Date(state.nextNotificationTime);
+            const protectionStartTime = add(firstDoseTime, { hours: constants.PROTECTION_START_HOURS });
 
             // Is it time for the protection start notification?
             if (!state.protectionNotified && nextNotificationTime.getTime() === protectionStartTime.getTime()) {
@@ -159,6 +156,7 @@ async function processCron() {
                     console.error(`Failed to send protection notification to ${docId}:`, error);
                  }
             } else { // It must be a dose reminder
+                const userNow = utcToZonedTime(serverNow, userTimezone);
                 const protectionLapsesTime = add(lastDoseTime, { hours: constants.LAPSES_AFTER_HOURS });
                 const timeRemaining = formatDistance(protectionLapsesTime, userNow, { locale: fr, addSuffix: false });
                 const title = "Rappel PrEP : il est temps !";
