@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info, PowerOff } from 'lucide-react';
+import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info, PowerOff, Link } from 'lucide-react';
 import type { UsePrepStateReturn } from '@/lib/types';
 import { LogDoseDialog } from './log-dose-dialog';
 import { DoseHistory } from './dose-history';
@@ -112,10 +112,10 @@ export function PrepDashboard({
                ) : (
                 <Button
                     size="lg"
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full shadow-md md:col-span-2 text-base"
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full shadow-md md:col-span-2 text-sm"
                     onClick={() => setIsLogDoseOpen(true)}
                 >
-                    <Pill className="mr-2 h-4 w-4" /> Démarrer une nouvelle session
+                    <Link className="mr-2 h-4 w-4" /> Démarrer une nouvelle session
                 </Button>
                )}
             </div>
