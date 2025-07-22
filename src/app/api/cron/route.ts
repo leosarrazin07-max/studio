@@ -8,28 +8,28 @@ import { formatDistance } from "date-fns";
 import { fr } from "date-fns/locale";
 import { utcToZonedTime } from "date-fns-tz";
 
-const serviceAccount = {
-  projectId: "prepy-e8n1t",
-  privateKey: process.env.SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  clientEmail: "firebase-adminsdk-qg73g@prepy-e8n1t.iam.gserviceaccount.com",
-} as admin.ServiceAccount;
+// Check if the app is already initialized to prevent errors
+if (admin.apps.length === 0 && process.env.SERVICE_ACCOUNT_PRIVATE_KEY) {
+  const serviceAccount = {
+    projectId: "prepy-e8n1t",
+    privateKey: process.env.SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    clientEmail: "firebase-adminsdk-qg73g@prepy-e8n1t.iam.gserviceaccount.com",
+  } as admin.ServiceAccount;
 
-if (admin.apps.length === 0) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
   });
+} else if (admin.apps.length === 0) {
+    console.warn("Firebase Admin SDK not initialized. SERVICE_ACCOUNT_PRIVATE_KEY secret might be missing.");
 }
-const db = admin.firestore();
+
+const db = admin.apps.length > 0 ? admin.firestore() : null;
 
 if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
     "mailto:contact@prepy.app",
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
-  );
-} else {
-  console.log(
-    "VAPID private key for webpush not set on server, this is expected if not sending push notifs from here."
   );
 }
 
@@ -88,6 +88,7 @@ async function sendNotification(subscription: any, payload: string) {
 }
 
 async function deleteSubscriptionAndState(docId: string) {
+    if (!db) return;
     console.warn(`Subscription for doc ${docId} is no longer valid. Deleting.`);
     const subRef = db.collection('subscriptions').doc(docId);
     const stateRef = db.collection('states').doc(docId);
@@ -95,6 +96,11 @@ async function deleteSubscriptionAndState(docId: string) {
 }
 
 async function processCron() {
+    if (!db) {
+        console.error("Firestore not initialized. Cron job cannot run.");
+        return { notificationsSent: 0, errorsEncountered: 1, message: "Firestore not initialized." };
+    }
+
     const serverNow = new Date();
     const windowEnd = add(serverNow, { minutes: CRON_JOB_INTERVAL_MINUTES });
 
@@ -188,14 +194,16 @@ async function processCron() {
 
 export async function GET(request: Request) {
     const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      // Note: CRON_SECRET n'est pas défini dans l'environnement du framework backend
-      // On se fie donc au fait que l'endpoint n'est pas public.
-      // Une meilleure solution utiliserait l'authentification OIDC de Cloud Scheduler.
-      // Pour cet exemple, on se passe d'une variable qui n'est pas là.
-    }
+    // For now, we allow the cron to run without a secret for simplicity,
+    // but we will add the secret check back later.
+    // if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    //   return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    // }
   
     try {
+      if (!db) {
+        throw new Error("Database not available.");
+      }
       const result = await processCron();
       return NextResponse.json(result);
     } catch (error) {
