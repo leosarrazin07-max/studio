@@ -97,7 +97,7 @@ export function PrepDashboard({
                         <AlertDialogHeader>
                             <AlertDialogTitle>Terminer votre session PrEP?</AlertDialogTitle>
                             <AlertDialogDescription>
-                            Cela arrêtera les rappels de notification. Votre protection finale sera calculée en fonction de votre dernière prise.
+                            Cela arrêtera les rappels de notification. Votre protection sera calculée en fonction de votre dernière prise.
                             </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -130,7 +130,7 @@ export function PrepDashboard({
               </div>
               <div className="ml-3">
                   <p className="text-sm text-blue-700">
-                      Pour rester protégé, n'oubliez pas de continuer les prises pendant 2 jours après votre dernier rapport sexuel.
+                      Pour être protégé(e) après un rapport, continuez les prises quotidiennes pendant les 2 jours suivants.
                   </p>
               </div>
           </div>
@@ -149,8 +149,3 @@ export function PrepDashboard({
     </div>
   );
 }
-
-
-
-
-
