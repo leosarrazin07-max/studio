@@ -12,54 +12,111 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { DateTimePicker } from '@/components/date-time-picker';
-import { Clock, Calendar } from 'lucide-react';
+import { Clock, Calendar, Pill, RefreshCw } from 'lucide-react';
+import type { PrepStatus } from '@/lib/types';
 
 interface LogDoseDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  onLogDose: (time: Date) => void;
-  isInitialDose: boolean;
+  onLogDose: (dose: { time: Date; pills: number }) => void;
+  onStartSession: (time: Date) => void;
+  status: PrepStatus;
 }
 
 export function LogDoseDialog({
   isOpen,
   onOpenChange,
   onLogDose,
-  isInitialDose,
+  onStartSession,
+  status,
 }: LogDoseDialogProps) {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [pickerPillCount, setPickerPillCount] = useState(1);
 
-  const pillCount = isInitialDose ? '2 comprimés' : '1 comprimé';
-  const title = isInitialDose ? 'Démarrer votre session' : 'Enregistrer votre prise';
-  const description = `Confirmez quand vous avez pris votre dose. ${isInitialDose ? "Vous commencerez avec 2 comprimés." : ""}`;
+  const isInitialDose = status === 'inactive';
+  const isMissedDose = status === 'missed';
 
-  const handleLogDose = (time: Date) => {
-    onLogDose(time);
+  let title = 'Enregistrer votre prise';
+  let description = "Confirmez quand vous avez pris votre dose de 1 comprimé.";
+  if (isInitialDose) {
+    title = 'Démarrer votre session';
+    description = 'Vous commencerez avec 2 comprimés. Confirmez quand vous avez pris votre dose initiale.';
+  } else if (isMissedDose) {
+    title = 'Dose manquée';
+    description = "Il semble que vous ayez manqué une dose. Mettez à jour votre statut.";
+  }
+
+  const handleLog = (time: Date, pills: number) => {
+    if (pills === 2) {
+        onStartSession(time);
+    } else {
+        onLogDose({ time, pills });
+    }
     onOpenChange(false);
     setShowTimePicker(false);
   };
 
-  const handleNow = () => {
-    handleLogDose(new Date());
+  const handleNow = (pills: number) => {
+    handleLog(new Date(), pills);
   };
 
-  const handleEarlier = () => {
+  const handleEarlier = (pills: number) => {
+    setPickerPillCount(pills);
     setShowTimePicker(true);
   };
   
   const handlePickerConfirm = () => {
-    handleLogDose(selectedDate);
+    handleLog(selectedDate, pickerPillCount);
   }
 
   const handleClose = () => {
     onOpenChange(false);
-    // Add a delay to allow the dialog to close before resetting state
     setTimeout(() => {
         setShowTimePicker(false);
         setSelectedDate(new Date());
     }, 300);
   }
+
+  const renderContent = () => {
+    if (showTimePicker) {
+      return (
+        <div className="py-4 flex flex-col items-center gap-4">
+          <p className="text-sm text-muted-foreground">Sélectionnez la date et l'heure de la prise de {pickerPillCount} comprimé(s).</p>
+          <DateTimePicker date={selectedDate} setDate={setSelectedDate} />
+          <DialogFooter>
+             <Button onClick={handlePickerConfirm}>Confirmer l'heure</Button>
+          </DialogFooter>
+        </div>
+      );
+    }
+
+    if (isMissedDose) {
+        return (
+            <div className="flex flex-col gap-3 pt-4">
+                <Button variant="outline" onClick={() => handleEarlier(1)}>
+                    <Calendar className="mr-2 h-4 w-4" /> J'ai pris 1 comprimé plus tôt
+                </Button>
+                <Button variant="destructive" onClick={() => handleEarlier(2)}>
+                    <RefreshCw className="mr-2 h-4 w-4" /> Recommencer avec 2 comprimés
+                </Button>
+            </div>
+        );
+    }
+
+    const pills = isInitialDose ? 2 : 1;
+    return (
+      <DialogFooter className="sm:justify-between flex-col sm:flex-row gap-2 pt-4">
+          <Button variant="outline" onClick={() => handleEarlier(pills)}>
+              <Calendar className="mr-2 h-4 w-4" /> J'ai pris {pills} comprimé(s) plus tôt
+          </Button>
+          <Button onClick={() => handleNow(pills)}>
+              <Clock className="mr-2 h-4 w-4" /> J'ai pris {pills} comprimé(s) maintenant
+          </Button>
+      </DialogFooter>
+    );
+  }
+
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -68,32 +125,8 @@ export function LogDoseDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-
-        {showTimePicker ? (
-          <div className="py-4 flex flex-col items-center gap-4">
-            <p className="text-sm text-muted-foreground">Sélectionnez la date et l'heure de la prise de {pillCount}.</p>
-            <DateTimePicker date={selectedDate} setDate={setSelectedDate} />
-          </div>
-        ) : null}
-        
-        <DialogFooter className="sm:justify-between flex-col sm:flex-row gap-2">
-            {!showTimePicker && (
-                <Button variant="outline" onClick={handleEarlier}>
-                    <Calendar className="mr-2 h-4 w-4" /> J'ai pris {pillCount} plus tôt
-                </Button>
-            )}
-            
-            {showTimePicker ? (
-                 <Button onClick={handlePickerConfirm}>Confirmer l'heure</Button>
-            ) : (
-                <Button onClick={handleNow}>
-                    <Clock className="mr-2 h-4 w-4" /> J'ai pris {pillCount} maintenant
-                </Button>
-            )}
-        </DialogFooter>
+        {renderContent()}
       </DialogContent>
     </Dialog>
   );
 }
-
-    

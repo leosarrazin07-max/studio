@@ -7,22 +7,14 @@ import { fr } from 'date-fns/locale';
 import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { getFirestore, doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { app } from '@/lib/firebase-client';
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-const firestore = getFirestore(app);
-
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = window.atob(base64);
   const outputArray = new Uint8Array(rawData.length);
-
   for (let i = 0; i < rawData.length; ++i) {
     outputArray[i] = rawData.charCodeAt(i);
   }
@@ -36,12 +28,6 @@ const safelyParseJSON = (jsonString: string | null) => {
     if (parsed.doses) {
         parsed.doses = parsed.doses.map((d: any) => ({...d, time: new Date(d.time)}));
     }
-    if (parsed.nextNotificationTime && typeof parsed.nextNotificationTime === 'object' && parsed.nextNotificationTime.value) {
-        parsed.nextNotificationTime = new Date(parsed.nextNotificationTime.value);
-    } else if (typeof parsed.nextNotificationTime === 'string') {
-        parsed.nextNotificationTime = new Date(parsed.nextNotificationTime);
-    }
-
     return parsed;
   } catch (e) {
     console.error("Failed to parse JSON from localStorage", e);
@@ -53,11 +39,7 @@ const defaultState: PrepState = {
     doses: [],
     sessionActive: false,
     pushEnabled: false,
-    protectionNotified: false,
-    nextNotificationTime: null,
 };
-
-const hashEndpoint = (endpoint: string) => btoa(endpoint).replace(/=/g, '');
 
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
@@ -66,44 +48,19 @@ export function usePrepState(): UsePrepStateReturn {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(defaultState);
 
-  const calculateNextNotificationTime = useCallback((doses: Dose[], protectionNotified: boolean | undefined): Date | null => {
-    if (!doses || doses.length === 0) return null;
-
-    const firstDose = doses.find(d => d.type === 'start');
-    const lastDose = doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
-    
-    if (!firstDose) return null;
-
-    const protectionStartTime = add(firstDose.time, { hours: PROTECTION_START_HOURS });
-    if (!protectionNotified && isAfter(protectionStartTime, new Date())) {
-        return protectionStartTime;
-    }
-
-    if (lastDose) {
-      return add(lastDose.time, { hours: DOSE_INTERVAL_HOURS });
-    }
-    
-    return null;
+  const saveState = useCallback((newState: PrepState) => {
+      setState(newState);
+      try {
+        const stateToSave = {
+            ...newState,
+            doses: newState.doses.map(d => ({...d, time: d.time.toISOString()}))
+        };
+        localStorage.setItem('prepState', JSON.stringify(stateToSave));
+      } catch (e) {
+          console.error("Could not save state to localStorage", e);
+      }
   }, []);
-  
-  const updateSubscriptionOnServer = useCallback(async (sub: PushSubscription | null) => {
-    if (sub) {
-        try {
-            const subJson = sub.toJSON();
-            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            const endpointHash = hashEndpoint(sub.endpoint);
-            await setDoc(doc(firestore, "subscriptions", endpointHash), { ...subJson, timezone }, { merge: true });
-        } catch (e) {
-            console.error("Failed to save subscription", e);
-            toast({
-                title: "Erreur serveur",
-                description: "Impossible de sauvegarder les préférences de notification.",
-                variant: "destructive",
-            });
-        }
-    }
-  }, [toast]);
-  
+
   const updateSubscriptionObject = useCallback(async () => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       try {
@@ -113,30 +70,9 @@ export function usePrepState(): UsePrepStateReturn {
         setState(prevState => ({...prevState, pushEnabled: !!sub}));
       } catch (error) {
         console.error("Error getting push subscription:", error);
-        setSubscription(null);
-        setState(prevState => ({...prevState, pushEnabled: false}));
       }
     }
   }, []);
-
-  const unsubscribeFromNotifications = useCallback(async () => {
-    if (subscription) {
-      const endpointHash = hashEndpoint(subscription.endpoint);
-      await subscription.unsubscribe();
-      try {
-          const stateRef = doc(firestore, "states", endpointHash);
-          const subRef = doc(firestore, "subscriptions", endpointHash);
-          await deleteDoc(stateRef);
-          await deleteDoc(subRef);
-      } catch(e) {
-          console.error("Failed to delete state from server", e);
-      }
-      setSubscription(null);
-      setState(prevState => ({...prevState, pushEnabled: false}));
-      toast({ title: "Notifications désactivées." });
-    }
-  }, [subscription, toast]);
-
 
   const requestNotificationPermission = useCallback(async () => {
     if (!VAPID_PUBLIC_KEY) {
@@ -144,165 +80,88 @@ export function usePrepState(): UsePrepStateReturn {
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
         return false;
     }
-
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
         return false;
     }
-
     try {
         const registration = await navigator.serviceWorker.ready;
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-            toast({
-                title: "Notifications refusées",
-                description: "Les rappels ne fonctionneront pas. Vous pouvez les activer dans les paramètres de votre navigateur.",
-                variant: "destructive"
-            });
-            setState(prevState => ({...prevState, pushEnabled: false}));
+            toast({ title: "Notifications refusées", variant: "destructive" });
             return false;
         }
-
-        let currentSubscription = await registration.pushManager.getSubscription();
-        if (!currentSubscription) {
-            currentSubscription = await registration.pushManager.subscribe({
+        let sub = await registration.pushManager.getSubscription();
+        if (!sub) {
+            sub = await registration.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
             });
         }
-        
-        setSubscription(currentSubscription);
-        await updateSubscriptionOnServer(currentSubscription);
-        
-        setState(prevState => ({...prevState, pushEnabled: true}));
+        setSubscription(sub);
+        saveState({...state, pushEnabled: true});
         toast({ title: "Notifications activées!" });
         return true;
     } catch (error) {
-        console.error("Error subscribing to push notifications:", error);
-        toast({
-            title: "Erreur d'abonnement",
-            description: "Impossible de s'abonner aux notifications. Veuillez réessayer.",
-            variant: "destructive"
-        });
-        setState(prevState => ({...prevState, pushEnabled: false}));
+        console.error("Error subscribing:", error);
+        toast({ title: "Erreur d'abonnement", variant: "destructive" });
         return false;
     }
-  }, [toast, updateSubscriptionOnServer]);
+  }, [toast, state, saveState]);
 
+  const unsubscribeFromNotifications = useCallback(async () => {
+    if (subscription) {
+        await subscription.unsubscribe();
+        setSubscription(null);
+        saveState({...state, pushEnabled: false});
+        toast({ title: "Notifications désactivées." });
+    }
+  }, [subscription, toast, state, saveState]);
 
   useEffect(() => {
     setIsClient(true);
-    
-    if ('serviceWorker' in navigator && window.Worker) {
+    if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js')
-        .then(registration => {
-            console.log('Service Worker enregistré avec succès:', registration);
-            updateSubscriptionObject();
-        })
-        .catch(error => console.error('Erreur lors de l’enregistrement du Service Worker:', error));
+        .then(() => updateSubscriptionObject())
+        .catch(error => console.error('Erreur Service Worker:', error));
     }
-
+    
     const savedState = safelyParseJSON(localStorage.getItem('prepState'));
     if (savedState) {
-      setState(savedState);
+        setState(savedState);
     }
-
-    const timer = setInterval(() => setNow(new Date()), 1000 * 60);
+    
+    const timer = setInterval(() => setNow(new Date()), 1000 * 60); // Update "now" every minute
     return () => clearInterval(timer);
   }, [updateSubscriptionObject]);
 
-  useEffect(() => {
-    if (isClient) {
-        const nextNotificationTime = calculateNextNotificationTime(state.doses, state.protectionNotified);
-        
-        const stateToSave = {
-          ...state,
-          doses: state.doses.map(d => ({...d, time: d.time.toISOString()})),
-          nextNotificationTime: nextNotificationTime ? nextNotificationTime.toISOString() : null,
-        };
-
-        localStorage.setItem('prepState', JSON.stringify(stateToSave));
-
-        if (state.sessionActive && subscription) {
-            const endpointHash = hashEndpoint(subscription.endpoint);
-            setDoc(doc(firestore, "states", endpointHash), stateToSave);
-        }
-    }
-  }, [state, isClient, subscription, calculateNextNotificationTime]);
+  const startSession = useCallback((time: Date) => {
+    const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
+    const newDoses = [newDose];
+    saveState({ ...defaultState, doses: newDoses, sessionActive: true, pushEnabled: state.pushEnabled });
+  }, [saveState, state.pushEnabled]);
 
   const addDose = useCallback((dose: { time: Date; pills: number }) => {
-    setState(prevState => {
-      const newDose = { ...dose, type: 'dose' as const, id: new Date().toISOString() };
-      const newDoses = [...prevState.doses, newDose]
-        .sort((a, b) => a.time.getTime() - b.time.getTime());
-      
-      const nextNotificationTime = calculateNextNotificationTime(newDoses, prevState.protectionNotified);
-
-      return { ...prevState, sessionActive: true, doses: newDoses, nextNotificationTime: nextNotificationTime };
-    });
-  }, [calculateNextNotificationTime]);
-
-  const startSession = useCallback(async (time: Date) => {
-    const hasPermission = await requestNotificationPermission();
-    if (!hasPermission) {
-        toast({
-            title: "Action impossible",
-            description: "L'autorisation de notification est requise pour démarrer une session.",
-            variant: "destructive"
-        });
-        return;
-    }
-    
-    const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
-    
-    setState(prevState => {
-        const updatedDoses = [newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
-        const nextNotificationTime = calculateNextNotificationTime(updatedDoses, false);
-        const newState: PrepState = {
-            ...defaultState,
-            pushEnabled: prevState.pushEnabled,
-            doses: updatedDoses,
-            sessionActive: true,
-            protectionNotified: false,
-            nextNotificationTime: nextNotificationTime,
-        };
-        return newState;
-    });
-    
-  }, [requestNotificationPermission, toast, calculateNextNotificationTime]);
+    const newDose = { ...dose, type: 'dose' as const, id: new Date().toISOString() };
+    const newDoses = [...state.doses, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
+    saveState({ ...state, doses: newDoses, sessionActive: true });
+  }, [state, saveState]);
 
   const endSession = useCallback(() => {
-    setState(prevState => {
-        const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
-        const updatedDoses = [...prevState.doses, stopEvent].sort((a, b) => a.time.getTime() - b.time.getTime());
-        return { ...prevState, sessionActive: false, doses: updatedDoses, nextNotificationTime: null };
-    });
-    toast({
-        title: "Session terminée",
-        description: "Les rappels de notification sont maintenant arrêtés."
-    });
-  }, [toast]);
+    const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
+    const updatedDoses = [...state.doses, stopEvent];
+    saveState({ ...state, sessionActive: false, doses: updatedDoses });
+    toast({ title: "Session terminée", description: "Les rappels de notification sont maintenant arrêtés." });
+  }, [state, saveState, toast]);
 
-  const clearHistory = useCallback(async () => {
-    if (subscription) {
-        const endpointHash = hashEndpoint(subscription.endpoint);
-        try {
-            await deleteDoc(doc(firestore, "states", endpointHash));
-            await deleteDoc(doc(firestore, "subscriptions", endpointHash));
-        } catch(e) {
-            console.error("Failed to delete state from server during clear history", e);
-        }
-    }
+  const clearHistory = useCallback(() => {
     localStorage.removeItem('prepState');
-    setState(prevState => ({
-        ...defaultState,
-        pushEnabled: prevState.pushEnabled
-    }));
-    updateSubscriptionObject();
-    toast({ title: "Données effacées", description: "Votre historique local a été supprimé." });
-  }, [updateSubscriptionObject, toast, subscription]);
-  
-  const lastDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
+    saveState({ ...defaultState, pushEnabled: state.pushEnabled });
+    toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
+  }, [saveState, state.pushEnabled, toast]);
+
+  const lastDose = state.doses.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
+  const firstDoseInSession = state.doses.find(d => d.type === 'start');
 
   let status: PrepStatus = 'inactive';
   let statusColor = 'bg-gray-500';
@@ -310,8 +169,6 @@ export function usePrepState(): UsePrepStateReturn {
   let nextDoseIn = '';
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
-
-  const firstDoseInSession = state.doses.find(d => d.type === 'start');
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
     const lastDoseTime = lastDose.time;
@@ -323,10 +180,10 @@ export function usePrepState(): UsePrepStateReturn {
       status = 'loading';
       statusColor = 'bg-primary';
       statusText = 'Protection en cours...';
-      protectionStartsIn = `Sera active ${formatDistanceToNowStrict(protectionStartTime, { addSuffix: true, locale: fr })}`;
+      protectionStartsIn = `Active ${formatDistanceToNowStrict(protectionStartTime, { addSuffix: true, locale: fr })} (à ${format(protectionStartTime, 'HH:mm', { locale: fr })})`;
     } else if (isBefore(now, protectionLapsesTime)) {
       status = 'effective';
-      statusColor = 'bg-accent'; 
+      statusColor = 'bg-accent';
       statusText = 'Protection active';
       nextDoseIn = `Prochaine dose ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
       const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
@@ -338,12 +195,15 @@ export function usePrepState(): UsePrepStateReturn {
       const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
-  } else if (isClient && !state.sessionActive && lastDose) {
-    status = 'missed';
-    statusColor = 'bg-destructive';
-    statusText = 'Session terminée';
-    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+  } else if (isClient && !state.sessionActive && state.doses.length > 0) {
+     const lastEffectiveDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
+     if (lastEffectiveDose) {
+        status = 'missed';
+        statusColor = 'bg-destructive';
+        statusText = 'Session terminée';
+        const protectionEndsAt = add(lastEffectiveDose.time, { hours: FINAL_PROTECTION_HOURS });
+        protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+     }
   }
 
   if (!isClient) {
@@ -351,14 +211,9 @@ export function usePrepState(): UsePrepStateReturn {
     statusColor = "bg-muted";
   }
 
-  const dosesAsDates = state.doses.map(d => ({ ...d, time: new Date(d.time) }));
-  
-  const nextNotificationTimeAsDate = state.nextNotificationTime ? new Date(state.nextNotificationTime) : null;
-
   return {
     ...state,
-    nextNotificationTime: nextNotificationTimeAsDate,
-    doses: dosesAsDates.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
+    doses: state.doses.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
     statusText,

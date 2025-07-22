@@ -15,10 +15,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Pill, AlertTriangle, ShieldCheck, Clock, CheckCircle2, ShieldOff } from 'lucide-react';
+import { Pill, AlertTriangle, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info } from 'lucide-react';
 import type { UsePrepStateReturn } from '@/lib/types';
 import { LogDoseDialog } from './log-dose-dialog';
-import { DoseHistory } from './dose-history';
 
 export function PrepDashboard({
   doses,
@@ -30,7 +29,8 @@ export function PrepDashboard({
   protectionEndsAtText,
   addDose,
   endSession,
-  sessionActive
+  sessionActive,
+  startSession
 }: UsePrepStateReturn) {
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
 
@@ -59,14 +59,15 @@ export function PrepDashboard({
           </div>
         );
       case 'missed':
-        return <p className="text-white/90 font-medium">{protectionEndsAtText}</p>;
+        return (
+          <div className="text-center">
+            <p className="text-white/90 font-medium">Prenez une dose dès que possible.</p>
+             {protectionEndsAtText && <p className="text-xs text-white/70 mt-1">{protectionEndsAtText}</p>}
+          </div>
+        );
       default:
         return null;
     }
-  };
-
-  const handleDoseLogged = (time: Date) => {
-    addDose({ time, pills: 1 });
   };
 
   return (
@@ -116,16 +117,28 @@ export function PrepDashboard({
         </CardContent>
       </Card>
       
+      <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-md">
+        <div className="flex">
+          <div className="flex-shrink-0">
+            <Info className="h-5 w-5 text-blue-400" />
+          </div>
+          <div className="ml-3">
+            <p className="text-sm text-blue-700">
+              Pour une protection continue, n'oubliez pas de prendre un comprimé chaque jour pendant les deux jours suivant votre dernier rapport sexuel.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <DoseHistory doses={doses} />
 
       <LogDoseDialog
         isOpen={isLogDoseOpen}
         onOpenChange={setIsLogDoseOpen}
-        onLogDose={handleDoseLogged}
-        isInitialDose={false}
+        onLogDose={addDose}
+        onStartSession={startSession}
+        status={status}
       />
     </div>
   );
 }
-
-    

@@ -4,8 +4,9 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import type { Dose, DoseType } from "@/lib/types";
+import type { Dose } from "@/lib/types";
 import { format } from "date-fns";
+import { fr } from "date-fns/locale";
 import { History, Pill, PlayCircle, StopCircle, CheckCircle2 } from "lucide-react";
 
 interface DoseHistoryProps {
@@ -15,7 +16,7 @@ interface DoseHistoryProps {
 const EventDetails: React.FC<{ dose: Dose }> = ({ dose }) => {
     let Icon;
     let title = '';
-    let details = `le ${format(new Date(dose.time), "EEEE, dd MMMM 'à' p")}`;
+    let details = `le ${format(new Date(dose.time), "eeee dd MMMM 'à' HH:mm", { locale: fr })}`;
 
     switch (dose.type) {
         case 'start':
@@ -70,7 +71,7 @@ export function DoseHistory({ doses }: DoseHistoryProps) {
           {reversedDoses.length > 0 ? (
             <div className="space-y-4">
               {reversedDoses.map((dose, index) => (
-                <div key={index}>
+                <div key={dose.id}>
                   <EventDetails dose={dose} />
                   {index < reversedDoses.length - 1 && <Separator className="mt-4" />}
                 </div>

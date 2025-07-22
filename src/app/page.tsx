@@ -14,7 +14,7 @@ export default function Home() {
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const { sessionActive, startSession, clearHistory, pushEnabled, requestNotificationPermission, unsubscribeFromNotifications } = prepState;
+  const { sessionActive, startSession, clearHistory, pushEnabled, requestNotificationPermission, unsubscribeFromNotifications, addDose, status } = prepState;
 
   const WelcomeScreen = () => (
     <div className="flex flex-col items-center justify-center h-full text-center p-4 md:p-8">
@@ -34,12 +34,6 @@ export default function Home() {
       >
         Démarrer une session PrEP
       </Button>
-      <LogDoseDialog
-        isOpen={isLogDoseOpen}
-        onOpenChange={setIsLogDoseOpen}
-        onLogDose={startSession}
-        isInitialDose={true}
-      />
     </div>
   );
 
@@ -61,6 +55,13 @@ export default function Home() {
           {sessionActive ? <PrepDashboard {...prepState} /> : <WelcomeScreen />}
         </div>
       </main>
+       <LogDoseDialog
+          isOpen={isLogDoseOpen}
+          onOpenChange={setIsLogDoseOpen}
+          onLogDose={addDose}
+          onStartSession={startSession}
+          status={status}
+        />
       <SettingsSheet
         isOpen={isSettingsOpen}
         onOpenChange={setIsSettingsOpen}
