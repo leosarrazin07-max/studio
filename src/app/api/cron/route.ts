@@ -9,18 +9,21 @@ import { fr } from "date-fns/locale";
 import { utcToZonedTime } from "date-fns-tz";
 
 // Check if the app is already initialized to prevent errors
-if (admin.apps.length === 0 && process.env.SERVICE_ACCOUNT_PRIVATE_KEY) {
-  const serviceAccount = {
-    projectId: "prepy-e8n1t",
-    privateKey: process.env.SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, '\n'),
-    clientEmail: "firebase-adminsdk-qg73g@prepy-e8n1t.iam.gserviceaccount.com",
-  } as admin.ServiceAccount;
+if (admin.apps.length === 0) {
+  // The SERVICE_ACCOUNT_PRIVATE_KEY is injected as an environment variable by Firebase App Hosting.
+  if (process.env.SERVICE_ACCOUNT_PRIVATE_KEY) {
+    const serviceAccount = {
+      projectId: "prepy-e8n1t",
+      privateKey: process.env.SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      clientEmail: "firebase-adminsdk-qg73g@prepy-e8n1t.iam.gserviceaccount.com",
+    } as admin.ServiceAccount;
 
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
-} else if (admin.apps.length === 0) {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+  } else {
     console.warn("Firebase Admin SDK not initialized. SERVICE_ACCOUNT_PRIVATE_KEY secret might be missing.");
+  }
 }
 
 const db = admin.apps.length > 0 ? admin.firestore() : null;
