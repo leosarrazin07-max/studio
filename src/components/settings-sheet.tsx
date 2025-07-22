@@ -23,7 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { BellRing, Trash2 } from "lucide-react";
+import { BellRing, Trash2, AlertTriangle } from "lucide-react";
 
 interface SettingsSheetProps {
   isOpen: boolean;
@@ -32,6 +32,8 @@ interface SettingsSheetProps {
   pushEnabled: boolean;
   onTogglePush: (enabled: boolean) => void;
 }
+
+const VAPID_KEY_CONFIGURED = !!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
 export function SettingsSheet({
   isOpen,
@@ -56,21 +58,30 @@ export function SettingsSheet({
           </SheetDescription>
         </SheetHeader>
         <div className="grid gap-6 py-8">
-          <div className="flex items-center justify-between space-x-2 p-4 rounded-lg border">
-            <Label htmlFor="notifications-switch" className="flex flex-col space-y-1 cursor-pointer">
-              <span className="font-medium flex items-center gap-2">
-                <BellRing className="h-4 w-4" />
-                Notifications Push
-              </span>
-              <span className="text-xs font-normal leading-snug text-muted-foreground">
-                Recevez des rappels pour vos prises.
-              </span>
-            </Label>
-            <Switch
-              id="notifications-switch"
-              checked={pushEnabled}
-              onCheckedChange={onTogglePush}
-            />
+          <div className="flex flex-col gap-2 p-4 rounded-lg border">
+            <div className="flex items-center justify-between space-x-2">
+                <Label htmlFor="notifications-switch" className="flex flex-col space-y-1 cursor-pointer">
+                  <span className="font-medium flex items-center gap-2">
+                    <BellRing className="h-4 w-4" />
+                    Notifications Push
+                  </span>
+                  <span className="text-xs font-normal leading-snug text-muted-foreground">
+                    Recevez des rappels pour vos prises.
+                  </span>
+                </Label>
+                <Switch
+                  id="notifications-switch"
+                  checked={pushEnabled && VAPID_KEY_CONFIGURED}
+                  onCheckedChange={onTogglePush}
+                  disabled={!VAPID_KEY_CONFIGURED}
+                />
+            </div>
+            {!VAPID_KEY_CONFIGURED && (
+                <div className="flex items-center gap-2 text-xs text-destructive pt-2 border-t border-destructive/20">
+                    <AlertTriangle size={14}/>
+                    <p>Fonctionnalité non disponible. La configuration des notifications est manquante.</p>
+                </div>
+            )}
           </div>
         </div>
         <SheetFooter className="absolute bottom-4 right-4 left-4">
