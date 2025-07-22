@@ -73,7 +73,7 @@ export function PrepDashboard({
             <div className="mb-4">
               <StatusIcon />
             </div>
-            <h2 className="text-2xl font-bold text-white font-headline">{statusText}</h2>
+            <h2 className="text-xl md:text-2xl font-bold text-white font-headline">{statusText}</h2>
             <StatusDetails />
           </div>
           
@@ -110,14 +110,16 @@ export function PrepDashboard({
                     </AlertDialog>
                  </>
                ) : (
-                <Button
-                    size="lg"
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full shadow-md md:col-span-2 flex items-center justify-center"
-                    onClick={() => setIsLogDoseOpen(true)}
-                >
-                    <Pill className="mr-2 h-5 w-5" />
-                    <span>Démarrer une nouvelle session</span>
-                </Button>
+                <div className="md:col-span-2">
+                    <Button
+                        size="lg"
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground w-full shadow-md flex items-center justify-center"
+                        onClick={() => setIsLogDoseOpen(true)}
+                    >
+                        <Pill className="mr-2 h-5 w-5" />
+                        <span>Démarrer une nouvelle session</span>
+                    </Button>
+                </div>
                )}
             </div>
         </CardContent>
@@ -130,7 +132,7 @@ export function PrepDashboard({
               </div>
               <div className="ml-3">
                   <p className="text-sm text-blue-700">
-                      Pour être protégé(e) après un rapport, continuez les prises quotidiennes pendant les 2 jours suivants.
+                      Rappel: La protection pour un rapport sexuel est assurée si vous continuez à prendre 1 comprimé par jour pendant les 2 jours qui suivent ce rapport.
                   </p>
               </div>
           </div>
