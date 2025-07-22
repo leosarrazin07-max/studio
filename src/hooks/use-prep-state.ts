@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -123,7 +124,7 @@ export function usePrepState(): UsePrepStateReturn {
         const timer = setInterval(() => setNow(new Date()), 1000 * 60);
         return () => clearInterval(timer);
     }
-  }, []);
+  }, [syncPushSubscription]);
   
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -240,23 +241,26 @@ export function usePrepState(): UsePrepStateReturn {
       statusColor = 'bg-accent';
       statusText = 'Protection active';
       nextDoseIn = `Prochaine dose ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
-      const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
-      protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     } else {
       status = 'missed';
       statusColor = 'bg-destructive';
       statusText = 'Dose manquée';
-      const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
-      protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
   } else if (isClient && !state.sessionActive && state.doses.length > 0) {
      const lastEffectiveDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
      if (lastEffectiveDose) {
-        status = 'inactive'; // Changed from 'missed' to 'inactive' to better reflect session end
-        statusColor = 'bg-gray-500';
-        statusText = 'Session terminée';
-        const protectionEndsAt = add(lastEffectiveDose.time, { hours: FINAL_PROTECTION_HOURS });
-        protectionEndsAtText = `Protection résiduelle jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+        const protectionLapsesTime = add(lastEffectiveDose.time, { hours: FINAL_PROTECTION_HOURS });
+        if (isBefore(now, protectionLapsesTime)) {
+            status = 'inactive';
+            statusColor = 'bg-gray-500';
+            statusText = 'Session terminée';
+            protectionEndsAtText = `Protection résiduelle jusqu'au ${format(protectionLapsesTime, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+        } else {
+            status = 'inactive';
+            statusColor = 'bg-gray-500';
+            statusText = 'Protection terminée';
+            protectionEndsAtText = "La période de protection résiduelle est terminée."
+        }
      }
   }
 

@@ -55,26 +55,11 @@ export function PrepDashboard({
       case 'loading':
         return <p className="text-white/80">{protectionStartsIn}</p>;
       case 'effective':
-        return (
-          <div className="text-center">
-            <p className="text-white/90">{nextDoseIn}</p>
-            {protectionEndsAtText && <p className="text-xs text-white/70 mt-1">{protectionEndsAtText}</p>}
-          </div>
-        );
+        return <p className="text-white/90">{nextDoseIn}</p>;
       case 'missed':
-        return (
-          <div className="text-center">
-            <p className="text-white/90 font-medium">Prenez une dose dès que possible.</p>
-             {protectionEndsAtText && <p className="text-xs text-white/70 mt-1">{protectionEndsAtText}</p>}
-          </div>
-        );
+        return <p className="text-white/90 font-medium">Prenez une dose dès que possible.</p>;
       case 'inactive':
-         return (
-          <div className="text-center">
-            <p className="text-sm text-white/90 font-medium">La session est terminée.</p>
-             {protectionEndsAtText && <p className="text-xs text-white/70 mt-1">{protectionEndsAtText}</p>}
-          </div>
-        );
+         return <p className="text-sm text-white/90 font-medium">{protectionEndsAtText}</p>;
       default:
         return null;
     }
@@ -88,7 +73,7 @@ export function PrepDashboard({
             <div className="mb-4">
               <StatusIcon />
             </div>
-            <h2 className="text-3xl font-bold text-white font-headline">{statusText}</h2>
+            <h2 className="text-2xl font-bold text-white font-headline">{statusText}</h2>
             <StatusDetails />
           </div>
           
@@ -145,7 +130,7 @@ export function PrepDashboard({
             </div>
             <div className="ml-3">
                 <p className="text-sm text-blue-700">
-                Pour une protection continue, n'oubliez pas de prendre un comprimé chaque jour pendant les deux jours suivant votre dernier rapport sexuel.
+                Pour rester protégé(e), n'oubliez pas de prendre un comprimé chaque jour pendant les deux jours suivant votre dernier rapport sexuel.
                 </p>
             </div>
             </div>
