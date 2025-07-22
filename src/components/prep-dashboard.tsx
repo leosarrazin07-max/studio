@@ -71,7 +71,7 @@ export function PrepDashboard({
       case 'inactive':
          return (
           <div className="text-center">
-            <p className="text-white/90 font-medium">La session est terminée.</p>
+            <p className="text-sm text-white/90 font-medium">La session est terminée.</p>
              {protectionEndsAtText && <p className="text-xs text-white/70 mt-1">{protectionEndsAtText}</p>}
           </div>
         );
