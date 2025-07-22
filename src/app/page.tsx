@@ -4,9 +4,17 @@
 import { useState } from "react";
 import { usePrepState } from "@/hooks/use-prep-state";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { LogDoseDialog } from "@/components/log-dose-dialog";
 import { PrepDashboard } from "@/components/prep-dashboard";
-import { Pill, Menu } from 'lucide-react';
+import { Pill, Menu, BellOff } from 'lucide-react';
 import { SettingsSheet } from "@/components/settings-sheet";
 
 export default function Home() {
@@ -14,7 +22,7 @@ export default function Home() {
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const { sessionActive, startSession, clearHistory, pushEnabled, addDose, status, togglePushNotifications } = prepState;
+  const { sessionActive, startSession, clearHistory, pushEnabled, addDose, status, togglePushNotifications, permissionStatus, requestNotificationPermission } = prepState;
 
   const WelcomeScreen = () => (
     <div className="flex flex-col items-center justify-center h-full text-center p-4 md:p-8">
@@ -36,6 +44,45 @@ export default function Home() {
       </Button>
     </div>
   );
+
+  const PermissionGuard = () => (
+    <Dialog open={permissionStatus !== 'granted'} onOpenChange={() => {}}>
+        <DialogContent className="sm:max-w-md" hideCloseButton={true}>
+            <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                    <BellOff className="text-destructive" />
+                    Autorisation requise
+                </DialogTitle>
+                <DialogDescription>
+                    Pour assurer un suivi fiable, cette application a besoin de l'autorisation d'envoyer des notifications.
+                </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 text-sm text-muted-foreground">
+                <p>
+                    Veuillez autoriser les notifications pour ce site dans les paramètres de votre navigateur. Vous pourrez les désactiver à tout moment dans les réglages de l'application.
+                </p>
+                {permissionStatus === 'denied' && (
+                    <p className="text-destructive font-medium mt-2">
+                       Les notifications sont bloquées. Vous devez les autoriser manuellement dans les paramètres de votre navigateur pour continuer.
+                    </p>
+                )}
+            </div>
+            <DialogFooter>
+                <Button onClick={() => requestNotificationPermission()} disabled={permissionStatus === 'denied'}>
+                    Activer les notifications
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
+  );
+
+  if (permissionStatus === 'loading') {
+    return <div className="flex items-center justify-center min-h-screen">Chargement...</div>;
+  }
+  
+  if (permissionStatus !== 'granted') {
+    return <PermissionGuard />;
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-background">

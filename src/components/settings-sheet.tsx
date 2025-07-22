@@ -87,7 +87,7 @@ export function SettingsSheet({
                     <AlertDialogDescription>
                       Cette action est irréversible. Toutes vos données de session et
                       votre historique de doses seront définitivement supprimés.
-                    </d'AlertDialogDescription>
+                    </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Annuler</AlertDialogCancel>
@@ -102,5 +102,3 @@ export function SettingsSheet({
     </Sheet>
   );
 }
-
-    

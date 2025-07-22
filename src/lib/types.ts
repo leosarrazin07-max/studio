@@ -1,5 +1,4 @@
 
-
 export type DoseType = 'start' | 'dose' | 'stop';
 
 export interface Dose {
@@ -11,11 +10,13 @@ export interface Dose {
 
 export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed';
 
+export type PermissionStatus = 'loading' | 'prompt' | 'granted' | 'denied' | 'unsupported';
+
 export interface PrepState {
   doses: Dose[];
   sessionActive: boolean;
   pushEnabled: boolean;
-  protectionNotified?: boolean; // Used by service worker
+  permissionStatus: PermissionStatus;
 }
 
 export interface PrepLogic {
@@ -29,11 +30,8 @@ export interface PrepLogic {
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
-  // New simplified method for toggling push notifications
   togglePushNotifications: (enabled: boolean) => void;
-  // Deprecated methods
-  requestNotificationPermission: () => Promise<boolean>;
-  unsubscribeFromNotifications: () => void;
+  requestNotificationPermission: () => void;
 }
 
 export type UsePrepStateReturn = PrepState & PrepLogic;
