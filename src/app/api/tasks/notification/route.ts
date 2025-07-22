@@ -1,9 +1,8 @@
-
 import { NextResponse } from 'next/server';
 import { firestore } from '@/lib/firebase-admin';
 import webpush from 'web-push';
 import { add, isBefore } from 'date-fns';
-import { DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
+import { DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 
 if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
   console.error("VAPID keys are not defined. Push notifications will not work.");
