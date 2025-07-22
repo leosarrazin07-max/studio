@@ -7,8 +7,12 @@ import { fr } from 'date-fns/locale';
 import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
+import { getFirestore, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { app } from '@/lib/firebase-client';
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+const firestore = getFirestore(app);
+
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -32,7 +36,6 @@ const safelyParseJSON = (jsonString: string | null) => {
     if (parsed.doses) {
         parsed.doses = parsed.doses.map((d: any) => ({...d, time: new Date(d.time)}));
     }
-    // Handle legacy states without nextNotificationTime
     if (parsed.nextNotificationTime && typeof parsed.nextNotificationTime === 'object' && parsed.nextNotificationTime.value) {
         parsed.nextNotificationTime = new Date(parsed.nextNotificationTime.value);
     } else if (typeof parsed.nextNotificationTime === 'string') {
@@ -54,13 +57,13 @@ const defaultState: PrepState = {
     nextNotificationTime: null,
 };
 
+const hashEndpoint = (endpoint: string) => btoa(endpoint).replace(/=/g, '');
 
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
-
   const [state, setState] = useState<PrepState>(defaultState);
 
   const calculateNextNotificationTime = useCallback((doses: Dose[], protectionNotified: boolean | undefined): Date | null => {
@@ -71,13 +74,11 @@ export function usePrepState(): UsePrepStateReturn {
     
     if (!firstDose) return null;
 
-    // Is the protection start notification pending?
     const protectionStartTime = add(firstDose.time, { hours: PROTECTION_START_HOURS });
     if (!protectionNotified && isAfter(protectionStartTime, new Date())) {
         return protectionStartTime;
     }
 
-    // Otherwise, schedule the next dose reminder
     if (lastDose) {
       return add(lastDose.time, { hours: DOSE_INTERVAL_HOURS });
     }
@@ -90,17 +91,8 @@ export function usePrepState(): UsePrepStateReturn {
         try {
             const subJson = sub.toJSON();
             const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            
-            const response = await fetch('/api/saveSubscription', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ ...subJson, timezone }),
-            });
-            if (!response.ok) {
-                throw new Error('Server response was not ok.');
-            }
+            const endpointHash = hashEndpoint(sub.endpoint);
+            await setDoc(doc(firestore, "subscriptions", endpointHash), { ...subJson, timezone }, { merge: true });
         } catch (e) {
             console.error("Failed to save subscription", e);
             toast({
@@ -118,11 +110,7 @@ export function usePrepState(): UsePrepStateReturn {
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.getSubscription();
         setSubscription(sub);
-        if (sub) {
-            setState(prevState => ({...prevState, pushEnabled: true}));
-        } else {
-            setState(prevState => ({...prevState, pushEnabled: false}));
-        }
+        setState(prevState => ({...prevState, pushEnabled: !!sub}));
       } catch (error) {
         console.error("Error getting push subscription:", error);
         setSubscription(null);
@@ -133,15 +121,16 @@ export function usePrepState(): UsePrepStateReturn {
 
   const unsubscribeFromNotifications = useCallback(async () => {
     if (subscription) {
+      const endpointHash = hashEndpoint(subscription.endpoint);
       await subscription.unsubscribe();
-      // Also delete from server
-      await fetch('/api/deleteState', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ endpoint: subscription.endpoint })
-      });
+      try {
+          const stateRef = doc(firestore, "states", endpointHash);
+          const subRef = doc(firestore, "subscriptions", endpointHash);
+          await deleteDoc(stateRef);
+          await deleteDoc(subRef);
+      } catch(e) {
+          console.error("Failed to delete state from server", e);
+      }
       setSubscription(null);
       setState(prevState => ({...prevState, pushEnabled: false}));
       toast({ title: "Notifications désactivées." });
@@ -163,7 +152,6 @@ export function usePrepState(): UsePrepStateReturn {
 
     try {
         const registration = await navigator.serviceWorker.ready;
-        
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
             toast({
@@ -220,9 +208,7 @@ export function usePrepState(): UsePrepStateReturn {
     }
 
     const timer = setInterval(() => setNow(new Date()), 1000 * 60);
-    return () => {
-        clearInterval(timer);
-    };
+    return () => clearInterval(timer);
   }, [updateSubscriptionObject]);
 
   useEffect(() => {
@@ -238,16 +224,8 @@ export function usePrepState(): UsePrepStateReturn {
         localStorage.setItem('prepState', JSON.stringify(stateToSave));
 
         if (state.sessionActive && subscription) {
-            fetch('/api/saveState', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    endpoint: subscription.endpoint,
-                    state: stateToSave
-                })
-            });
+            const endpointHash = hashEndpoint(subscription.endpoint);
+            setDoc(doc(firestore, "states", endpointHash), stateToSave);
         }
     }
   }, [state, isClient, subscription, calculateNextNotificationTime]);
@@ -281,7 +259,7 @@ export function usePrepState(): UsePrepStateReturn {
         const updatedDoses = [newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
         const nextNotificationTime = calculateNextNotificationTime(updatedDoses, false);
         const newState: PrepState = {
-            ...defaultState, // Reset state but keep push settings
+            ...defaultState,
             pushEnabled: prevState.pushEnabled,
             doses: updatedDoses,
             sessionActive: true,
@@ -305,18 +283,17 @@ export function usePrepState(): UsePrepStateReturn {
     });
   }, [toast]);
 
-  const clearHistory = useCallback(() => {
+  const clearHistory = useCallback(async () => {
     if (subscription) {
-      fetch('/api/deleteState', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ endpoint: subscription.endpoint })
-      });
+        const endpointHash = hashEndpoint(subscription.endpoint);
+        try {
+            await deleteDoc(doc(firestore, "states", endpointHash));
+            await deleteDoc(doc(firestore, "subscriptions", endpointHash));
+        } catch(e) {
+            console.error("Failed to delete state from server during clear history", e);
+        }
     }
     localStorage.removeItem('prepState');
-    // Keep pushEnabled state but reset everything else
     setState(prevState => ({
         ...defaultState,
         pushEnabled: prevState.pushEnabled
@@ -376,12 +353,11 @@ export function usePrepState(): UsePrepStateReturn {
 
   const dosesAsDates = state.doses.map(d => ({ ...d, time: new Date(d.time) }));
   
-  // Convert nextNotificationTime from string to Date for the component return
   const nextNotificationTimeAsDate = state.nextNotificationTime ? new Date(state.nextNotificationTime) : null;
 
   return {
     ...state,
-    nextNotificationTime: nextNotificationTimeAsDate, // Return as Date object
+    nextNotificationTime: nextNotificationTimeAsDate,
     doses: dosesAsDates.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,

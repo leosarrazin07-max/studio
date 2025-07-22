@@ -22,6 +22,8 @@ if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
   );
+} else {
+    console.warn("VAPID keys are not fully configured. Push notifications will fail.");
 }
 
 const CRON_JOB_INTERVAL_MINUTES = 5;
@@ -63,11 +65,6 @@ async function sendNotification(subscription: any, payload: string) {
             console.error("VAPID keys not configured on server. Cannot send notification.");
             return { success: false, error: new Error("VAPID keys missing"), shouldDelete: false };
         }
-        webpush.setVapidDetails(
-            "mailto:contact@prepy.app",
-            process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-            process.env.VAPID_PRIVATE_KEY
-        );
         await webpush.sendNotification(subscription, payload);
         return { success: true };
     } catch (error: any) {
@@ -83,7 +80,11 @@ async function deleteSubscriptionAndState(docId: string) {
     console.warn(`Subscription for doc ${docId} is no longer valid. Deleting.`);
     const subRef = db.collection('subscriptions').doc(docId);
     const stateRef = db.collection('states').doc(docId);
-    await db.batch().delete(subRef).delete(stateRef).commit();
+    try {
+        await db.batch().delete(subRef).delete(stateRef).commit();
+    } catch(e) {
+        console.error(`Failed to delete subscription and state for ${docId}`, e);
+    }
 }
 
 async function processCron() {
@@ -185,7 +186,13 @@ async function processCron() {
 
 export async function GET(request: Request) {
     const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    const cronSecret = process.env.CRON_SECRET;
+    
+    if (!cronSecret) {
+        return NextResponse.json({ success: false, error: "Cron secret not configured." }, { status: 500 });
+    }
+    
+    if (authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
   
