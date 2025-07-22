@@ -112,10 +112,10 @@ export function PrepDashboard({
                ) : (
                 <Button
                     size="lg"
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full shadow-md md:col-span-2"
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full shadow-md md:col-span-2 text-base"
                     onClick={() => setIsLogDoseOpen(true)}
                 >
-                    <Pill className="mr-2 h-5 w-5" /> Démarrer une nouvelle session
+                    <Pill className="mr-2 h-4 w-4" /> Démarrer une nouvelle session
                 </Button>
                )}
             </div>
@@ -130,7 +130,7 @@ export function PrepDashboard({
                </div>
                <div className="ml-3">
                   <p className="text-sm text-blue-700">
-                     {protectionEndsAtText}
+                    Pour rester protégé, n'oubliez pas de continuer les prises pendant 2 jours après votre dernier rapport sexuel.
                   </p>
                </div>
             </div>
@@ -150,3 +150,4 @@ export function PrepDashboard({
     </div>
   );
 }
+
