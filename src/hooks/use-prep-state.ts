@@ -65,6 +65,21 @@ export function usePrepState(): UsePrepStateReturn {
       });
   }, []);
 
+  const syncPushSubscription = useCallback(async () => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (!!subscription !== state.pushEnabled) {
+          saveState({ pushEnabled: !!subscription });
+        }
+      } catch (error) {
+        console.error("Error syncing push subscription:", error);
+      }
+    }
+  }, [saveState, state.pushEnabled]);
+
+
   useEffect(() => {
     setIsClient(true);
     if (typeof window !== 'undefined') {
@@ -75,6 +90,7 @@ export function usePrepState(): UsePrepStateReturn {
 
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/service-worker.js')
+              .then(() => syncPushSubscription())
               .catch(error => console.error('Erreur Service Worker:', error));
         }
 
@@ -82,6 +98,17 @@ export function usePrepState(): UsePrepStateReturn {
         return () => clearInterval(timer);
     }
   }, []);
+  
+  // Re-sync subscription when component becomes visible, e.g., tab focus
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncPushSubscription();
+      }
+    };
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => window.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [syncPushSubscription]);
 
   const togglePushNotifications = useCallback(async () => {
     if (!VAPID_PUBLIC_KEY) {
@@ -89,26 +116,20 @@ export function usePrepState(): UsePrepStateReturn {
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
         return;
     }
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
         return;
     }
 
-    const registration = await navigator.serviceWorker.ready;
-    const currentSubscription = await registration.pushManager.getSubscription();
-    
-    // If there's a subscription, we're turning it OFF
-    if (currentSubscription) {
-        try {
+    try {
+        const registration = await navigator.serviceWorker.ready;
+        const currentSubscription = await registration.pushManager.getSubscription();
+        
+        if (currentSubscription) {
             await currentSubscription.unsubscribe();
             saveState({ pushEnabled: false });
             toast({ title: "Notifications désactivées." });
-        } catch (e) {
-            console.error("Error unsubscribing:", e);
-            toast({ title: "Erreur de désabonnement", variant: "destructive" });
-        }
-    } else { // If there's no subscription, we're turning it ON
-        try {
+        } else {
             const permission = await Notification.requestPermission();
             if (permission !== 'granted') {
                 toast({ title: "Permission refusée", description: "Vous devez autoriser les notifications dans les paramètres de votre navigateur.", variant: "destructive" });
@@ -122,13 +143,13 @@ export function usePrepState(): UsePrepStateReturn {
             });
             saveState({ pushEnabled: true });
             toast({ title: "Notifications activées !" });
-        } catch (e) {
-            console.error("Error subscribing:", e);
-            toast({ title: "Erreur d'abonnement", variant: "destructive" });
-            saveState({ pushEnabled: false });
         }
+    } catch (e) {
+        console.error("Error toggling push notifications:", e);
+        toast({ title: "Une erreur est survenue", variant: "destructive" });
+        syncPushSubscription(); // Re-sync state in case of error
     }
-  }, [saveState, toast]);
+  }, [saveState, toast, syncPushSubscription]);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
