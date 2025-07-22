@@ -67,7 +67,19 @@ export function usePrepState(): UsePrepStateReturn {
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.getSubscription();
         setSubscription(sub);
-        setState(prevState => ({...prevState, pushEnabled: !!sub}));
+        // This is the key fix: We update the state with the REAL pushEnabled status
+        // after getting the subscription object.
+        setState(prevState => {
+          const newState = {...prevState, pushEnabled: !!sub };
+          // We also save this corrected state to localStorage immediately.
+          try {
+            const stateToSave = { ...newState, doses: newState.doses.map(d => ({...d, time: d.time.toISOString()})) };
+            localStorage.setItem('prepState', JSON.stringify(stateToSave));
+          } catch (e) {
+            console.error("Could not save state to localStorage", e);
+          }
+          return newState;
+        });
       } catch (error) {
         console.error("Error getting push subscription:", error);
       }
@@ -89,6 +101,7 @@ export function usePrepState(): UsePrepStateReturn {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
             toast({ title: "Notifications refusées", variant: "destructive" });
+            saveState({...state, pushEnabled: false});
             return false;
         }
         let sub = await registration.pushManager.getSubscription();
@@ -105,6 +118,7 @@ export function usePrepState(): UsePrepStateReturn {
     } catch (error) {
         console.error("Error subscribing:", error);
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
+        saveState({...state, pushEnabled: false});
         return false;
     }
   }, [toast, state, saveState]);
@@ -120,15 +134,18 @@ export function usePrepState(): UsePrepStateReturn {
 
   useEffect(() => {
     setIsClient(true);
+    
+    // Load state from local storage first
+    const savedState = safelyParseJSON(localStorage.getItem('prepState'));
+    if (savedState) {
+        setState(savedState);
+    }
+    
+    // Then, check for service worker and update push status
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js')
         .then(() => updateSubscriptionObject())
         .catch(error => console.error('Erreur Service Worker:', error));
-    }
-    
-    const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-    if (savedState) {
-        setState(savedState);
     }
     
     const timer = setInterval(() => setNow(new Date()), 1000 * 60); // Update "now" every minute
@@ -228,3 +245,4 @@ export function usePrepState(): UsePrepStateReturn {
     unsubscribeFromNotifications
   };
 }
+
