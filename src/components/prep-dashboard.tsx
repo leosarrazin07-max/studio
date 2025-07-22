@@ -112,10 +112,11 @@ export function PrepDashboard({
                ) : (
                 <Button
                     size="lg"
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full shadow-md md:col-span-2"
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full shadow-md md:col-span-2 flex items-center justify-center"
                     onClick={() => setIsLogDoseOpen(true)}
                 >
-                    <Pill className="mr-2 h-5 w-5" /> Démarrer une nouvelle session
+                    <Pill className="mr-2 h-5 w-5" />
+                    <span>Démarrer une nouvelle session</span>
                 </Button>
                )}
             </div>
@@ -150,5 +151,6 @@ export function PrepDashboard({
     </div>
   );
 }
+
 
 
