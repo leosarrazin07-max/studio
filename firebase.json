@@ -13,7 +13,8 @@
         "memory": "512MiB",
         "timeoutSeconds": 120,
         "maxInstances": 1
-      }
+      },
+      "secretEnv": ["SERVICE_ACCOUNT_PRIVATE_KEY"]
     }
   }
 }
