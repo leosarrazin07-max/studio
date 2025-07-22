@@ -44,7 +44,7 @@ export function LogDoseDialog({
     description = 'Vous commencerez avec 2 comprimés. Confirmez quand vous avez pris votre dose initiale.';
   } else if (isMissedDose) {
     title = 'Dose manquée';
-    description = "Il semble que vous ayez manqué une dose. Mettez à jour votre statut.";
+    description = "Il semble que vous ayez manqué une dose. Choisissez une option pour mettre à jour votre statut.";
   }
 
   const handleLog = (time: Date, pills: number) => {
@@ -65,6 +65,12 @@ export function LogDoseDialog({
     setPickerPillCount(pills);
     setShowTimePicker(true);
   };
+
+  const handleRestartNow = () => {
+    onStartSession(new Date());
+    onOpenChange(false);
+    setShowTimePicker(false);
+  }
   
   const handlePickerConfirm = () => {
     handleLog(selectedDate, pickerPillCount);
@@ -97,7 +103,7 @@ export function LogDoseDialog({
                 <Button variant="outline" onClick={() => handleEarlier(1)}>
                     <Calendar className="mr-2 h-4 w-4" /> J'ai pris 1 comprimé plus tôt
                 </Button>
-                <Button variant="destructive" onClick={() => handleEarlier(2)}>
+                <Button variant="destructive" onClick={handleRestartNow}>
                     <RefreshCw className="mr-2 h-4 w-4" /> Recommencer avec 2 comprimés
                 </Button>
             </div>
