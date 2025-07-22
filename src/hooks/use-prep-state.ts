@@ -50,14 +50,16 @@ export function usePrepState(): UsePrepStateReturn {
 
   const saveState = useCallback((newState: PrepState) => {
       setState(newState);
-      try {
-        const stateToSave = {
-            ...newState,
-            doses: newState.doses.map(d => ({...d, time: d.time.toISOString()}))
-        };
-        localStorage.setItem('prepState', JSON.stringify(stateToSave));
-      } catch (e) {
-          console.error("Could not save state to localStorage", e);
+      if (typeof window !== 'undefined') {
+        try {
+          const stateToSave = {
+              ...newState,
+              doses: newState.doses.map(d => ({...d, time: d.time.toISOString()}))
+          };
+          localStorage.setItem('prepState', JSON.stringify(stateToSave));
+        } catch (e) {
+            console.error("Could not save state to localStorage", e);
+        }
       }
   }, []);
 
@@ -67,9 +69,12 @@ export function usePrepState(): UsePrepStateReturn {
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.getSubscription();
         setSubscription(sub);
+        // This is the key fix: We directly update the state's pushEnabled
+        // from the definitive source (the subscription object) and then save it.
         setState(prevState => {
           const newState = {...prevState, pushEnabled: !!sub };
-          try {
+          // Save the synchronized state to localStorage
+           try {
             const stateToSave = { ...newState, doses: newState.doses.map(d => ({...d, time: d.time.toISOString()})) };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
           } catch (e) {
