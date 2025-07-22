@@ -55,7 +55,7 @@ export function PrepDashboard({
       case 'loading':
         return <p className="text-white/80">{protectionStartsIn}</p>;
       case 'effective':
-        return <p className="text-white/90">{nextDoseIn}</p>;
+        return <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>;
       case 'missed':
         return <p className="text-white/90 font-medium">Prenez une dose dès que possible.</p>;
       case 'inactive':
@@ -122,20 +122,21 @@ export function PrepDashboard({
         </CardContent>
       </Card>
       
-      { sessionActive && (
-        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-md">
+      { (status === 'effective' || status === 'missed') && (
+         <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-md">
             <div className="flex">
-            <div className="flex-shrink-0">
-                <Info className="h-5 w-5 text-blue-400" />
+               <div className="flex-shrink-0">
+                  <Info className="h-5 w-5 text-blue-400" />
+               </div>
+               <div className="ml-3">
+                  <p className="text-sm text-blue-700">
+                     {protectionEndsAtText}
+                  </p>
+               </div>
             </div>
-            <div className="ml-3">
-                <p className="text-sm text-blue-700">
-                Pour rester protégé(e), n'oubliez pas de prendre un comprimé chaque jour pendant les deux jours suivant votre dernier rapport sexuel.
-                </p>
-            </div>
-            </div>
-        </div>
+         </div>
       )}
+
 
       <DoseHistory doses={doses} />
 

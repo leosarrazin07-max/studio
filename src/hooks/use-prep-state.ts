@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
-import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
+import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -241,27 +241,28 @@ export function usePrepState(): UsePrepStateReturn {
       statusColor = 'bg-accent';
       statusText = 'Protection active';
       nextDoseIn = `Prochaine dose ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
+      // New protection logic: Protection is until 48h BEFORE the last dose.
+      const protectionEndDate = sub(lastDoseTime, { hours: 48 });
+      protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     } else {
       status = 'missed';
       statusColor = 'bg-destructive';
       statusText = 'Dose manquée';
+      const protectionEndDate = sub(lastDoseTime, { hours: 48 });
+      protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
   } else if (isClient && !state.sessionActive && state.doses.length > 0) {
-     const lastEffectiveDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
-     if (lastEffectiveDose) {
-        const protectionLapsesTime = add(lastEffectiveDose.time, { hours: FINAL_PROTECTION_HOURS });
-        if (isBefore(now, protectionLapsesTime)) {
-            status = 'inactive';
-            statusColor = 'bg-gray-500';
-            statusText = 'Session terminée';
-            protectionEndsAtText = `Protection résiduelle jusqu'au ${format(protectionLapsesTime, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-        } else {
-            status = 'inactive';
-            statusColor = 'bg-gray-500';
-            statusText = 'Protection terminée';
-            protectionEndsAtText = "La période de protection résiduelle est terminée."
-        }
-     }
+      status = 'inactive';
+      statusColor = 'bg-gray-500';
+      statusText = 'Session terminée';
+      if (lastDose) {
+          const protectionEndDate = sub(lastDose.time, { hours: 48 });
+           if (isAfter(now, protectionEndDate)) {
+                protectionEndsAtText = "La protection n'est plus assurée.";
+           } else {
+                protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+           }
+      }
   }
 
   if (!isClient) {
