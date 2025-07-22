@@ -21,7 +21,7 @@ import { LogDoseDialog } from './log-dose-dialog';
 import { DoseHistory } from './dose-history';
 
 export function PrepDashboard({
-  doses,
+  prises,
   status,
   statusColor,
   statusText,
@@ -57,7 +57,7 @@ export function PrepDashboard({
       case 'effective':
         return <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>;
       case 'missed':
-        return <p className="text-white/90 font-medium">Prenez une dose dès que possible.</p>;
+        return <p className="text-white/90 font-medium">Prenez un comprimé dès que possible.</p>;
       case 'inactive':
          return <p className="text-sm text-white/90 font-medium">{protectionEndsAtText}</p>;
       default:
@@ -85,7 +85,7 @@ export function PrepDashboard({
                         className="bg-accent hover:bg-accent/90 text-accent-foreground w-full shadow-md"
                         onClick={() => setIsLogDoseOpen(true)}
                     >
-                        <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris ma dose
+                        <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris mon comprimé
                     </Button>
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -141,7 +141,7 @@ export function PrepDashboard({
       )}
 
 
-      <DoseHistory doses={doses} />
+      <DoseHistory prises={prises} />
 
       <LogDoseDialog
         isOpen={isLogDoseOpen}

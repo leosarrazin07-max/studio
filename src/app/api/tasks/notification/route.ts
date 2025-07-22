@@ -42,20 +42,20 @@ export async function GET() {
       }
 
       const state = localDataSnapshot.data();
-      if (!state || !state.sessionActive || !state.doses || state.doses.length === 0) {
-        return; // Session inactive or no doses
+      if (!state || !state.sessionActive || !state.prises || state.prises.length === 0) {
+        return; // Session inactive or no prises
       }
 
       // Doses are stored as ISO strings, convert them back to Dates
-      const doses = state.doses.map((d: any) => ({ ...d, time: new Date(d.time) }));
-      const lastDose = doses.filter((d: any) => d.type !== 'stop').sort((a: any, b: any) => b.time.getTime() - a.time.getTime())[0];
+      const prises = state.prises.map((d: any) => ({ ...d, time: new Date(d.time) }));
+      const lastPrise = prises.filter((d: any) => d.type !== 'stop').sort((a: any, b: any) => b.time.getTime() - a.time.getTime())[0];
 
-      if (!lastDose) {
+      if (!lastPrise) {
         return;
       }
       
-      const reminderWindowStart = add(lastDose.time, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
-      const reminderWindowEnd = add(lastDose.time, { hours: DOSE_REMINDER_WINDOW_END_HOURS });
+      const reminderWindowStart = add(lastPrise.time, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
+      const reminderWindowEnd = add(lastPrise.time, { hours: DOSE_REMINDER_WINDOW_END_HOURS });
 
       // Send notification if we are within the reminder window
       if (isBefore(reminderWindowStart, now) && isBefore(now, reminderWindowEnd)) {

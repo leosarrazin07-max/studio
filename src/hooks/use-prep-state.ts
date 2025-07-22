@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
+import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_REMINDER_WINDOW_START_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
 
@@ -25,8 +25,11 @@ const safelyParseJSON = (jsonString: string | null) => {
   if (!jsonString) return null;
   try {
     const parsed = JSON.parse(jsonString);
-    if (parsed.doses) {
-        parsed.doses = parsed.doses.map((d: any) => ({...d, time: new Date(d.time)}));
+    if (parsed.prises) {
+        parsed.prises = parsed.prises.map((d: any) => ({...d, time: new Date(d.time)}));
+    } else if (parsed.doses) { // Handle old data format
+        parsed.prises = parsed.doses.map((d: any) => ({...d, time: new Date(d.time)}));
+        delete parsed.doses;
     }
     return parsed;
   } catch (e) {
@@ -36,7 +39,7 @@ const safelyParseJSON = (jsonString: string | null) => {
 };
 
 const defaultState: PrepState = {
-    doses: [],
+    prises: [],
     sessionActive: false,
     pushEnabled: false,
 };
@@ -51,7 +54,7 @@ async function syncStateWithServer(state: PrepState) {
     if (subscription) {
         const stateToSync = {
             ...state,
-            doses: state.doses.map(d => ({ ...d, time: d.time.toISOString() })),
+            prises: state.prises.map(d => ({ ...d, time: d.time.toISOString() })),
         };
         try {
             await fetch('/api/tasks/notification', {
@@ -79,7 +82,7 @@ export function usePrepState(): UsePrepStateReturn {
             try {
                 const stateToSave = {
                     ...updatedState,
-                    doses: updatedState.doses.map(d => ({ ...d, time: d.time.toISOString() })),
+                    prises: updatedState.prises.map(d => ({ ...d, time: d.time.toISOString() })),
                 };
                 localStorage.setItem('prepState', JSON.stringify(stateToSave));
                 // Sync with server whenever state changes
@@ -192,31 +195,31 @@ export function usePrepState(): UsePrepStateReturn {
   }, [state, saveState, toast, syncPushSubscription]);
 
   const startSession = useCallback((time: Date) => {
-    const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
-    const newDoses = [newDose];
-    saveState({ ...defaultState, doses: newDoses, sessionActive: true, pushEnabled: state.pushEnabled });
+    const newPrise = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
+    const newPrises = [newPrise];
+    saveState({ ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled });
   }, [saveState, state.pushEnabled]);
 
-  const addDose = useCallback((dose: { time: Date; pills: number }) => {
-    const newDose = { ...dose, type: 'dose' as const, id: new Date().toISOString() };
-    const newDoses = [...state.doses, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
-    saveState({ doses: newDoses, sessionActive: true });
-  }, [state.doses, saveState]);
+  const addDose = useCallback((prise: { time: Date; pills: number }) => {
+    const newPrise = { ...prise, type: 'dose' as const, id: new Date().toISOString() };
+    const newPrises = [...state.prises, newPrise].sort((a, b) => a.time.getTime() - b.time.getTime());
+    saveState({ prises: newPrises, sessionActive: true });
+  }, [state.prises, saveState]);
 
   const endSession = useCallback(() => {
     const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
-    const updatedDoses = [...state.doses, stopEvent];
-    saveState({ sessionActive: false, doses: updatedDoses });
+    const updatedPrises = [...state.prises, stopEvent];
+    saveState({ sessionActive: false, prises: updatedPrises });
     toast({ title: "Session terminée", description: "Les rappels de notification sont maintenant arrêtés." });
-  }, [state.doses, saveState, toast]);
+  }, [state.prises, saveState, toast]);
 
   const clearHistory = useCallback(() => {
     saveState({ ...defaultState, pushEnabled: state.pushEnabled });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
   }, [saveState, state.pushEnabled, toast]);
 
-  const lastDose = state.doses.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
-  const firstDoseInSession = state.doses.find(d => d.type === 'start');
+  const lastPrise = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
+  const firstPriseInSession = state.prises.find(d => d.type === 'start');
 
   let status: PrepStatus = 'inactive';
   let statusColor = 'bg-gray-500';
@@ -225,9 +228,9 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
-  if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
-    const lastDoseTime = lastDose.time;
-    const protectionStartTime = add(firstDoseInSession.time, { hours: PROTECTION_START_HOURS });
+  if (isClient && state.sessionActive && lastPrise && firstPriseInSession) {
+    const lastDoseTime = lastPrise.time;
+    const protectionStartTime = add(firstPriseInSession.time, { hours: PROTECTION_START_HOURS });
     const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
     const protectionLapsesTime = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
 
@@ -240,22 +243,22 @@ export function usePrepState(): UsePrepStateReturn {
       status = 'effective';
       statusColor = 'bg-accent';
       statusText = 'Protection active';
-      nextDoseIn = `Prochaine dose ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
+      nextDoseIn = `Prochain comprimé ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
       const protectionEndDate = sub(lastDoseTime, { hours: 48 });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     } else {
       status = 'missed';
       statusColor = 'bg-destructive';
-      statusText = 'Dose manquée';
+      statusText = 'Comprimé manqué';
       const protectionEndDate = sub(lastDoseTime, { hours: 48 });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
-  } else if (isClient && !state.sessionActive && state.doses.length > 0) {
+  } else if (isClient && !state.sessionActive && state.prises.length > 0) {
       status = 'inactive';
       statusColor = 'bg-gray-500';
       statusText = 'Session terminée';
-      if (lastDose) {
-          const protectionEndDate = sub(lastDose.time, { hours: 48 });
+      if (lastPrise) {
+          const protectionEndDate = sub(lastPrise.time, { hours: 48 });
            if (isAfter(now, protectionEndDate)) {
                 protectionEndsAtText = "La protection n'est plus assurée.";
            } else {
@@ -269,13 +272,13 @@ export function usePrepState(): UsePrepStateReturn {
     statusColor = "bg-muted";
   }
   
-  const welcomeScreenVisible = !isClient || (!state.sessionActive && state.doses.length === 0);
-  const dashboardVisible = isClient && (state.sessionActive || state.doses.length > 0);
+  const welcomeScreenVisible = !isClient || (!state.sessionActive && state.prises.length === 0);
+  const dashboardVisible = isClient && (state.sessionActive || state.prises.length > 0);
 
 
   return {
     ...state,
-    doses: state.doses.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
+    prises: state.prises.filter(prise => isAfter(prise.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
     statusText,
@@ -291,5 +294,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    

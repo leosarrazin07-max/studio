@@ -18,7 +18,7 @@ import type { PrepStatus } from '@/lib/types';
 interface LogDoseDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  onLogDose: (dose: { time: Date; pills: number }) => void;
+  onLogDose: (prise: { time: Date; pills: number }) => void;
   onStartSession: (time: Date) => void;
   status: PrepStatus;
 }
@@ -38,13 +38,13 @@ export function LogDoseDialog({
   const isMissedDose = status === 'missed';
 
   let title = 'Enregistrer votre prise';
-  let description = "Confirmez quand vous avez pris votre dose de 1 comprimé.";
+  let description = "Confirmez quand vous avez pris votre comprimé.";
   if (isInitialDose) {
     title = 'Démarrer votre session';
-    description = 'Vous commencerez avec 2 comprimés. Confirmez quand vous avez pris votre dose initiale.';
+    description = 'Vous commencerez avec 2 comprimés. Confirmez quand vous avez fait votre prise initiale.';
   } else if (isMissedDose) {
-    title = 'Dose manquée';
-    description = "Il semble que vous ayez manqué une dose. Choisissez une option pour mettre à jour votre statut.";
+    title = 'Comprimé manqué';
+    description = "Il semble que vous ayez manqué une prise. Choisissez une option pour mettre à jour votre statut.";
   }
 
   const handleLog = (time: Date, pills: number) => {

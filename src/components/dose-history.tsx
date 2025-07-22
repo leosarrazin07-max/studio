@@ -4,21 +4,21 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import type { Dose } from "@/lib/types";
+import type { Prise } from "@/lib/types";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { History, Pill, PlayCircle, StopCircle, CheckCircle2 } from "lucide-react";
 
 interface DoseHistoryProps {
-  doses: Dose[];
+  prises: Prise[];
 }
 
-const EventDetails: React.FC<{ dose: Dose }> = ({ dose }) => {
+const EventDetails: React.FC<{ prise: Prise }> = ({ prise }) => {
     let Icon;
     let title = '';
-    let details = `le ${format(new Date(dose.time), "eeee dd MMMM 'à' HH:mm", { locale: fr })}`;
+    let details = `le ${format(new Date(prise.time), "eeee dd MMMM 'à' HH:mm", { locale: fr })}`;
 
-    switch (dose.type) {
+    switch (prise.type) {
         case 'start':
             Icon = PlayCircle;
             title = "Démarrage de la session";
@@ -43,9 +43,9 @@ const EventDetails: React.FC<{ dose: Dose }> = ({ dose }) => {
                 <p className="font-medium">{title}</p>
                 <p className="text-sm text-muted-foreground">{details}</p>
             </div>
-            {dose.type !== 'stop' && (
+            {prise.type !== 'stop' && (
                  <div className="flex items-center gap-1 text-primary font-medium">
-                      <span>{dose.pills}</span>
+                      <span>{prise.pills}</span>
                       <Pill size={16} />
                 </div>
             )}
@@ -54,8 +54,8 @@ const EventDetails: React.FC<{ dose: Dose }> = ({ dose }) => {
 };
 
 
-export function DoseHistory({ doses }: DoseHistoryProps) {
-  const reversedDoses = [...doses].reverse();
+export function DoseHistory({ prises }: DoseHistoryProps) {
+  const reversedDoses = [...prises].reverse();
 
   return (
     <Card className="shadow-lg">
@@ -70,9 +70,9 @@ export function DoseHistory({ doses }: DoseHistoryProps) {
         <ScrollArea className="h-48 w-full pr-4">
           {reversedDoses.length > 0 ? (
             <div className="space-y-4">
-              {reversedDoses.map((dose, index) => (
-                <div key={dose.id}>
-                  <EventDetails dose={dose} />
+              {reversedDoses.map((prise, index) => (
+                <div key={prise.id}>
+                  <EventDetails prise={prise} />
                   {index < reversedDoses.length - 1 && <Separator className="mt-4" />}
                 </div>
               ))}

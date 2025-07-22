@@ -1,17 +1,17 @@
 
-export type DoseType = 'start' | 'dose' | 'stop';
+export type PriseType = 'start' | 'dose' | 'stop';
 
-export interface Dose {
+export interface Prise {
   time: Date; // Stored as Date object in state, ISO string in storage
   pills: number;
-  type: DoseType;
-  id: string; // Unique ID for each dose
+  type: PriseType;
+  id: string; // Unique ID for each prise
 }
 
 export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed';
 
 export interface PrepState {
-  doses: Dose[];
+  prises: Prise[];
   sessionActive: boolean;
   pushEnabled: boolean;
 }
@@ -23,7 +23,7 @@ export interface PrepLogic {
   nextDoseIn: string;
   protectionStartsIn: string;
   protectionEndsAtText: string;
-  addDose: (dose: { time: Date; pills: number }) => void;
+  addDose: (prise: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
