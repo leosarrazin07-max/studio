@@ -15,8 +15,7 @@ export interface PrepState {
   doses: Dose[];
   sessionActive: boolean;
   pushEnabled: boolean;
-  protectionNotified?: boolean;
-  nextNotificationTime: Date | null;
+  protectionNotified?: boolean; // Used by service worker
 }
 
 export interface PrepLogic {
