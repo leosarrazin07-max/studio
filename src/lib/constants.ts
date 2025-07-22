@@ -1,9 +1,14 @@
 
 export const PROTECTION_START_HOURS = 2;
-export const DOSE_INTERVAL_HOURS = 24; // A dose should be taken every 24 hours
-export const GRACE_PERIOD_HOURS = 4; // Reminder window lasts 4h after the 24h mark
+export const DOSE_INTERVAL_HOURS = 24;
 export const MAX_HISTORY_DAYS = 90;
-// Protection lapses 28h after last dose (24h interval + 4h grace period)
-export const LAPSES_AFTER_HOURS = DOSE_INTERVAL_HOURS + GRACE_PERIOD_HOURS;
-// Final protection after session ends is 48h after last dose
-export const FINAL_PROTECTION_HOURS = 48;
+export const FINAL_PROTECTION_HOURS = 48; // Final protection after session ends
+
+// The reminder window is now dynamic based on the last dose.
+// A dose should be taken between 22 and 26 hours after the last one.
+export const DOSE_REMINDER_WINDOW_START_HOURS = 22;
+export const DOSE_REMINDER_WINDOW_END_HOURS = 26;
+export const DOSE_REMINDER_INTERVAL_MINUTES = 10;
+
+// This is the old value, for calculating status, not for reminders.
+export const LAPSES_AFTER_HOURS = DOSE_REMINDER_WINDOW_END_HOURS;
