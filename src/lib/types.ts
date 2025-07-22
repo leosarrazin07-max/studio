@@ -28,6 +28,8 @@ export interface PrepLogic {
   endSession: () => void;
   clearHistory: () => void;
   togglePushNotifications: () => void;
+  welcomeScreenVisible: boolean;
+  dashboardVisible: boolean;
 }
 
 export type UsePrepStateReturn = PrepState & PrepLogic;

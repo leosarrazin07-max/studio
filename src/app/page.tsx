@@ -8,13 +8,14 @@ import { LogDoseDialog } from "@/components/log-dose-dialog";
 import { PrepDashboard } from "@/components/prep-dashboard";
 import { Pill, Menu } from 'lucide-react';
 import { SettingsSheet } from "@/components/settings-sheet";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Home() {
-  const prepState = usePrepState();
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const prepState = usePrepState();
 
-  const { sessionActive, startSession, clearHistory, pushEnabled, addDose, status, togglePushNotifications } = prepState;
+  const { addDose, startSession, status, clearHistory, pushEnabled, togglePushNotifications, welcomeScreenVisible, dashboardVisible } = prepState;
 
   const WelcomeScreen = () => (
     <div className="flex flex-col items-center justify-center h-full text-center p-4 md:p-8">
@@ -36,6 +37,14 @@ export default function Home() {
       </Button>
     </div>
   );
+  
+  const LoadingScreen = () => (
+      <div className="p-4 max-w-md w-full mx-auto space-y-8">
+          <Skeleton className="h-48 w-full rounded-xl" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-48 w-full rounded-lg" />
+      </div>
+  )
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -52,7 +61,9 @@ export default function Home() {
       </header>
       <main className="flex-1 flex flex-col items-center justify-center">
         <div className="container mx-auto w-full max-w-md flex-1 py-8">
-          {sessionActive ? <PrepDashboard {...prepState} /> : <WelcomeScreen />}
+          {!dashboardVisible && !welcomeScreenVisible && <LoadingScreen />}
+          {welcomeScreenVisible && <WelcomeScreen />}
+          {dashboardVisible && <PrepDashboard {...prepState} />}
         </div>
       </main>
        <LogDoseDialog

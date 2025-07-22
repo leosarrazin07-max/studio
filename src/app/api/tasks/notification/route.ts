@@ -1,3 +1,106 @@
 
-// This file is no longer used and can be deleted.
-// The logic has been moved to the client-side Service Worker.
+import { NextResponse } from 'next/server';
+import { firestore } from '@/lib/firebase-admin';
+import webpush from 'web-push';
+import { add, isBefore } from 'date-fns';
+import { DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
+
+if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+  console.error("VAPID keys are not defined. Push notifications will not work.");
+} else {
+  webpush.setVapidDetails(
+    'mailto:webmaster@example.com',
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+}
+
+// This function is triggered by a cron job (e.g., Google Cloud Scheduler)
+export async function GET() {
+  if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+      return NextResponse.json({ success: false, error: 'VAPID keys not configured on server' }, { status: 500 });
+  }
+    
+  try {
+    const subscriptionsSnapshot = await firestore.collection('subscriptions').get();
+    if (subscriptionsSnapshot.empty) {
+      return NextResponse.json({ success: true, message: 'No subscriptions to process.' });
+    }
+
+    const now = new Date();
+    const notificationPayload = JSON.stringify({
+      title: 'PrEPy : Rappel de prise',
+      body: 'Il est temps de prendre votre comprimé pour rester protégé(e).',
+      icon: '/icon-192x192.png',
+    });
+
+    const promises = subscriptionsSnapshot.docs.map(async (doc) => {
+      const subscription = doc.data() as webpush.PushSubscription;
+      const localDataSnapshot = await doc.ref.collection('localData').doc('prepState').get();
+
+      if (!localDataSnapshot.exists) {
+        return; // No local data to process
+      }
+
+      const state = localDataSnapshot.data();
+      if (!state || !state.sessionActive || !state.doses || state.doses.length === 0) {
+        return; // Session inactive or no doses
+      }
+
+      // Doses are stored as ISO strings, convert them back to Dates
+      const doses = state.doses.map((d: any) => ({ ...d, time: new Date(d.time) }));
+      const lastDose = doses.filter((d: any) => d.type !== 'stop').sort((a: any, b: any) => b.time.getTime() - a.time.getTime())[0];
+
+      if (!lastDose) {
+        return;
+      }
+      
+      const reminderWindowStart = add(lastDose.time, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
+      const reminderWindowEnd = add(lastDose.time, { hours: DOSE_REMINDER_WINDOW_END_HOURS });
+
+      // Send notification if we are within the reminder window
+      if (isBefore(reminderWindowStart, now) && isBefore(now, reminderWindowEnd)) {
+        try {
+          await webpush.sendNotification(subscription, notificationPayload);
+        } catch (error: any) {
+          console.error(`Error sending notification to ${subscription.endpoint}:`, error.statusCode, error.body);
+          // If subscription is expired or invalid, remove it from Firestore
+          if (error.statusCode === 404 || error.statusCode === 410) {
+            console.log(`Deleting expired subscription: ${subscription.endpoint}`);
+            await doc.ref.delete();
+          }
+        }
+      }
+    });
+
+    await Promise.all(promises);
+
+    return NextResponse.json({ success: true, message: `Processed ${subscriptionsSnapshot.size} subscriptions.` });
+  } catch (error) {
+    console.error('Error in notification task:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });
+  }
+}
+
+// API to sync client-side state with Firestore for the service worker to access
+export async function POST(req: Request) {
+    try {
+        const { subscription, state } = await req.json();
+        
+        if (!subscription || !subscription.endpoint || !state) {
+            return NextResponse.json({ success: false, error: 'Invalid payload' }, { status: 400 });
+        }
+
+        const endpointHash = Buffer.from(subscription.endpoint).toString('base64').replace(/=/g, '').replace(/\//g, '_');
+        const docRef = firestore.collection('subscriptions').doc(endpointHash).collection('localData').doc('prepState');
+        
+        await docRef.set(state);
+
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        console.error('Error syncing local data:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });
+    }
+}

@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info } from 'lucide-react';
+import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info, PowerOff } from 'lucide-react';
 import type { UsePrepStateReturn } from '@/lib/types';
 import { LogDoseDialog } from './log-dose-dialog';
 import { DoseHistory } from './dose-history';
@@ -43,6 +43,8 @@ export function PrepDashboard({
         return <ShieldOff className="h-16 w-16 text-white" />;
       case 'loading':
         return <Clock className="h-16 w-16 text-white" />;
+      case 'inactive':
+        return <PowerOff className="h-16 w-16 text-white" />;
       default:
         return <Pill className="h-16 w-16 text-white" />;
     }
@@ -66,6 +68,13 @@ export function PrepDashboard({
              {protectionEndsAtText && <p className="text-xs text-white/70 mt-1">{protectionEndsAtText}</p>}
           </div>
         );
+      case 'inactive':
+         return (
+          <div className="text-center">
+            <p className="text-white/90 font-medium">La session est terminée.</p>
+             {protectionEndsAtText && <p className="text-xs text-white/70 mt-1">{protectionEndsAtText}</p>}
+          </div>
+        );
       default:
         return null;
     }
@@ -82,54 +91,66 @@ export function PrepDashboard({
             <h2 className="text-3xl font-bold text-white font-headline">{statusText}</h2>
             <StatusDetails />
           </div>
-          { sessionActive && (
+          
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 bg-card">
-              <Button
-                size="lg"
-                className="bg-accent hover:bg-accent/90 text-accent-foreground w-full shadow-md"
-                onClick={() => setIsLogDoseOpen(true)}
-              >
-                <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris ma dose
-              </Button>
-
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button size="lg" variant="destructive" className="w-full shadow-md">
-                    Terminer la session
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Terminer votre session PrEP?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Cela arrêtera les rappels de notification. Votre protection finale sera calculée en fonction de votre dernière prise.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Annuler</AlertDialogCancel>
-                    <AlertDialogAction onClick={endSession} className="bg-destructive hover:bg-destructive/90">
-                      Oui, Terminer
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+               { sessionActive ? (
+                 <>
+                    <Button
+                        size="lg"
+                        className="bg-accent hover:bg-accent/90 text-accent-foreground w-full shadow-md"
+                        onClick={() => setIsLogDoseOpen(true)}
+                    >
+                        <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris ma dose
+                    </Button>
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                        <Button size="lg" variant="destructive" className="w-full shadow-md">
+                            Terminer la session
+                        </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Terminer votre session PrEP?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                            Cela arrêtera les rappels de notification. Votre protection finale sera calculée en fonction de votre dernière prise.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Annuler</AlertDialogCancel>
+                            <AlertDialogAction onClick={endSession} className="bg-destructive hover:bg-destructive/90">
+                            Oui, Terminer
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                 </>
+               ) : (
+                <Button
+                    size="lg"
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full shadow-md md:col-span-2"
+                    onClick={() => setIsLogDoseOpen(true)}
+                >
+                    <Pill className="mr-2 h-5 w-5" /> Démarrer une nouvelle session
+                </Button>
+               )}
             </div>
-          )}
         </CardContent>
       </Card>
       
-      <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-md">
-        <div className="flex">
-          <div className="flex-shrink-0">
-            <Info className="h-5 w-5 text-blue-400" />
-          </div>
-          <div className="ml-3">
-            <p className="text-sm text-blue-700">
-              Pour une protection continue, n'oubliez pas de prendre un comprimé chaque jour pendant les deux jours suivant votre dernier rapport sexuel.
-            </p>
-          </div>
+      { sessionActive && (
+        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-md">
+            <div className="flex">
+            <div className="flex-shrink-0">
+                <Info className="h-5 w-5 text-blue-400" />
+            </div>
+            <div className="ml-3">
+                <p className="text-sm text-blue-700">
+                Pour une protection continue, n'oubliez pas de prendre un comprimé chaque jour pendant les deux jours suivant votre dernier rapport sexuel.
+                </p>
+            </div>
+            </div>
         </div>
-      </div>
+      )}
 
       <DoseHistory doses={doses} />
 

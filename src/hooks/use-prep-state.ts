@@ -41,28 +41,55 @@ const defaultState: PrepState = {
     pushEnabled: false,
 };
 
+async function syncStateWithServer(state: PrepState) {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        return;
+    }
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+
+    if (subscription) {
+        const stateToSync = {
+            ...state,
+            doses: state.doses.map(d => ({ ...d, time: d.time.toISOString() })),
+        };
+        try {
+            await fetch('/api/tasks/notification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subscription, state: stateToSync }),
+            });
+        } catch (error) {
+            console.error("Failed to sync state with server:", error);
+        }
+    }
+}
+
+
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
   const [state, setState] = useState<PrepState>(defaultState);
-
+  
   const saveState = useCallback((newState: Partial<PrepState>) => {
-      setState(prevState => {
-          const updatedState = { ...prevState, ...newState };
-          if (typeof window !== 'undefined') {
-              try {
-                  const stateToSave = {
-                      ...updatedState,
-                      doses: updatedState.doses.map(d => ({ ...d, time: d.time.toISOString() })),
-                  };
-                  localStorage.setItem('prepState', JSON.stringify(stateToSave));
-              } catch (e) {
-                  console.error("Could not save state to localStorage", e);
-              }
-          }
-          return updatedState;
-      });
+    setState(prevState => {
+        const updatedState = { ...prevState, ...newState };
+        if (typeof window !== 'undefined') {
+            try {
+                const stateToSave = {
+                    ...updatedState,
+                    doses: updatedState.doses.map(d => ({ ...d, time: d.time.toISOString() })),
+                };
+                localStorage.setItem('prepState', JSON.stringify(stateToSave));
+                // Sync with server whenever state changes
+                syncStateWithServer(updatedState);
+            } catch (e) {
+                console.error("Could not save state to localStorage", e);
+            }
+        }
+        return updatedState;
+    });
   }, []);
 
   const syncPushSubscription = useCallback(async () => {
@@ -85,7 +112,7 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) {
-            setState(prevState => ({...prevState, ...savedState}));
+          setState(prevState => ({...prevState, ...savedState}));
         }
 
         if ('serviceWorker' in navigator) {
@@ -99,7 +126,6 @@ export function usePrepState(): UsePrepStateReturn {
     }
   }, []);
   
-  // Re-sync subscription when component becomes visible, e.g., tab focus
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -109,6 +135,7 @@ export function usePrepState(): UsePrepStateReturn {
     window.addEventListener('visibilitychange', handleVisibilityChange);
     return () => window.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [syncPushSubscription]);
+
 
   const togglePushNotifications = useCallback(async () => {
     if (!VAPID_PUBLIC_KEY) {
@@ -126,6 +153,11 @@ export function usePrepState(): UsePrepStateReturn {
         const currentSubscription = await registration.pushManager.getSubscription();
         
         if (currentSubscription) {
+            await fetch('/api/subscription', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ endpoint: currentSubscription.endpoint }),
+            });
             await currentSubscription.unsubscribe();
             saveState({ pushEnabled: false });
             toast({ title: "Notifications désactivées." });
@@ -141,15 +173,23 @@ export function usePrepState(): UsePrepStateReturn {
                 userVisibleOnly: true,
                 applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
             });
+            
+            await fetch('/api/subscription', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newSubscription),
+            });
+            
             saveState({ pushEnabled: true });
+            await syncStateWithServer({ ...state, pushEnabled: true });
             toast({ title: "Notifications activées !" });
         }
     } catch (e) {
         console.error("Error toggling push notifications:", e);
         toast({ title: "Une erreur est survenue", variant: "destructive" });
-        syncPushSubscription(); // Re-sync state in case of error
+        syncPushSubscription();
     }
-  }, [saveState, toast, syncPushSubscription]);
+  }, [state, saveState, toast, syncPushSubscription]);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
@@ -213,11 +253,11 @@ export function usePrepState(): UsePrepStateReturn {
   } else if (isClient && !state.sessionActive && state.doses.length > 0) {
      const lastEffectiveDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
      if (lastEffectiveDose) {
-        status = 'missed';
-        statusColor = 'bg-destructive';
+        status = 'inactive'; // Changed from 'missed' to 'inactive' to better reflect session end
+        statusColor = 'bg-gray-500';
         statusText = 'Session terminée';
         const protectionEndsAt = add(lastEffectiveDose.time, { hours: FINAL_PROTECTION_HOURS });
-        protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+        protectionEndsAtText = `Protection résiduelle jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
      }
   }
 
@@ -225,6 +265,10 @@ export function usePrepState(): UsePrepStateReturn {
     statusText = "Chargement...";
     statusColor = "bg-muted";
   }
+  
+  const welcomeScreenVisible = !isClient || (!state.sessionActive && state.doses.length === 0);
+  const dashboardVisible = isClient && (state.sessionActive || state.doses.length > 0);
+
 
   return {
     ...state,
@@ -240,5 +284,7 @@ export function usePrepState(): UsePrepStateReturn {
     endSession,
     clearHistory,
     togglePushNotifications,
+    welcomeScreenVisible,
+    dashboardVisible,
   };
 }
