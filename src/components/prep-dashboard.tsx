@@ -77,9 +77,9 @@ export function PrepDashboard({
             <StatusDetails />
           </div>
           
-            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 bg-card">
+            <div className="p-6 bg-card">
                { sessionActive ? (
-                 <>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Button
                         size="lg"
                         className="bg-accent hover:bg-accent/90 text-accent-foreground w-full shadow-md"
@@ -108,35 +108,35 @@ export function PrepDashboard({
                         </AlertDialogFooter>
                         </AlertDialogContent>
                     </AlertDialog>
-                 </>
+                 </div>
                ) : (
-                <div className="md:col-span-2">
-                    <Button
-                        size="lg"
-                        className="bg-primary hover:bg-primary/90 text-primary-foreground w-full shadow-md flex items-center justify-center"
-                        onClick={() => setIsLogDoseOpen(true)}
-                    >
-                        <Pill className="mr-2 h-5 w-5" />
-                        <span>Démarrer une nouvelle session</span>
-                    </Button>
-                </div>
+                <Button
+                    size="lg"
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full shadow-md flex items-center justify-center"
+                    onClick={() => setIsLogDoseOpen(true)}
+                >
+                    <Pill className="mr-2 h-5 w-5" />
+                    <span>Démarrer une nouvelle session</span>
+                </Button>
                )}
             </div>
         </CardContent>
       </Card>
       
-      <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-md">
-          <div className="flex">
-              <div className="flex-shrink-0">
-                  <Info className="h-5 w-5 text-blue-400" />
-              </div>
-              <div className="ml-3">
-                  <p className="text-sm text-blue-700">
-                      Rappel: La protection pour un rapport sexuel est assurée si vous continuez à prendre 1 comprimé par jour pendant les 2 jours qui suivent ce rapport.
-                  </p>
-              </div>
-          </div>
-      </div>
+      {sessionActive && (
+        <div className="bg-blue-50 border-l-4 border-primary p-4 rounded-md">
+            <div className="flex">
+                <div className="flex-shrink-0">
+                    <Info className="h-5 w-5 text-primary" />
+                </div>
+                <div className="ml-3">
+                    <p className="text-sm text-primary/90">
+                        Rappel : Pour être protégé, continuez de prendre 1 comprimé par jour pendant les 2 jours qui suivent votre dernier rapport sexuel.
+                    </p>
+                </div>
+            </div>
+        </div>
+      )}
 
 
       <DoseHistory doses={doses} />
