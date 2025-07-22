@@ -1,6 +1,7 @@
 
 "use client";
 
+import { useState, useEffect } from "react";
 import {
   Sheet,
   SheetContent,
@@ -23,14 +24,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { BellRing, Trash2, AlertTriangle } from "lucide-react";
+import { BellRing, Trash2, AlertTriangle, BellOff } from "lucide-react";
 
 interface SettingsSheetProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onClearHistory: () => void;
   pushEnabled: boolean;
-  onTogglePush: (enabled: boolean) => void;
+  onTogglePush: () => void;
 }
 
 const VAPID_KEY_CONFIGURED = !!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -43,10 +44,20 @@ export function SettingsSheet({
   onTogglePush
 }: SettingsSheetProps) {
 
+  const [notificationPermission, setNotificationPermission] = useState('default');
+
+  useEffect(() => {
+    if (isOpen && 'Notification' in window) {
+      setNotificationPermission(Notification.permission);
+    }
+  }, [isOpen]);
+
   const handleClearHistory = () => {
     onClearHistory();
     onOpenChange(false);
   }
+
+  const isSwitchDisabled = !VAPID_KEY_CONFIGURED || notificationPermission === 'denied';
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
@@ -58,9 +69,9 @@ export function SettingsSheet({
           </SheetDescription>
         </SheetHeader>
         <div className="grid gap-6 py-8">
-          <div className="flex flex-col gap-2 p-4 rounded-lg border">
+          <div className="flex flex-col gap-3 p-4 rounded-lg border">
             <div className="flex items-center justify-between space-x-2">
-                <Label htmlFor="notifications-switch" className={`flex flex-col space-y-1 ${VAPID_KEY_CONFIGURED ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+                <Label htmlFor="notifications-switch" className={`flex flex-col space-y-1 ${isSwitchDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                   <span className="font-medium flex items-center gap-2">
                     <BellRing className="h-4 w-4" />
                     Notifications Push
@@ -71,15 +82,21 @@ export function SettingsSheet({
                 </Label>
                 <Switch
                   id="notifications-switch"
-                  checked={pushEnabled && VAPID_KEY_CONFIGURED}
+                  checked={pushEnabled}
                   onCheckedChange={onTogglePush}
-                  disabled={!VAPID_KEY_CONFIGURED}
+                  disabled={isSwitchDisabled}
                 />
             </div>
-            {!VAPID_KEY_CONFIGURED && (
+             {!VAPID_KEY_CONFIGURED && (
                 <div className="flex items-center gap-2 text-xs text-destructive pt-2 border-t border-destructive/20 mt-2">
                     <AlertTriangle size={14}/>
-                    <p>Fonctionnalité non disponible. La configuration des notifications est manquante.</p>
+                    <p>Fonctionnalité non disponible : configuration serveur manquante.</p>
+                </div>
+            )}
+            {notificationPermission === 'denied' && (
+                <div className="flex items-center gap-2 text-xs text-destructive pt-2 border-t border-destructive/20 mt-2">
+                    <BellOff size={14}/>
+                    <p>Les notifications sont bloquées dans les paramètres de votre navigateur.</p>
                 </div>
             )}
           </div>

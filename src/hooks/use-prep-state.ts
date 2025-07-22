@@ -39,7 +39,6 @@ const defaultState: PrepState = {
     doses: [],
     sessionActive: false,
     pushEnabled: false,
-    permissionStatus: 'loading',
 };
 
 export function usePrepState(): UsePrepStateReturn {
@@ -56,7 +55,6 @@ export function usePrepState(): UsePrepStateReturn {
                   const stateToSave = {
                       ...updatedState,
                       doses: updatedState.doses.map(d => ({ ...d, time: d.time.toISOString() })),
-                      permissionStatus: undefined, // Don't save permission status, check on load
                   };
                   localStorage.setItem('prepState', JSON.stringify(stateToSave));
               } catch (e) {
@@ -67,42 +65,6 @@ export function usePrepState(): UsePrepStateReturn {
       });
   }, []);
 
-  const checkNotificationPermission = useCallback(async (isInitialCheck = false) => {
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-        setState(prevState => ({...prevState, permissionStatus: 'unsupported' }));
-        return;
-    }
-    
-    let hasEverBeenGranted = localStorage.getItem('notificationPermissionEverGranted') === 'true';
-
-    if (hasEverBeenGranted) {
-        setState(prevState => ({...prevState, permissionStatus: 'granted' }));
-        return;
-    }
-
-    const currentPermission = Notification.permission;
-    if (currentPermission === 'granted') {
-        localStorage.setItem('notificationPermissionEverGranted', 'true');
-        setState(prevState => ({...prevState, permissionStatus: 'granted' }));
-    } else if (currentPermission === 'denied') {
-        setState(prevState => ({...prevState, permissionStatus: 'denied' }));
-    } else {
-        if (isInitialCheck) {
-            setState(prevState => ({...prevState, permissionStatus: 'prompt' }));
-        } else {
-            // This is a request, not just a check
-            const permission = await Notification.requestPermission();
-            if (permission === 'granted') {
-                localStorage.setItem('notificationPermissionEverGranted', 'true');
-                setState(prevState => ({...prevState, permissionStatus: 'granted' }));
-                togglePushNotifications(true, true); // Force enable notifications after grant
-            } else {
-                setState(prevState => ({...prevState, permissionStatus: 'denied' }));
-            }
-        }
-    }
-  }, [saveState]);
-
   useEffect(() => {
     setIsClient(true);
     if (typeof window !== 'undefined') {
@@ -110,8 +72,6 @@ export function usePrepState(): UsePrepStateReturn {
         if (savedState) {
             setState(prevState => ({...prevState, ...savedState}));
         }
-
-        checkNotificationPermission(true);
 
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/service-worker.js')
@@ -121,45 +81,52 @@ export function usePrepState(): UsePrepStateReturn {
         const timer = setInterval(() => setNow(new Date()), 1000 * 60);
         return () => clearInterval(timer);
     }
-  }, [checkNotificationPermission]);
+  }, []);
 
-
-  const togglePushNotifications = useCallback(async (enabled: boolean, forceSubscription = false) => {
-    if (enabled) {
-      if (!VAPID_PUBLIC_KEY) {
+  const togglePushNotifications = useCallback(async () => {
+    if (!VAPID_PUBLIC_KEY) {
         console.error("VAPID public key not found.");
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
         return;
-      }
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        let sub = await registration.pushManager.getSubscription();
-        if (!sub || forceSubscription) {
-          sub = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-          });
+    }
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+        toast({ title: "Navigateur non compatible", variant: "destructive" });
+        return;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    const currentSubscription = await registration.pushManager.getSubscription();
+    
+    // If there's a subscription, we're turning it OFF
+    if (currentSubscription) {
+        try {
+            await currentSubscription.unsubscribe();
+            saveState({ pushEnabled: false });
+            toast({ title: "Notifications désactivées." });
+        } catch (e) {
+            console.error("Error unsubscribing:", e);
+            toast({ title: "Erreur de désabonnement", variant: "destructive" });
         }
-        saveState({ pushEnabled: true });
-        toast({ title: "Notifications activées !" });
-      } catch (error) {
-        console.error("Error subscribing:", error);
-        toast({ title: "Erreur d'abonnement", variant: "destructive" });
-        saveState({ pushEnabled: false }); // Revert on failure
-      }
-    } else {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        const sub = await registration.pushManager.getSubscription();
-        if (sub) {
-          await sub.unsubscribe();
+    } else { // If there's no subscription, we're turning it ON
+        try {
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') {
+                toast({ title: "Permission refusée", description: "Vous devez autoriser les notifications dans les paramètres de votre navigateur.", variant: "destructive" });
+                saveState({ pushEnabled: false });
+                return;
+            }
+
+            const newSubscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+            });
+            saveState({ pushEnabled: true });
+            toast({ title: "Notifications activées !" });
+        } catch (e) {
+            console.error("Error subscribing:", e);
+            toast({ title: "Erreur d'abonnement", variant: "destructive" });
+            saveState({ pushEnabled: false });
         }
-        saveState({ pushEnabled: false });
-        toast({ title: "Notifications désactivées." });
-      } catch (error) {
-        console.error("Error unsubscribing:", error);
-        toast({ title: "Erreur de désabonnement", variant: "destructive" });
-      }
     }
   }, [saveState, toast]);
 
@@ -183,9 +150,9 @@ export function usePrepState(): UsePrepStateReturn {
   }, [state.doses, saveState, toast]);
 
   const clearHistory = useCallback(() => {
-    saveState({ ...defaultState, pushEnabled: state.pushEnabled, permissionStatus: state.permissionStatus });
+    saveState({ ...defaultState, pushEnabled: state.pushEnabled });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [saveState, state.pushEnabled, state.permissionStatus, toast]);
+  }, [saveState, state.pushEnabled, toast]);
 
   const lastDose = state.doses.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
   const firstDoseInSession = state.doses.find(d => d.type === 'start');
@@ -206,8 +173,8 @@ export function usePrepState(): UsePrepStateReturn {
     if (isBefore(now, protectionStartTime)) {
       status = 'loading';
       statusColor = 'bg-primary';
-      statusText = `Sera effective ${formatDistanceToNowStrict(protectionStartTime, { addSuffix: true, locale: fr })}`;
-      protectionStartsIn = `à ${format(protectionStartTime, 'HH:mm', { locale: fr })}`;
+      statusText = 'Protection en cours...';
+      protectionStartsIn = `Sera active ${formatDistanceToNowStrict(protectionStartTime, { addSuffix: true, locale: fr })}`;
     } else if (isBefore(now, protectionLapsesTime)) {
       status = 'effective';
       statusColor = 'bg-accent';
@@ -252,8 +219,5 @@ export function usePrepState(): UsePrepStateReturn {
     endSession,
     clearHistory,
     togglePushNotifications,
-    requestNotificationPermission: () => checkNotificationPermission(false),
   };
 }
-
-    

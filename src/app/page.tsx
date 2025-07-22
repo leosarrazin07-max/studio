@@ -4,14 +4,6 @@
 import { useState } from "react";
 import { usePrepState } from "@/hooks/use-prep-state";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { LogDoseDialog } from "@/components/log-dose-dialog";
 import { PrepDashboard } from "@/components/prep-dashboard";
 import { Pill, Menu } from 'lucide-react';
@@ -22,7 +14,7 @@ export default function Home() {
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const { sessionActive, startSession, clearHistory, pushEnabled, addDose, status, togglePushNotifications, permissionStatus, requestNotificationPermission } = prepState;
+  const { sessionActive, startSession, clearHistory, pushEnabled, addDose, status, togglePushNotifications } = prepState;
 
   const WelcomeScreen = () => (
     <div className="flex flex-col items-center justify-center h-full text-center p-4 md:p-8">
@@ -45,7 +37,7 @@ export default function Home() {
     </div>
   );
 
-  const renderMainContent = () => (
+  return (
     <div className="flex flex-col min-h-screen bg-background">
       <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 items-center justify-between">
@@ -79,50 +71,4 @@ export default function Home() {
       />
     </div>
   );
-
-  const PermissionDialog = () => (
-    <Dialog open={true} onOpenChange={() => {}}>
-        <DialogContent className="sm:max-w-md" hideCloseButton={true}>
-            <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                     <Pill className="text-primary" />
-                     Message de PrEPy
-                </DialogTitle>
-                <DialogDescription>
-                    Pour assurer votre protection, PrEPy a besoin de vous envoyer des rappels. Veuillez autoriser les notifications.
-                </DialogDescription>
-            </DialogHeader>
-            <div className="py-4 text-sm text-muted-foreground">
-                <p>
-                    Cette autorisation est nécessaire pour le bon fonctionnement de l'application. Vous pourrez gérer vos préférences de notification à tout moment dans les paramètres.
-                </p>
-                {permissionStatus === 'denied' && (
-                    <p className="text-destructive font-medium mt-2">
-                       Les notifications sont bloquées. Vous devez les autoriser manuellement dans les paramètres de votre navigateur pour continuer.
-                    </p>
-                )}
-            </div>
-            <DialogFooter>
-                <Button onClick={() => requestNotificationPermission()} disabled={permissionStatus === 'denied'}>
-                    Activer les notifications
-                </Button>
-            </DialogFooter>
-        </DialogContent>
-    </Dialog>
-  );
-
-  if (permissionStatus === 'loading') {
-    return <div className="flex items-center justify-center min-h-screen">Chargement de PrEPy...</div>;
-  }
-  
-  if (permissionStatus !== 'granted') {
-    return (
-      <>
-        {renderMainContent()}
-        <PermissionDialog />
-      </>
-    );
-  }
-
-  return renderMainContent();
 }
