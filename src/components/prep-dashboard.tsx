@@ -123,20 +123,18 @@ export function PrepDashboard({
         </CardContent>
       </Card>
       
-      { (status === 'effective' || status === 'missed') && (
-         <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-md">
-            <div className="flex">
-               <div className="flex-shrink-0">
+      <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-md">
+          <div className="flex">
+              <div className="flex-shrink-0">
                   <Info className="h-5 w-5 text-blue-400" />
-               </div>
-               <div className="ml-3">
+              </div>
+              <div className="ml-3">
                   <p className="text-sm text-blue-700">
-                    Pour rester protégé, n'oubliez pas de continuer les prises pendant 2 jours après votre dernier rapport sexuel.
+                      Pour rester protégé, n'oubliez pas de continuer les prises pendant 2 jours après votre dernier rapport sexuel.
                   </p>
-               </div>
-            </div>
-         </div>
-      )}
+              </div>
+          </div>
+      </div>
 
 
       <DoseHistory doses={doses} />
@@ -151,6 +149,7 @@ export function PrepDashboard({
     </div>
   );
 }
+
 
 
 
