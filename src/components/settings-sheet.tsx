@@ -57,7 +57,7 @@ export function SettingsSheet({
         </SheetHeader>
         <div className="grid gap-6 py-8">
           <div className="flex items-center justify-between space-x-2 p-4 rounded-lg border">
-            <Label htmlFor="notifications-switch" className="flex flex-col space-y-1">
+            <Label htmlFor="notifications-switch" className="flex flex-col space-y-1 cursor-pointer">
               <span className="font-medium flex items-center gap-2">
                 <BellRing className="h-4 w-4" />
                 Notifications Push
@@ -87,7 +87,7 @@ export function SettingsSheet({
                     <AlertDialogDescription>
                       Cette action est irréversible. Toutes vos données de session et
                       votre historique de doses seront définitivement supprimés.
-                    </AlertDialogDescription>
+                    </d'AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Annuler</AlertDialogCancel>
@@ -102,3 +102,5 @@ export function SettingsSheet({
     </Sheet>
   );
 }
+
+    

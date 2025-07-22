@@ -45,7 +45,6 @@ export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
-  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(defaultState);
 
   const saveState = useCallback((newState: PrepState) => {
@@ -63,98 +62,86 @@ export function usePrepState(): UsePrepStateReturn {
       }
   }, []);
 
-  const updateSubscriptionObject = useCallback(async () => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
+  const togglePushNotifications = useCallback(async (enabled: boolean) => {
+    if (enabled) {
+      if (!VAPID_PUBLIC_KEY) {
+        console.error("VAPID public key not found.");
+        toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
+        return;
+      }
+      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+        toast({ title: "Navigateur non compatible", variant: "destructive" });
+        return;
+      }
+
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const permission = await Notification.requestPermission();
+        
+        if (permission !== 'granted') {
+          toast({ title: "Notifications refusées", description: "Vous pouvez changer cela dans les paramètres de votre navigateur.", variant: "destructive" });
+          saveState({ ...state, pushEnabled: false });
+          return;
+        }
+
+        let sub = await registration.pushManager.getSubscription();
+        if (!sub) {
+          sub = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+          });
+        }
+        
+        saveState({ ...state, pushEnabled: true });
+        toast({ title: "Notifications activées !" });
+
+      } catch (error) {
+        console.error("Error subscribing:", error);
+        toast({ title: "Erreur d'abonnement", variant: "destructive" });
+        saveState({ ...state, pushEnabled: false });
+      }
+
+    } else {
+      // Unsubscribe
       try {
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.getSubscription();
-        setSubscription(sub);
-        // This is the key fix: We directly update the state's pushEnabled
-        // from the definitive source (the subscription object) and then save it.
-        setState(prevState => {
-          const newState = {...prevState, pushEnabled: !!sub };
-          // Save the synchronized state to localStorage
-           try {
-            const stateToSave = { ...newState, doses: newState.doses.map(d => ({...d, time: d.time.toISOString()})) };
-            localStorage.setItem('prepState', JSON.stringify(stateToSave));
-          } catch (e) {
-            console.error("Could not save state to localStorage", e);
-          }
-          return newState;
-        });
+        if (sub) {
+          await sub.unsubscribe();
+        }
+        saveState({ ...state, pushEnabled: false });
+        toast({ title: "Notifications désactivées." });
       } catch (error) {
-        console.error("Error getting push subscription:", error);
+        console.error("Error unsubscribing:", error);
+        toast({ title: "Erreur de désabonnement", variant: "destructive" });
+        // Force state to enabled as we failed to unsubscribe
+        saveState({ ...state, pushEnabled: true });
       }
     }
-  }, []);
-
-  const requestNotificationPermission = useCallback(async () => {
-    if (!VAPID_PUBLIC_KEY) {
-        console.error("VAPID public key not found.");
-        toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
-        return false;
-    }
-    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-        toast({ title: "Navigateur non compatible", variant: "destructive" });
-        return false;
-    }
-    try {
-        const registration = await navigator.serviceWorker.ready;
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-            toast({ title: "Notifications refusées", variant: "destructive" });
-            saveState({...state, pushEnabled: false});
-            return false;
-        }
-        let sub = await registration.pushManager.getSubscription();
-        if (!sub) {
-            sub = await registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-            });
-        }
-        setSubscription(sub);
-        saveState({...state, pushEnabled: true});
-        toast({ title: "Notifications activées!" });
-        return true;
-    } catch (error) {
-        console.error("Error subscribing:", error);
-        toast({ title: "Erreur d'abonnement", variant: "destructive" });
-        saveState({...state, pushEnabled: false});
-        return false;
-    }
-  }, [toast, state, saveState]);
-
-  const unsubscribeFromNotifications = useCallback(async () => {
-    if (subscription) {
-        await subscription.unsubscribe();
-        setSubscription(null);
-        saveState({...state, pushEnabled: false});
-        toast({ title: "Notifications désactivées." });
-    }
-  }, [subscription, toast, state, saveState]);
+  }, [state, saveState, toast]);
 
   useEffect(() => {
     setIsClient(true);
-    
-    const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-    if (savedState) {
-        setState(savedState);
+    if (typeof window !== 'undefined') {
+        const savedState = safelyParseJSON(localStorage.getItem('prepState'));
+        if (savedState) {
+            setState(savedState);
+        }
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js')
+              .catch(error => console.error('Erreur Service Worker:', error));
+        }
+
+        const timer = setInterval(() => setNow(new Date()), 1000 * 60);
+        return () => clearInterval(timer);
     }
-    
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker.js')
-        .then(() => updateSubscriptionObject())
-        .catch(error => console.error('Erreur Service Worker:', error));
-    }
-    
-    const timer = setInterval(() => setNow(new Date()), 1000 * 60);
-    return () => clearInterval(timer);
-  }, [updateSubscriptionObject]);
+  }, []);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
     const newDoses = [newDose];
+    // Keep the existing pushEnabled preference
     saveState({ ...defaultState, doses: newDoses, sessionActive: true, pushEnabled: state.pushEnabled });
   }, [saveState, state.pushEnabled]);
 
@@ -172,7 +159,7 @@ export function usePrepState(): UsePrepStateReturn {
   }, [state, saveState, toast]);
 
   const clearHistory = useCallback(() => {
-    localStorage.removeItem('prepState');
+    // Keep the existing pushEnabled preference
     saveState({ ...defaultState, pushEnabled: state.pushEnabled });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
   }, [saveState, state.pushEnabled, toast]);
@@ -241,7 +228,10 @@ export function usePrepState(): UsePrepStateReturn {
     startSession,
     endSession,
     clearHistory,
-    requestNotificationPermission,
-    unsubscribeFromNotifications
+    requestNotificationPermission: () => Promise.resolve(false), // Deprecated, managed by togglePushNotifications
+    unsubscribeFromNotifications: () => {}, // Deprecated, managed by togglePushNotifications
+    togglePushNotifications, // New method for the settings switch
   };
 }
+
+    

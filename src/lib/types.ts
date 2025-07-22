@@ -29,8 +29,13 @@ export interface PrepLogic {
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
+  // New simplified method for toggling push notifications
+  togglePushNotifications: (enabled: boolean) => void;
+  // Deprecated methods
   requestNotificationPermission: () => Promise<boolean>;
   unsubscribeFromNotifications: () => void;
 }
 
 export type UsePrepStateReturn = PrepState & PrepLogic;
+
+    
