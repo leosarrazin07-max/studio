@@ -8,7 +8,6 @@ import { formatDistance } from "date-fns";
 import { fr } from "date-fns/locale";
 import { utcToZonedTime } from "date-fns-tz";
 
-// Initialize Firebase Admin SDK
 // When running in a Google Cloud environment like App Hosting,
 // initializeApp() automatically discovers the service account credentials.
 if (admin.apps.length === 0) {
@@ -186,11 +185,9 @@ async function processCron() {
 
 export async function GET(request: Request) {
     const authHeader = request.headers.get('authorization');
-    // For now, we allow the cron to run without a secret for simplicity,
-    // but we will add the secret check back later.
-    // if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    //   return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    // }
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
   
     try {
       if (!db) {

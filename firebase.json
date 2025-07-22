@@ -13,6 +13,9 @@
         "memory": "512MiB",
         "timeoutSeconds": 120,
         "maxInstances": 1
+      },
+      "env": {
+        "CRON_SECRET": "8f4a7c1b-a8d2-4e9f-8b1c-6d2e5a0f9b3c"
       }
     }
   }
