@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { LogDoseDialog } from "@/components/log-dose-dialog";
 import { PrepDashboard } from "@/components/prep-dashboard";
-import { Pill, Menu, BellOff } from 'lucide-react';
+import { Pill, Menu } from 'lucide-react';
 import { SettingsSheet } from "@/components/settings-sheet";
 
 export default function Home() {
