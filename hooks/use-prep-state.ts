@@ -7,7 +7,7 @@ import { fr } from 'date-fns/locale';
 import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { getFirestore, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { app } from '@/lib/firebase-client';
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -57,7 +57,17 @@ const defaultState: PrepState = {
     nextNotificationTime: null,
 };
 
-const hashEndpoint = (endpoint: string) => btoa(endpoint).replace(/=/g, '');
+const hashEndpoint = (endpoint: string) => {
+    // Simple hash function, not for crypto, just for a unique ID
+    let hash = 0;
+    for (let i = 0; i < endpoint.length; i++) {
+        const char = endpoint.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash |= 0; // Convert to 32bit integer
+    }
+    return 'sub_' + Math.abs(hash).toString(16);
+}
+
 
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
@@ -65,6 +75,7 @@ export function usePrepState(): UsePrepStateReturn {
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(defaultState);
+  const [subscriptionId, setSubscriptionId] = useState<string | null>(null);
 
   const calculateNextNotificationTime = useCallback((doses: Dose[], protectionNotified: boolean | undefined): Date | null => {
     if (!doses || doses.length === 0) return null;
@@ -87,20 +98,21 @@ export function usePrepState(): UsePrepStateReturn {
   }, []);
   
   const updateSubscriptionOnServer = useCallback(async (sub: PushSubscription | null) => {
-    if (sub) {
-        try {
-            const subJson = sub.toJSON();
-            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            const endpointHash = hashEndpoint(sub.endpoint);
-            await setDoc(doc(firestore, "subscriptions", endpointHash), { ...subJson, timezone }, { merge: true });
-        } catch (e) {
-            console.error("Failed to save subscription", e);
-            toast({
-                title: "Erreur serveur",
-                description: "Impossible de sauvegarder les préférences de notification.",
-                variant: "destructive",
-            });
-        }
+    if (!sub) return;
+    try {
+        const id = hashEndpoint(sub.endpoint);
+        setSubscriptionId(id);
+        const subRef = doc(firestore, "subscriptions", id);
+        const subJson = sub.toJSON();
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        await setDoc(subRef, { ...subJson, timezone }, { merge: true });
+    } catch (e) {
+        console.error("Failed to save subscription", e);
+        toast({
+            title: "Erreur serveur",
+            description: "Impossible de sauvegarder les préférences de notification.",
+            variant: "destructive",
+        });
     }
   }, [toast]);
   
@@ -109,8 +121,15 @@ export function usePrepState(): UsePrepStateReturn {
       try {
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.getSubscription();
-        setSubscription(sub);
-        setState(prevState => ({...prevState, pushEnabled: !!sub}));
+        if (sub) {
+            setSubscription(sub);
+            setSubscriptionId(hashEndpoint(sub.endpoint));
+            setState(prevState => ({...prevState, pushEnabled: true}));
+        } else {
+            setSubscription(null);
+            setSubscriptionId(null);
+            setState(prevState => ({...prevState, pushEnabled: false}));
+        }
       } catch (error) {
         console.error("Error getting push subscription:", error);
         setSubscription(null);
@@ -120,22 +139,24 @@ export function usePrepState(): UsePrepStateReturn {
   }, []);
 
   const unsubscribeFromNotifications = useCallback(async () => {
-    if (subscription) {
-      const endpointHash = hashEndpoint(subscription.endpoint);
+    if (subscription && subscriptionId) {
       await subscription.unsubscribe();
       try {
-          const stateRef = doc(firestore, "states", endpointHash);
-          const subRef = doc(firestore, "subscriptions", endpointHash);
-          await deleteDoc(stateRef);
+          const subRef = doc(firestore, "subscriptions", subscriptionId);
           await deleteDoc(subRef);
+          // Also delete state from server
+          const stateRef = doc(firestore, "states", subscriptionId);
+          await deleteDoc(stateRef);
+
       } catch(e) {
-          console.error("Failed to delete state from server", e);
+          console.error("Failed to delete subscription/state from server", e);
       }
       setSubscription(null);
+      setSubscriptionId(null);
       setState(prevState => ({...prevState, pushEnabled: false}));
       toast({ title: "Notifications désactivées." });
     }
-  }, [subscription, toast]);
+  }, [subscription, subscriptionId, toast]);
 
 
   const requestNotificationPermission = useCallback(async () => {
@@ -211,10 +232,12 @@ export function usePrepState(): UsePrepStateReturn {
     return () => clearInterval(timer);
   }, [updateSubscriptionObject]);
 
+  // Sync state to Firestore and localStorage
   useEffect(() => {
     if (isClient) {
         const nextNotificationTime = calculateNextNotificationTime(state.doses, state.protectionNotified);
         
+        // Prep state for JSON serialization
         const stateToSave = {
           ...state,
           doses: state.doses.map(d => ({...d, time: d.time.toISOString()})),
@@ -223,12 +246,16 @@ export function usePrepState(): UsePrepStateReturn {
 
         localStorage.setItem('prepState', JSON.stringify(stateToSave));
 
-        if (state.sessionActive && subscription) {
-            const endpointHash = hashEndpoint(subscription.endpoint);
-            setDoc(doc(firestore, "states", endpointHash), stateToSave);
+        // Save to Firestore if push is enabled and session is active
+        if (subscriptionId && state.sessionActive) {
+            const stateRef = doc(firestore, "states", subscriptionId);
+            setDoc(stateRef, stateToSave, { merge: true }).catch(e => {
+                console.error("Failed to save state to server", e);
+            });
         }
     }
-  }, [state, isClient, subscription, calculateNextNotificationTime]);
+  }, [state, isClient, subscriptionId, calculateNextNotificationTime]);
+
 
   const addDose = useCallback((dose: { time: Date; pills: number }) => {
     setState(prevState => {
@@ -260,7 +287,7 @@ export function usePrepState(): UsePrepStateReturn {
         const nextNotificationTime = calculateNextNotificationTime(updatedDoses, false);
         const newState: PrepState = {
             ...defaultState,
-            pushEnabled: prevState.pushEnabled,
+            pushEnabled: true, // It must be true if we got here
             doses: updatedDoses,
             sessionActive: true,
             protectionNotified: false,
@@ -277,30 +304,29 @@ export function usePrepState(): UsePrepStateReturn {
         const updatedDoses = [...prevState.doses, stopEvent].sort((a, b) => a.time.getTime() - b.time.getTime());
         return { ...prevState, sessionActive: false, doses: updatedDoses, nextNotificationTime: null };
     });
+
+    if (subscriptionId) {
+        const stateRef = doc(firestore, "states", subscriptionId);
+        deleteDoc(stateRef).catch(e => console.error("Could not delete server state.", e));
+    }
+
     toast({
         title: "Session terminée",
         description: "Les rappels de notification sont maintenant arrêtés."
     });
-  }, [toast]);
+  }, [toast, subscriptionId]);
 
   const clearHistory = useCallback(async () => {
-    if (subscription) {
-        const endpointHash = hashEndpoint(subscription.endpoint);
-        try {
-            await deleteDoc(doc(firestore, "states", endpointHash));
-            await deleteDoc(doc(firestore, "subscriptions", endpointHash));
-        } catch(e) {
-            console.error("Failed to delete state from server during clear history", e);
-        }
-    }
+    await unsubscribeFromNotifications(); // This will also delete server state
+    
     localStorage.removeItem('prepState');
-    setState(prevState => ({
+    setState({
         ...defaultState,
-        pushEnabled: prevState.pushEnabled
-    }));
-    updateSubscriptionObject();
-    toast({ title: "Données effacées", description: "Votre historique local a été supprimé." });
-  }, [updateSubscriptionObject, toast, subscription]);
+        pushEnabled: false, // after unsubscribing, it is false
+    });
+    
+    toast({ title: "Données effacées", description: "Votre historique et vos préférences de notification ont été supprimés." });
+  }, [unsubscribeFromNotifications, toast]);
   
   const lastDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
 
@@ -338,12 +364,15 @@ export function usePrepState(): UsePrepStateReturn {
       const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
-  } else if (isClient && !state.sessionActive && lastDose) {
-    status = 'missed';
-    statusColor = 'bg-destructive';
-    statusText = 'Session terminée';
-    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+  } else if (isClient && !state.sessionActive && state.doses.length > 0) {
+     const lastEffectiveDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
+     if (lastEffectiveDose) {
+        status = 'missed';
+        statusColor = 'bg-destructive';
+        statusText = 'Session terminée';
+        const protectionEndsAt = add(lastEffectiveDose.time, { hours: FINAL_PROTECTION_HOURS });
+        protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+     }
   }
 
   if (!isClient) {
