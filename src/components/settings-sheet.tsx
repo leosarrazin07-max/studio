@@ -60,7 +60,7 @@ export function SettingsSheet({
         <div className="grid gap-6 py-8">
           <div className="flex flex-col gap-2 p-4 rounded-lg border">
             <div className="flex items-center justify-between space-x-2">
-                <Label htmlFor="notifications-switch" className="flex flex-col space-y-1 cursor-pointer">
+                <Label htmlFor="notifications-switch" className={`flex flex-col space-y-1 ${VAPID_KEY_CONFIGURED ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
                   <span className="font-medium flex items-center gap-2">
                     <BellRing className="h-4 w-4" />
                     Notifications Push
@@ -77,7 +77,7 @@ export function SettingsSheet({
                 />
             </div>
             {!VAPID_KEY_CONFIGURED && (
-                <div className="flex items-center gap-2 text-xs text-destructive pt-2 border-t border-destructive/20">
+                <div className="flex items-center gap-2 text-xs text-destructive pt-2 border-t border-destructive/20 mt-2">
                     <AlertTriangle size={14}/>
                     <p>Fonctionnalité non disponible. La configuration des notifications est manquante.</p>
                 </div>
