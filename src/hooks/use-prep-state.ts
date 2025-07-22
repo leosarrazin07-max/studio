@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
-import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS } from '@/lib/constants';
+import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_REMINDER_WINDOW_START_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -228,7 +228,7 @@ export function usePrepState(): UsePrepStateReturn {
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
     const lastDoseTime = lastDose.time;
     const protectionStartTime = add(firstDoseInSession.time, { hours: PROTECTION_START_HOURS });
-    const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
+    const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
     const protectionLapsesTime = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
 
     if (isBefore(now, protectionStartTime)) {
@@ -241,7 +241,6 @@ export function usePrepState(): UsePrepStateReturn {
       statusColor = 'bg-accent';
       statusText = 'Protection active';
       nextDoseIn = `Prochaine dose ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
-      // New protection logic: Protection is until 48h BEFORE the last dose.
       const protectionEndDate = sub(lastDoseTime, { hours: 48 });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     } else {
@@ -292,3 +291,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
