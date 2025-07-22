@@ -45,46 +45,7 @@ export default function Home() {
     </div>
   );
 
-  const PermissionGuard = () => (
-    <Dialog open={permissionStatus !== 'granted'} onOpenChange={() => {}}>
-        <DialogContent className="sm:max-w-md" hideCloseButton={true}>
-            <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                    <BellOff className="text-destructive" />
-                    Autorisation requise
-                </DialogTitle>
-                <DialogDescription>
-                    Pour assurer un suivi fiable, cette application a besoin de l'autorisation d'envoyer des notifications.
-                </DialogDescription>
-            </DialogHeader>
-            <div className="py-4 text-sm text-muted-foreground">
-                <p>
-                    Veuillez autoriser les notifications pour ce site dans les paramètres de votre navigateur. Vous pourrez les désactiver à tout moment dans les réglages de l'application.
-                </p>
-                {permissionStatus === 'denied' && (
-                    <p className="text-destructive font-medium mt-2">
-                       Les notifications sont bloquées. Vous devez les autoriser manuellement dans les paramètres de votre navigateur pour continuer.
-                    </p>
-                )}
-            </div>
-            <DialogFooter>
-                <Button onClick={() => requestNotificationPermission()} disabled={permissionStatus === 'denied'}>
-                    Activer les notifications
-                </Button>
-            </DialogFooter>
-        </DialogContent>
-    </Dialog>
-  );
-
-  if (permissionStatus === 'loading') {
-    return <div className="flex items-center justify-center min-h-screen">Chargement...</div>;
-  }
-  
-  if (permissionStatus !== 'granted') {
-    return <PermissionGuard />;
-  }
-
-  return (
+  const renderMainContent = () => (
     <div className="flex flex-col min-h-screen bg-background">
       <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 items-center justify-between">
@@ -118,6 +79,50 @@ export default function Home() {
       />
     </div>
   );
-}
 
-    
+  const PermissionDialog = () => (
+    <Dialog open={true} onOpenChange={() => {}}>
+        <DialogContent className="sm:max-w-md" hideCloseButton={true}>
+            <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                     <Pill className="text-primary" />
+                     Message de PrEPy
+                </DialogTitle>
+                <DialogDescription>
+                    Pour assurer votre protection, PrEPy a besoin de vous envoyer des rappels. Veuillez autoriser les notifications.
+                </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 text-sm text-muted-foreground">
+                <p>
+                    Cette autorisation est nécessaire pour le bon fonctionnement de l'application. Vous pourrez gérer vos préférences de notification à tout moment dans les paramètres.
+                </p>
+                {permissionStatus === 'denied' && (
+                    <p className="text-destructive font-medium mt-2">
+                       Les notifications sont bloquées. Vous devez les autoriser manuellement dans les paramètres de votre navigateur pour continuer.
+                    </p>
+                )}
+            </div>
+            <DialogFooter>
+                <Button onClick={() => requestNotificationPermission()} disabled={permissionStatus === 'denied'}>
+                    Activer les notifications
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
+  );
+
+  if (permissionStatus === 'loading') {
+    return <div className="flex items-center justify-center min-h-screen">Chargement de PrEPy...</div>;
+  }
+  
+  if (permissionStatus !== 'granted') {
+    return (
+      <>
+        {renderMainContent()}
+        <PermissionDialog />
+      </>
+    );
+  }
+
+  return renderMainContent();
+}
