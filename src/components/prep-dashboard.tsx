@@ -15,9 +15,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Pill, AlertTriangle, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info } from 'lucide-react';
+import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info } from 'lucide-react';
 import type { UsePrepStateReturn } from '@/lib/types';
 import { LogDoseDialog } from './log-dose-dialog';
+import { DoseHistory } from './dose-history';
 
 export function PrepDashboard({
   doses,
@@ -74,7 +75,7 @@ export function PrepDashboard({
     <div className="flex flex-col gap-8 h-full">
       <Card className="shadow-lg rounded-xl overflow-hidden">
         <CardContent className="p-0">
-          <div className={`flex flex-col items-center justify-center p-8 transition-colors duration-500 ${statusColor}`}>
+          <div className={`flex flex-col items-center justify-center p-8 transition-colors duration-500 text-center ${statusColor}`}>
             <div className="mb-4">
               <StatusIcon />
             </div>
