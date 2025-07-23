@@ -14,29 +14,32 @@ import { app } from "@/lib/firebase-client";
 const createMockData = (): PrepState => {
     const mockPrises: Prise[] = [];
     const now = new Date();
-    // Start the session 10 days ago at a fixed time (e.g., 09:00) for consistency
-    let lastDoseTime = set(sub(now, { days: 10 }), { hours: 9, minutes: 0, seconds: 0, milliseconds: 0 });
+
+    // To be in the 4-hour window, the last dose must be between 22 and 26 hours ago.
+    // Let's set the last dose to be 24 hours ago.
+    const lastDoseTime = sub(now, { hours: 24 });
+    
+    // We need to calculate when the first dose (start) was, assuming daily doses.
+    // Let's say we have 10 doses total. The first dose was 9 days before the last dose.
+    const firstDoseTime = sub(lastDoseTime, { days: 9 });
 
     // Initial dose (2 pills)
     mockPrises.push({
-        time: lastDoseTime,
+        time: firstDoseTime,
         pills: 2,
         type: 'start',
         id: `mock_0`
     });
 
-    // Subsequent 9 daily doses (1 pill each), always at the same time
-    for (let i = 1; i < 10; i++) {
-        // Add exactly 24 hours to maintain the same time of day
-        const nextDoseTime = add(lastDoseTime, { hours: 24 });
-        
+    // Subsequent 9 daily doses (1 pill each)
+    for (let i = 1; i <= 9; i++) {
+        const doseTime = add(firstDoseTime, { days: i });
         mockPrises.push({
-            time: nextDoseTime,
+            time: doseTime,
             pills: 1,
             type: 'dose',
             id: `mock_${i}`
         });
-        lastDoseTime = nextDoseTime;
     }
 
     return {
@@ -121,7 +124,6 @@ export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
-  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
 
 
@@ -141,77 +143,11 @@ export function usePrepState(): UsePrepStateReturn {
                 prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
-            
-            const currentSub = subscription;
-            if (newState.pushEnabled && currentSub) {
-                 fetch('/api/tasks/notification', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ subscription: currentSub, state: stateToSave })
-                }).catch(err => console.error("Failed to sync state to server:", err));
-            }
         } catch (e) {
             console.error("Could not save state", e);
         }
       }
-  }, [subscription]);
-  
-  const requestNotificationPermission = useCallback(async () => {
-    if (!('Notification' in window) || !navigator.serviceWorker) {
-        toast({ title: "Navigateur non compatible", variant: "destructive" });
-        return false;
-    }
-
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') {
-        toast({ title: "Notifications refusées", description: "Vous pouvez les réactiver dans les paramètres de votre navigateur." });
-        return false;
-    }
-
-    const vapidPublicKey = await getVapidKey();
-    if (!vapidPublicKey) {
-        toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
-        return false;
-    }
-
-    try {
-        const registration = await navigator.serviceWorker.ready;
-        let sub = await registration.pushManager.getSubscription();
-        if (!sub) {
-            sub = await registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-            });
-        }
-        setSubscription(sub);
-        saveState({...state, pushEnabled: true});
-        toast({ title: "Notifications activées!" });
-        return true;
-    } catch (error) {
-        console.error("Error subscribing:", error);
-        toast({ title: "Erreur d'abonnement", variant: "destructive" });
-        return false;
-    }
-  }, [toast, state, saveState]);
-
-  const unsubscribeFromNotifications = useCallback(async () => {
-    if (subscription) {
-      try {
-        await fetch('/api/subscription', {
-            method: 'DELETE',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ endpoint: subscription.endpoint })
-        });
-        await subscription.unsubscribe();
-        setSubscription(null);
-        saveState({...state, pushEnabled: false});
-        toast({ title: "Notifications désactivées." });
-      } catch (error) {
-         console.error("Error unsubscribing:", error);
-         toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
-      }
-    }
-  }, [subscription, toast, state, saveState]);
+  }, []);
 
   useEffect(() => {
     setIsClient(true);
@@ -219,18 +155,6 @@ export function usePrepState(): UsePrepStateReturn {
     if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) setState(savedState);
-    }
-
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready
-        .then(registration => registration.pushManager.getSubscription())
-        .then(sub => {
-            if (sub) {
-                setSubscription(sub);
-                setState(prevState => ({ ...prevState, pushEnabled: true }));
-            }
-        })
-        .catch(error => console.error('Erreur Service Worker:', error));
     }
     
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -266,9 +190,9 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    setState({ ...defaultState, pushEnabled: !!subscription });
+    setState({ ...defaultState });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [subscription, toast]);
+  }, [toast]);
   
   const formatCountdown = (endDate: Date) => {
     const milliseconds = differenceInMilliseconds(endDate, now);
@@ -281,9 +205,8 @@ export function usePrepState(): UsePrepStateReturn {
     const parts: string[] = [];
     if (hours > 0) parts.push(`${hours}h`);
     if (minutes > 0) parts.push(`${minutes}m`);
-    if (hours === 0 && minutes === 0) { // Only show seconds if less than a minute remaining
-        parts.push(`${seconds}s`);
-    } else if (hours === 0 && minutes > 0) { // Also show seconds if less than an hour remaining
+    // Only show seconds if less than an hour remaining
+    if (hours === 0) {
         parts.push(`${seconds}s`);
     }
 
@@ -303,8 +226,10 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    if (isAfter(protectionEndsAt, new Date())) {
+        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+    }
   }
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
@@ -354,7 +279,6 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
-    pushEnabled: !!subscription,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
@@ -366,11 +290,7 @@ export function usePrepState(): UsePrepStateReturn {
     startSession,
     endSession,
     clearHistory,
-    requestNotificationPermission,
-    unsubscribeFromNotifications,
     welcomeScreenVisible,
     dashboardVisible,
   };
 }
-
-    
