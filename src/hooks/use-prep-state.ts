@@ -311,9 +311,7 @@ export function usePrepState(): UsePrepStateReturn {
       ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
       : "Vos rapports sont protégés jusqu'au";
       
-    if (isAfter(finalProtectionDate, new Date())) {
-        protectionEndsAtText = `${messagePrefix} ${format(finalProtectionDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-    }
+    protectionEndsAtText = `${messagePrefix} ${format(finalProtectionDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
 
