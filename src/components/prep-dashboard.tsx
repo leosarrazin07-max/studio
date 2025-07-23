@@ -82,14 +82,14 @@ export function PrepDashboard({
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Button
                         size="lg"
-                        className="bg-accent hover:bg-accent/90 text-accent-foreground w-full shadow-md"
+                        className="bg-accent hover:bg-accent/90 text-accent-foreground shadow-md"
                         onClick={() => setIsLogDoseOpen(true)}
                     >
                         <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris mon comprimé
                     </Button>
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
-                        <Button size="lg" variant="destructive" className="w-full shadow-md">
+                        <Button size="lg" variant="destructive" className="shadow-md">
                             Terminer la session
                         </Button>
                         </AlertDialogTrigger>

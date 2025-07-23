@@ -11,3 +11,6 @@ export const DOSE_REMINDER_INTERVAL_MINUTES = 10;
 
 // This is the old value, for calculating status, not for reminders.
 export const LAPSES_AFTER_HOURS = DOSE_REMINDER_WINDOW_END_HOURS;
+
+// Protection is considered to last up to this many hours after the last dose
+export const FINAL_PROTECTION_HOURS = 48;

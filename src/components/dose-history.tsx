@@ -55,7 +55,7 @@ const EventDetails: React.FC<{ prise: Prise }> = ({ prise }) => {
 
 
 export function DoseHistory({ prises }: DoseHistoryProps) {
-  const reversedDoses = [...prises].reverse();
+  const reversedPrises = [...prises].reverse();
 
   return (
     <Card className="shadow-lg">
@@ -68,12 +68,12 @@ export function DoseHistory({ prises }: DoseHistoryProps) {
       </CardHeader>
       <CardContent className="pt-0">
         <ScrollArea className="h-48 w-full pr-4">
-          {reversedDoses.length > 0 ? (
+          {reversedPrises.length > 0 ? (
             <div className="space-y-4">
-              {reversedDoses.map((prise, index) => (
+              {reversedPrises.map((prise, index) => (
                 <div key={prise.id}>
                   <EventDetails prise={prise} />
-                  {index < reversedDoses.length - 1 && <Separator className="mt-4" />}
+                  {index < reversedPrises.length - 1 && <Separator className="mt-4" />}
                 </div>
               ))}
             </div>

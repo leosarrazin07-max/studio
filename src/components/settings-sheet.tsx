@@ -51,6 +51,16 @@ export function SettingsSheet({
       setNotificationPermission(Notification.permission);
     }
   }, [isOpen]);
+  
+  useEffect(() => {
+    // If permission is already granted, but push is not enabled in state,
+    // it likely means the user has a subscription but the app state is out of sync.
+    // Let's try to enable it. This can happen on first load.
+    if (notificationPermission === 'granted' && !pushEnabled) {
+       // We don't call onTogglePush directly to avoid an unsubscribe loop
+       // in case there's no active subscription. The main hook will sync the state.
+    }
+  }, [notificationPermission, pushEnabled, onTogglePush]);
 
   const handleClearHistory = () => {
     onClearHistory();
@@ -114,7 +124,7 @@ export function SettingsSheet({
                     <AlertDialogTitle>Êtes-vous absolument sûr?</AlertDialogTitle>
                     <AlertDialogDescription>
                       Cette action est irréversible. Toutes vos données de session et
-                      votre historique de doses seront définitivement supprimés.
+                      votre historique de comprimés seront définitivement supprimés.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

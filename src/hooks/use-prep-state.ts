@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
-import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_REMINDER_WINDOW_START_HOURS } from '@/lib/constants';
+import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_REMINDER_WINDOW_START_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -45,7 +45,7 @@ const defaultState: PrepState = {
 };
 
 async function syncStateWithServer(state: PrepState) {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !VAPID_PUBLIC_KEY) {
         return;
     }
     const registration = await navigator.serviceWorker.ready;
@@ -85,7 +85,6 @@ export function usePrepState(): UsePrepStateReturn {
                     prises: updatedState.prises.map(d => ({ ...d, time: d.time.toISOString() })),
                 };
                 localStorage.setItem('prepState', JSON.stringify(stateToSave));
-                // Sync with server whenever state changes
                 syncStateWithServer(updatedState);
             } catch (e) {
                 console.error("Could not save state to localStorage", e);
@@ -96,7 +95,7 @@ export function usePrepState(): UsePrepStateReturn {
   }, []);
 
   const syncPushSubscription = useCallback(async () => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
+    if ('serviceWorker' in navigator && 'PushManager' in window && VAPID_PUBLIC_KEY) {
       try {
         const registration = await navigator.serviceWorker.ready;
         const subscription = await registration.pushManager.getSubscription();
@@ -244,28 +243,26 @@ export function usePrepState(): UsePrepStateReturn {
       statusColor = 'bg-accent';
       statusText = 'Protection active';
       nextDoseIn = `Prochain comprimé ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
-      const protectionEndDate = sub(lastDoseTime, { hours: 48 });
-      protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+      const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
+      protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     } else {
       status = 'missed';
       statusColor = 'bg-destructive';
       statusText = 'Comprimé manqué';
-      const protectionEndDate = sub(lastDoseTime, { hours: 48 });
-      protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+      const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
+      protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
   } else if (isClient && !state.sessionActive && state.prises.length > 0) {
-      status = 'inactive';
-      statusColor = 'bg-gray-500';
-      statusText = 'Session terminée';
-      if (lastPrise) {
-          const protectionEndDate = sub(lastPrise.time, { hours: 48 });
-           if (isAfter(now, protectionEndDate)) {
-                protectionEndsAtText = "La protection n'est plus assurée.";
-           } else {
-                protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-           }
-      }
+     const lastEffectiveDose = state.prises.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
+     if (lastEffectiveDose) {
+        status = 'missed';
+        statusColor = 'bg-destructive';
+        statusText = 'Session terminée';
+        const protectionEndsAt = add(lastEffectiveDose.time, { hours: FINAL_PROTECTION_HOURS });
+        protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+     }
   }
+
 
   if (!isClient) {
     statusText = "Chargement...";

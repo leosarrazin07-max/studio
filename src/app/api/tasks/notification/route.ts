@@ -1,3 +1,4 @@
+
 import { NextResponse } from 'next/server';
 import { firestore } from '@/lib/firebase-admin';
 import webpush from 'web-push';
@@ -46,7 +47,7 @@ export async function GET() {
         return; // Session inactive or no prises
       }
 
-      // Doses are stored as ISO strings, convert them back to Dates
+      // Prises are stored as ISO strings, convert them back to Dates
       const prises = state.prises.map((d: any) => ({ ...d, time: new Date(d.time) }));
       const lastPrise = prises.filter((d: any) => d.type !== 'stop').sort((a: any, b: any) => b.time.getTime() - a.time.getTime())[0];
 
