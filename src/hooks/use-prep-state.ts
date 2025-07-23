@@ -179,7 +179,7 @@ export function usePrepState(): UsePrepStateReturn {
         if (!sub) {
             sub = await registration.pushManager.subscribe({
                 userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Aray(vapidPublicKey),
+                applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
             });
         }
         await fetch('/api/subscription', {
@@ -189,7 +189,19 @@ export function usePrepState(): UsePrepStateReturn {
         });
         setSubscription(sub);
         // We sync the state to the server immediately upon subscription
-        saveState(state); // Pass a fresh copy of state to avoid stale closure
+        // We need to use a functional update for setState to get the latest state
+        setState(currentState => {
+            const stateToSave = {
+                ...currentState,
+                prises: currentState.prises.map(d => ({...d, time: d.time.toISOString()}))
+            };
+            fetch('/api/tasks/notification', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ subscription: sub, state: stateToSave })
+            }).catch(err => console.error("Failed to sync state to server:", err));
+            return currentState; // No state change needed here, just sending data
+        });
         toast({ title: "Notifications activées!" });
         return true;
     } catch (error) {
@@ -197,7 +209,7 @@ export function usePrepState(): UsePrepStateReturn {
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
         return false;
     }
-  }, [toast, saveState, state]);
+  }, [toast]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
     if (subscription) {
@@ -293,23 +305,21 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose && firstDoseInSession) {
-    const isProtected = isAfter(lastDose.time, sub(now, { hours: FINAL_PROTECTION_HOURS }));
+    const protectionReferenceTime = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    
+    // Ensure the calculated protection time isn't before the session started
+    const finalProtectionTime = isAfter(protectionReferenceTime, firstDoseInSession.time) 
+        ? protectionReferenceTime 
+        : firstDoseInSession.time;
 
-    if (isProtected) {
-        let protectionReferenceTime = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    // Check if the user is currently protected based on the corrected reference time
+    if (isAfter(now, finalProtectionTime)) {
+        const formattedDate = format(finalProtectionTime, 'eeee dd MMMM HH:mm', { locale: fr });
+        const messagePrefix = doseCount < 3 
+            ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
+            : "Vos rapports sont protégés jusqu'au";
         
-        // Ensure the calculated protection time isn't before the session started
-        if (isBefore(protectionReferenceTime, firstDoseInSession.time)) {
-            protectionReferenceTime = firstDoseInSession.time;
-        }
-
-        const formattedDate = format(protectionReferenceTime, 'eeee dd MMMM HH:mm', { locale: fr });
-        
-        if (doseCount < 3) {
-            protectionEndsAtText = `Si vous continuez les prises, vos rapports seront protégés jusqu'au ${formattedDate}`;
-        } else {
-            protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${formattedDate}`;
-        }
+        protectionEndsAtText = `${messagePrefix} ${formattedDate}`;
     }
   }
 
@@ -388,3 +398,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
