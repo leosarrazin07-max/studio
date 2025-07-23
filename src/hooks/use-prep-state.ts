@@ -117,6 +117,7 @@ const getInitialState = () => {
 
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
@@ -178,7 +179,7 @@ export function usePrepState(): UsePrepStateReturn {
         if (!sub) {
             sub = await registration.pushManager.subscribe({
                 userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+                applicationServerKey: urlBase64ToUint8Aray(vapidPublicKey),
             });
         }
         await fetch('/api/subscription', {
@@ -188,7 +189,7 @@ export function usePrepState(): UsePrepStateReturn {
         });
         setSubscription(sub);
         // We sync the state to the server immediately upon subscription
-        saveState(getInitialState()); // Pass a fresh copy of state to avoid stale closure
+        saveState(state); // Pass a fresh copy of state to avoid stale closure
         toast({ title: "Notifications activées!" });
         return true;
     } catch (error) {
@@ -196,7 +197,7 @@ export function usePrepState(): UsePrepStateReturn {
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
         return false;
     }
-  }, [toast, saveState]);
+  }, [toast, saveState, state]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
     if (subscription) {
@@ -217,23 +218,30 @@ export function usePrepState(): UsePrepStateReturn {
   }, [subscription, toast]);
 
   useEffect(() => {
-    setIsClient(true);
-    // Reload state from localStorage on mount in production.
-    if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
-        const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-        if (savedState) setState(savedState);
-    }
+    const init = async () => {
+        setIsClient(true);
+        // Reload state from localStorage on mount in production.
+        if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
+            const savedState = safelyParseJSON(localStorage.getItem('prepState'));
+            if (savedState) setState(savedState);
+        }
 
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready
-        .then(registration => registration.pushManager.getSubscription())
-        .then(sub => {
-            if (sub) {
-                setSubscription(sub);
+        if ('serviceWorker' in navigator) {
+            try {
+                const registration = await navigator.serviceWorker.ready;
+                const sub = await registration.pushManager.getSubscription();
+                if (sub) {
+                    setSubscription(sub);
+                }
+            } catch (error) {
+                console.error('Erreur Service Worker:', error);
             }
-        })
-        .catch(error => console.error('Erreur Service Worker:', error));
-    }
+        }
+        
+        setIsInitializing(false);
+    };
+
+    init();
     
     const timer = setInterval(() => setNow(new Date()), 1000 * 30);
     return () => clearInterval(timer);
@@ -285,21 +293,24 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose && firstDoseInSession) {
-        const protectionReferenceTime = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-        const finalProtectionTime = isAfter(protectionReferenceTime, firstDoseInSession.time)
-            ? protectionReferenceTime
-            : firstDoseInSession.time;
+    const isProtected = isAfter(lastDose.time, sub(now, { hours: FINAL_PROTECTION_HOURS }));
 
-        const isProtectedNow = isAfter(now, finalProtectionTime);
-
-        if (isProtectedNow) {
-            const formattedDate = format(finalProtectionTime, 'eeee dd MMMM HH:mm', { locale: fr });
-            if (doseCount < 3) {
-                protectionEndsAtText = `Si vous continuez les prises, vos rapports seront protégés jusqu'au ${formattedDate}`;
-            } else {
-                protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${formattedDate}`;
-            }
+    if (isProtected) {
+        let protectionReferenceTime = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+        
+        // Ensure the calculated protection time isn't before the session started
+        if (isBefore(protectionReferenceTime, firstDoseInSession.time)) {
+            protectionReferenceTime = firstDoseInSession.time;
         }
+
+        const formattedDate = format(protectionReferenceTime, 'eeee dd MMMM HH:mm', { locale: fr });
+        
+        if (doseCount < 3) {
+            protectionEndsAtText = `Si vous continuez les prises, vos rapports seront protégés jusqu'au ${formattedDate}`;
+        } else {
+            protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${formattedDate}`;
+        }
+    }
   }
 
 
@@ -358,6 +369,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
+    isInitializing,
     pushEnabled: !!subscription,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
