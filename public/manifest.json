@@ -3,18 +3,21 @@
   "short_name": "PrEPy",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#F5F5F5",
+  "background_color": "#039BE5",
   "theme_color": "#039BE5",
+  "description": "Votre compagnon intelligent pour la PrEP à la demande.",
   "icons": [
     {
       "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
