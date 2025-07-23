@@ -325,21 +325,18 @@ export function usePrepState(): UsePrepStateReturn {
       status = 'missed';
       statusColor = 'bg-destructive';
       statusText = 'Prise manquée';
-      const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+      const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
       // Only show protection text if it's still valid
       if(isBefore(now, protectionEndsAt)) {
           protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
       }
     }
   } else if (isClient && !state.sessionActive && lastDose) {
-     const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-      if (isAfter(now, protectionEndsAt)) {
-          status = 'inactive';
-          statusText = 'Session terminée';
-          statusColor = 'bg-destructive';
-      } else {
-        status = 'inactive';
-        statusText = 'Session terminée';
+      status = 'inactive';
+      statusColor = 'bg-destructive';
+      statusText = 'Session terminée';
+     const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+      if (isBefore(now, protectionEndsAt)) {
         statusColor = 'bg-gray-500';
         protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
       }
@@ -373,5 +370,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
