@@ -7,7 +7,8 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_REMINDER_WINDOW_START_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { VAPID_PUBLIC_KEY } from '@/lib/vapid-keys';
+
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -242,13 +243,13 @@ export function usePrepState(): UsePrepStateReturn {
       statusColor = 'bg-accent';
       statusText = 'Protection active';
       nextDoseIn = `Prochain comprimé ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
-      const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
+      const protectionEndsAt = add(lastPrise.time, { hours: FINAL_PROTECTION_HOURS });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     } else {
       status = 'missed';
       statusColor = 'bg-destructive';
       statusText = 'Comprimé manqué';
-      const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
+      const protectionEndsAt = add(lastPrise.time, { hours: FINAL_PROTECTION_HOURS });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
   } else if (isClient && !state.sessionActive && state.prises.length > 0) {

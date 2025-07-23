@@ -25,7 +25,6 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { BellRing, Trash2, AlertTriangle, BellOff } from "lucide-react";
-import { VAPID_PUBLIC_KEY } from "@/lib/vapid-keys";
 
 interface SettingsSheetProps {
   isOpen: boolean;
@@ -35,7 +34,7 @@ interface SettingsSheetProps {
   onTogglePush: () => void;
 }
 
-const VAPID_KEY_CONFIGURED = !!VAPID_PUBLIC_KEY;
+const VAPID_KEY_CONFIGURED = !!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
 export function SettingsSheet({
   isOpen,
