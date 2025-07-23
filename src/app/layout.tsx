@@ -3,22 +3,36 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
 
+const APP_NAME = "PrEPy";
+const APP_DEFAULT_TITLE = "PrEPy";
+const APP_TITLE_TEMPLATE = "%s - PrEPy";
+const APP_DESCRIPTION = "Votre compagnon intelligent pour la PrEP à la demande.";
+
 export const metadata: Metadata = {
-  title: 'PrEPy',
-  description: 'Votre compagnon intelligent pour la PrEP à la demande.',
-  manifest: '/manifest.json',
+  applicationName: APP_NAME,
+  title: {
+    default: APP_DEFAULT_TITLE,
+    template: APP_TITLE_TEMPLATE,
+  },
+  description: APP_DESCRIPTION,
+  manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default',
-    title: 'PrEPy',
+    statusBarStyle: "default",
+    title: APP_DEFAULT_TITLE,
   },
   formatDetection: {
     telephone: false,
   },
   icons: {
-    icon: '/icon-v2-192x192.png',
-    shortcut: '/icon-v2-192x192.png',
-    apple: '/icon-v2-512x512.png',
+    shortcut: "/favicon.ico",
+    apple: "/icons/apple-touch-icon.png",
+    icon: [
+        { url: '/icons/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+        { url: '/icons/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+        { url: '/icons/android-chrome-192x192.png', sizes: '192x192', type: 'image/png' },
+        { url: '/icons/android-chrome-512x512.png', sizes: '512x512', type: 'image/png' },
+    ],
   },
 };
 

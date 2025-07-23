@@ -238,16 +238,14 @@ export function usePrepState(): UsePrepStateReturn {
         }
     }
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker.js')
-        .then(registration => registration.pushManager.getSubscription())
-        .then(sub => {
-            if (sub) {
-                setSubscription(sub);
-                // No need to set state here, it's derived from the presence of `subscription` now.
-            }
-        })
-        .catch(error => console.error('Erreur Service Worker:', error));
+    if ('serviceWorker' in navigator && window.workbox !== undefined) {
+      navigator.serviceWorker.ready.then(registration => {
+        registration.pushManager.getSubscription().then(sub => {
+          if (sub) {
+            setSubscription(sub);
+          }
+        });
+      });
     }
     
     const timer = setInterval(() => setNow(new Date()), 1000 * 30);
