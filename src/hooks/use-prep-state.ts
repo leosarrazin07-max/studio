@@ -14,21 +14,29 @@ import { app } from "@/lib/firebase-client";
 const createMockData = (): PrepState => {
     const mockPrises: Prise[] = [];
     const now = new Date();
-    // Start the session 10 days ago at a fixed time (e.g., 09:00) for consistency
-    let lastDoseTime = set(sub(now, { days: 10 }), { hours: 9, minutes: 0, seconds: 0, milliseconds: 0 });
+    
+    // To simulate being inside the 4-hour reminder window with ~2h15m left,
+    // we set the last dose to have occurred 23 hours and 45 minutes ago.
+    // 26 hours (window end) - 2h15m = 23h45m.
+    const lastDoseTime = sub(now, { hours: 23, minutes: 45 });
+
+    // The start of the session would be 9 days before that last dose
+    let firstDoseTime = sub(lastDoseTime, { days: 9 });
+    firstDoseTime = set(firstDoseTime, { hours: 9, minutes: 0, seconds: 0, milliseconds: 0 });
 
     // Initial dose (2 pills)
     mockPrises.push({
-        time: lastDoseTime,
+        time: firstDoseTime,
         pills: 2,
         type: 'start',
         id: `mock_0`
     });
 
     // Subsequent 9 daily doses (1 pill each), always at the same time
+    let currentDoseTime = firstDoseTime;
     for (let i = 1; i < 10; i++) {
         // Add exactly 24 hours to maintain the same time of day
-        const nextDoseTime = add(lastDoseTime, { hours: 24 });
+        const nextDoseTime = add(currentDoseTime, { hours: 24 });
         
         mockPrises.push({
             time: nextDoseTime,
@@ -36,7 +44,7 @@ const createMockData = (): PrepState => {
             type: 'dose',
             id: `mock_${i}`
         });
-        lastDoseTime = nextDoseTime;
+        currentDoseTime = nextDoseTime;
     }
 
     return {
@@ -107,6 +115,10 @@ const defaultState: PrepState = {
 };
 
 const getInitialState = () => {
+    // In dev mode, ALWAYS start with mock data for consistent testing.
+    if (process.env.NODE_ENV === 'development') {
+        return createMockData();
+    }
     // In production, get the state from localStorage.
     if (typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
@@ -121,7 +133,7 @@ export function usePrepState(): UsePrepStateReturn {
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   // Force mock data in dev, otherwise load from storage.
-  const [state, setState] = useState<PrepState>(process.env.NODE_ENV === 'development' ? createMockData() : getInitialState());
+  const [state, setState] = useState<PrepState>(getInitialState);
 
 
   const saveState = useCallback((newState: PrepState) => {
@@ -292,9 +304,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    // Protection ends 48h BEFORE the last dose.
     const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    // This message should always be calculated if there is a last dose.
     protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
@@ -387,5 +397,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
