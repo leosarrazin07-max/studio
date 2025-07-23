@@ -6,6 +6,11 @@ const withPWA = require('@ducanh2912/next-pwa').default({
   reloadOnOnline: true,
   swcMinify: true,
   disable: process.env.NODE_ENV === 'development',
+  cacheOnFrontEndNav: true,
+  aggressiveFrontEndNavCaching: true,
+  cacheStartUrl: true,
+  dynamicStartUrl: true,
+  manifestFilename: 'manifest-v1.json', // Ajout d'un nom de fichier unique
 });
 
 
