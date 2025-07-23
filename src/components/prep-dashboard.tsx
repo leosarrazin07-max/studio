@@ -20,7 +20,7 @@ import type { UsePrepStateReturn, PrepCalculatorResult } from '@/lib/types';
 import { LogDoseDialog } from './log-dose-dialog';
 import { DoseHistory } from './dose-history';
 
-type PrepDashboardProps = UsePrepStateReturn & PrepCalculatorResult;
+type PrepDashboardProps = Pick<UsePrepStateReturn, 'prises' | 'addDose' | 'endSession' | 'sessionActive' | 'startSession'> & PrepCalculatorResult;
 
 export function PrepDashboard({
   prises,
@@ -60,7 +60,6 @@ export function PrepDashboard({
         return (
           <div className="text-center">
             <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>
-            {protectionEndsAtText && <p className="text-xs text-white/80 mt-1">{protectionEndsAtText}</p>}
           </div>
         );
       case 'missed':

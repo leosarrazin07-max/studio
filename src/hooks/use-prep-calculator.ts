@@ -34,7 +34,10 @@ export function usePrepCalculator({ prises, sessionActive, isClient, now }: Prep
 
     if (lastDose) {
       const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-      protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+      // The protection text is now only shown when the session is over.
+      if (!sessionActive) {
+        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+      }
     }
 
     if (sessionActive && lastDose && firstDoseInSession) {

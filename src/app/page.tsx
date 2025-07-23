@@ -55,7 +55,7 @@ export default function Home() {
   const [isPushLoading, setIsPushLoading] = useState(true);
   
   const prepState = usePrepState();
-  const { addDose, startSession, clearHistory, welcomeScreenVisible, dashboardVisible, setPushEnabled, sessionActive, prises, now, isClient } = prepState;
+  const { addDose, startSession, endSession, clearHistory, welcomeScreenVisible, dashboardVisible, setPushEnabled, sessionActive, prises, now, isClient } = prepState;
   
   const prepLogic = usePrepCalculator({
       prises,
@@ -66,13 +66,13 @@ export default function Home() {
 
   const pushEnabled = !!subscription;
 
-  // Effect to check for existing subscription on mount and inform the hook
+  // Effect to check for existing subscription on mount
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       navigator.serviceWorker.ready.then(reg => {
         reg.pushManager.getSubscription().then(sub => {
           setSubscription(sub);
-          setPushEnabled(!!sub); // Inform the hook
+          setPushEnabled(!!sub);
           setIsPushLoading(false);
         });
       });
@@ -80,18 +80,11 @@ export default function Home() {
         setIsPushLoading(false);
     }
   }, [setPushEnabled]);
-
-  // Effect to sync state to server whenever subscription or prepState changes
+  
+  // Effect to inform the prepState hook about the push status
   useEffect(() => {
-    if (pushEnabled && subscription) {
-        // We only want to sync when the actual state changes, not just the subscription object
-        fetch('/api/tasks/notification', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ subscription, state: { prises, sessionActive, pushEnabled } })
-        }).catch(err => console.error("Failed to sync state to server:", err));
-    }
-  }, [pushEnabled, subscription, prises, sessionActive]); // Added dependencies
+    setPushEnabled(pushEnabled);
+  }, [pushEnabled, setPushEnabled]);
 
 
   useEffect(() => {
@@ -139,7 +132,6 @@ export default function Home() {
           body: JSON.stringify(sub)
       });
       setSubscription(sub);
-      setPushEnabled(true);
       toast({ title: "Notifications activées!" });
     } catch(error) {
         console.error("Error subscribing:", error);
@@ -160,7 +152,6 @@ export default function Home() {
         });
         await subscription.unsubscribe();
         setSubscription(null);
-        setPushEnabled(false);
         toast({ title: "Notifications désactivées." });
     } catch (error) {
         console.error("Error unsubscribing:", error);
@@ -225,7 +216,11 @@ export default function Home() {
           {welcomeScreenVisible && <WelcomeScreen />}
           {!dashboardVisible && !welcomeScreenVisible && <LoadingScreen />}
           {dashboardVisible && <PrepDashboard 
-                                {...prepState} 
+                                prises={prepState.prises}
+                                addDose={addDose}
+                                endSession={endSession}
+                                sessionActive={sessionActive}
+                                startSession={startSession}
                                 {...prepLogic}
                               />}
         </div>
