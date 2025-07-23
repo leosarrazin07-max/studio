@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format } from 'date-fns';
+import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format, set } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
@@ -14,8 +14,8 @@ import { app } from "@/lib/firebase-client";
 const createMockData = (): PrepState => {
     const mockPrises: Prise[] = [];
     const now = new Date();
-    // Start the session 10 days ago
-    let lastDoseTime = sub(now, { days: 10 });
+    // Start the session 10 days ago at a fixed time (e.g., 09:00) for consistency
+    let lastDoseTime = set(sub(now, { days: 10 }), { hours: 9, minutes: 0, seconds: 0, milliseconds: 0 });
 
     // Initial dose (2 pills)
     mockPrises.push({
@@ -25,12 +25,10 @@ const createMockData = (): PrepState => {
         id: `mock_0`
     });
 
-    // Subsequent 9 daily doses (1 pill each)
+    // Subsequent 9 daily doses (1 pill each), always at the same time
     for (let i = 1; i < 10; i++) {
-        // Add roughly 24 hours, with some variation
-        const hoursToAdd = 23 + Math.random() * 2;
-        const minutesToAdd = Math.random() * 60;
-        const nextDoseTime = add(lastDoseTime, { hours: Math.floor(hoursToAdd), minutes: Math.floor(minutesToAdd) });
+        // Add exactly 24 hours to maintain the same time of day
+        const nextDoseTime = add(lastDoseTime, { hours: 24 });
         
         mockPrises.push({
             time: nextDoseTime,
@@ -53,6 +51,8 @@ const getVapidKey = async () => {
     if (typeof window === "undefined") return null;
     try {
         const remoteConfig = getRemoteConfig(app);
+        // Note: Remote Config values are not available until fetched and activated.
+        // This might not work on initial load without a proper fetching strategy.
         const vapidKey = remoteConfig.getString("NEXT_PUBLIC_VAPID_PUBLIC_KEY");
         if (vapidKey) {
             return vapidKey;
@@ -61,6 +61,7 @@ const getVapidKey = async () => {
         console.error("Error fetching VAPID key from Remote Config:", error);
     }
     
+    // Fallback to environment variable
     if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
         return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     }
@@ -86,6 +87,7 @@ const safelyParseJSON = (jsonString: string | null) => {
   try {
     const parsed = JSON.parse(jsonString);
     if (Array.isArray(parsed.prises)) {
+        // Ensure time is a Date object
         parsed.prises = parsed.prises.map((d: any) => ({...d, time: new Date(d.time)}));
     } else {
         parsed.prises = [];
@@ -104,7 +106,8 @@ const defaultState: PrepState = {
 };
 
 const getInitialState = () => {
-    // In development, always start with mock data for testing purposes.
+    // In development, ALWAYS start with mock data for consistent testing.
+    // This will override any saved state in localStorage during development.
     if (process.env.NODE_ENV === 'development') {
         return createMockData();
     }
@@ -121,59 +124,52 @@ export function usePrepState(): UsePrepStateReturn {
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
-  const [state, setState] = useState<PrepState>(defaultState);
+  const [state, setState] = useState<PrepState>(getInitialState); // Use the function directly here
 
-  useEffect(() => {
-    // This effect runs once on the client after mounting.
-    // It sets the initial state based on the environment and localStorage.
-    setState(getInitialState());
-    setIsClient(true);
-  }, []);
 
   const saveState = useCallback((newState: PrepState) => {
-      // In development, we don't save to localStorage to keep the mock data consistent
-      // unless we explicitly add a dose, clear history, etc. But for this logic,
-      // we can just re-evaluate the state without saving.
+      // Don't save to localStorage in development to keep mock data on every refresh
       if (process.env.NODE_ENV === 'development') {
           setState(newState);
-          // To see persistence in dev, you would comment out the return in getInitialState
-      } else {
-          setState(newState);
-          if (typeof window !== 'undefined') {
-            try {
-                const stateToSave = {
-                    ...newState,
-                    prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
-                };
-                localStorage.setItem('prepState', JSON.stringify(stateToSave));
-                
-                const currentSub = subscription;
-                if (newState.pushEnabled && currentSub) {
-                     fetch('/api/tasks/notification', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ subscription: currentSub, state: stateToSave })
-                    }).catch(err => console.error("Failed to sync state to server:", err));
-                }
-            } catch (e) {
-                console.error("Could not save state", e);
+          return;
+      }
+      
+      // Production logic
+      setState(newState);
+      if (typeof window !== 'undefined') {
+        try {
+            const stateToSave = {
+                ...newState,
+                prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
+            };
+            localStorage.setItem('prepState', JSON.stringify(stateToSave));
+            
+            const currentSub = subscription;
+            if (newState.pushEnabled && currentSub) {
+                 fetch('/api/tasks/notification', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ subscription: currentSub, state: stateToSave })
+                }).catch(err => console.error("Failed to sync state to server:", err));
             }
-          }
+        } catch (e) {
+            console.error("Could not save state", e);
+        }
       }
   }, [subscription]);
   
   const requestNotificationPermission = useCallback(async () => {
-    if (!isClient) return false;
-
     const vapidPublicKey = await getVapidKey();
     if (!vapidPublicKey) {
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
         return false;
     }
+
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
         return false;
     }
+
     try {
         const registration = await navigator.serviceWorker.ready;
         const permission = await Notification.requestPermission();
@@ -202,7 +198,7 @@ export function usePrepState(): UsePrepStateReturn {
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
         return false;
     }
-  }, [isClient, toast, state, saveState]);
+  }, [toast, state, saveState]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
     if (subscription) {
@@ -224,14 +220,15 @@ export function usePrepState(): UsePrepStateReturn {
   }, [subscription, toast, state, saveState]);
 
   useEffect(() => {
+    setIsClient(true);
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js')
         .then(registration => registration.pushManager.getSubscription())
         .then(sub => {
             if (sub) {
                 setSubscription(sub);
-                // We shouldn't setState here as it can cause re-renders. 
-                // The pushEnabled state will be derived from the subscription object.
+                setState(currentState => ({...currentState, pushEnabled: !!sub}));
             }
         })
         .catch(error => console.error('Erreur Service Worker:', error));
@@ -261,16 +258,18 @@ export function usePrepState(): UsePrepStateReturn {
   }, [state, saveState, toast]);
 
   const clearHistory = useCallback(() => {
+    // In development, "clearing" reloads the mock data.
     if (process.env.NODE_ENV === 'development') {
-        const mockState = createMockData();
-        setState(mockState);
+        setState(createMockData());
         toast({ title: "Données de test rechargées" });
         return;
     }
     
+    // Production logic
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
+    // Keep pushEnabled status
     setState({ ...defaultState, pushEnabled: !!subscription });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
   }, [subscription, toast]);
@@ -363,3 +362,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
