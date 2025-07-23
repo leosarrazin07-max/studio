@@ -123,15 +123,12 @@ export function usePrepState(): UsePrepStateReturn {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
 
-
   const saveState = useCallback((newState: PrepState) => {
-      // In development, just update the state without saving to localStorage to keep mock data consistent.
       if (process.env.NODE_ENV === 'development') {
           setState(newState);
           return;
       }
       
-      // Production logic
       setState(newState);
       if (typeof window !== 'undefined') {
         try {
@@ -144,18 +141,6 @@ export function usePrepState(): UsePrepStateReturn {
             console.error("Could not save state", e);
         }
       }
-  }, []);
-
-  const syncStateWithServer = useCallback((sub: PushSubscription, currentState: PrepState) => {
-    const stateToSave = {
-      ...currentState,
-      prises: currentState.prises.map(d => ({...d, time: d.time.toISOString()}))
-    };
-    fetch('/api/tasks/notification', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ subscription: sub, state: stateToSave })
-    }).catch(err => console.error("Failed to sync state to server:", err));
   }, []);
   
   const requestNotificationPermission = useCallback(async () => {
@@ -226,7 +211,6 @@ export function usePrepState(): UsePrepStateReturn {
     setIsPushLoading(false);
   }, [subscription, toast]);
   
-
   useEffect(() => {
     const init = async () => {
         setIsClient(true);
@@ -246,7 +230,7 @@ export function usePrepState(): UsePrepStateReturn {
                 console.error('Erreur Service Worker:', error);
             }
         }
-        setIsPushLoading(false); // Push check is complete
+        setIsPushLoading(false);
     };
 
     init();
@@ -255,7 +239,18 @@ export function usePrepState(): UsePrepStateReturn {
     return () => clearInterval(timer);
   }, []);
 
-  // Effect to sync state to server whenever it changes and there's a subscription
+  const syncStateWithServer = useCallback((sub: PushSubscription, currentState: PrepState) => {
+    const stateToSave = {
+      ...currentState,
+      prises: currentState.prises.map(d => ({...d, time: d.time.toISOString()}))
+    };
+    fetch('/api/tasks/notification', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ subscription: sub, state: stateToSave })
+    }).catch(err => console.error("Failed to sync state to server:", err));
+  }, []);
+
   useEffect(() => {
     if (subscription && state.sessionActive) {
       syncStateWithServer(subscription, state);
@@ -297,6 +292,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
   const lastDose = allPrises[0] ?? null;
+  
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
   let status: PrepStatus = 'inactive';
@@ -308,12 +304,12 @@ export function usePrepState(): UsePrepStateReturn {
 
   if (isClient && lastDose && firstDoseInSession) {
     const protectionEndDateCalc = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    
+
     const finalProtectionDate = state.prises.length < 3
       ? new Date(Math.max(protectionEndDateCalc.getTime(), firstDoseInSession.time.getTime()))
       : protectionEndDateCalc;
 
-    const messagePrefix = state.prises.length < 3 
+    const messagePrefix = state.prises.length < 3
       ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
       : "Vos rapports sont protégés jusqu'au";
       
@@ -371,12 +367,13 @@ export function usePrepState(): UsePrepStateReturn {
     statusColor = "bg-muted";
   }
 
+  const pushEnabled = !!subscription;
   const welcomeScreenVisible = isClient && state.prises.length === 0;
   const dashboardVisible = isClient && state.prises.length > 0;
 
   return {
     ...state,
-    pushEnabled: !!subscription,
+    pushEnabled,
     isPushLoading,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
