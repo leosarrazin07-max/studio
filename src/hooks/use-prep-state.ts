@@ -297,8 +297,8 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose && firstDoseInSession) {
-    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    // La date de protection effective est la plus tardive entre (dernière prise + 48h) et la première prise
+    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    // La date de protection effective est la plus tardive entre (dernière prise - 48h) et la première prise
     const effectiveProtectionEndDate = isAfter(protectionEndsAt, firstDoseInSession.time) ? protectionEndsAt : firstDoseInSession.time;
     
     // N'affiche le message que si la protection est dans le futur
