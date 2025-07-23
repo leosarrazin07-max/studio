@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format, set } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
-import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
+import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
 import { getRemoteConfig } from "firebase/remote-config";
 import { app } from "@/lib/firebase-client";
@@ -129,15 +129,9 @@ export function usePrepState(): UsePrepStateReturn {
 
 
   const saveState = useCallback((newState: PrepState) => {
-      // In development, state is managed in memory to keep mock data on every refresh.
-      if (process.env.NODE_ENV === 'development') {
-          setState(newState);
-          return;
-      }
-      
       // Production logic
       setState(newState);
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'development') {
         try {
             const stateToSave = {
                 ...newState,
@@ -302,6 +296,7 @@ export function usePrepState(): UsePrepStateReturn {
     const lastDoseTime = lastDose.time;
     const protectionStartTime = add(firstDoseInSession.time, { hours: PROTECTION_START_HOURS });
     const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
+    const reminderWindowStartTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
     const protectionLapsesTime = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
 
     if (isBefore(now, protectionStartTime)) {
@@ -309,25 +304,31 @@ export function usePrepState(): UsePrepStateReturn {
       statusColor = 'bg-primary';
       statusText = 'Protection en cours...';
       protectionStartsIn = `Sera active ${formatDistanceToNowStrict(protectionStartTime, { addSuffix: true, locale: fr })}`;
-    } else if (isBefore(now, protectionLapsesTime)) {
+    } else if (isBefore(now, reminderWindowStartTime)) {
+      // Before the reminder window (0 to 22h)
       status = 'effective';
       statusColor = 'bg-accent';
       statusText = 'Protection active';
-      
-      const milliseconds = nextDoseDueTime.getTime() - now.getTime();
-      const totalHours = Math.floor(milliseconds / (1000 * 60 * 60));
-      const totalMinutes = Math.floor((milliseconds / (1000 * 60)) % 60);
+      nextDoseIn = `Prochaine prise dans ${formatDistanceToNowStrict(nextDoseDueTime, { locale: fr })}`;
+    } else if (isBefore(now, protectionLapsesTime)) {
+        // Within the reminder window (22h to 26h)
+        status = 'effective';
+        statusColor = 'bg-accent';
+        statusText = 'Protection active';
+        
+        const milliseconds = protectionLapsesTime.getTime() - now.getTime();
+        const totalHours = Math.floor(milliseconds / (1000 * 60 * 60));
+        const totalMinutes = Math.floor((milliseconds / (1000 * 60)) % 60);
 
-      let timeParts = [];
-      if (totalHours > 0) timeParts.push(`${totalHours}h`);
-      if (totalMinutes > 0) timeParts.push(`${totalMinutes}min`);
-      
-      if (timeParts.length > 0) {
-        nextDoseIn = `Prochaine prise dans ${timeParts.join(' ')}`;
-      } else {
-        nextDoseIn = `Prochaine prise imminente`;
-      }
-      
+        let timeParts = [];
+        if (totalHours > 0) timeParts.push(`${totalHours}h`);
+        if (totalMinutes > 0) timeParts.push(`${totalMinutes}min`);
+        
+        if (timeParts.length > 0) {
+            nextDoseIn = `Temps restant pour la prise : ${timeParts.join(' ')}`;
+        } else {
+            nextDoseIn = `Prenez votre comprimé maintenant !`;
+        }
     } else {
       status = 'missed';
       statusColor = 'bg-destructive';
