@@ -8,13 +8,9 @@ export const metadata: Metadata = {
   description: 'Your PrEP medication companion',
   manifest: '/manifest.json',
   icons: {
-    icon: [
-      { url: '/icon-192x192.png', type: 'image/png', sizes: '192x192' },
-      { url: '/icon-512x512.png', type: 'image/png', sizes: '512x512' }
-    ],
-    apple: [
-      { url: '/icon-192x192.png', type: 'image/png', sizes: '192x192' }
-    ],
+    icon: '/icon-192x192.png',
+    shortcut: '/icon-192x192.png',
+    apple: '/icon-192x192.png',
   },
 };
 
