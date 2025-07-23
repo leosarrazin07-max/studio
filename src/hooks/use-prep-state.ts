@@ -90,8 +90,6 @@ const safelyParseJSON = (jsonString: string | null) => {
     } else {
         parsed.prises = [];
     }
-    // We remove the old pushEnabled value from the saved state
-    delete parsed.pushEnabled;
     return parsed;
   } catch (e) {
     console.error("Failed to parse JSON from localStorage", e);
@@ -190,7 +188,7 @@ export function usePrepState(): UsePrepStateReturn {
         });
         setSubscription(sub);
         // We sync the state to the server immediately upon subscription
-        saveState(state);
+        saveState(getInitialState()); // Pass a fresh copy of state to avoid stale closure
         toast({ title: "Notifications activées!" });
         return true;
     } catch (error) {
@@ -198,7 +196,7 @@ export function usePrepState(): UsePrepStateReturn {
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
         return false;
     }
-  }, [toast, state, saveState]);
+  }, [toast, saveState]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
     if (subscription) {
@@ -287,22 +285,21 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose && firstDoseInSession) {
-    const isProtectionPeriodActive = isAfter(lastDose.time, sub(now, { hours: FINAL_PROTECTION_HOURS }));
+        const protectionReferenceTime = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+        const finalProtectionTime = isAfter(protectionReferenceTime, firstDoseInSession.time)
+            ? protectionReferenceTime
+            : firstDoseInSession.time;
 
-    if (isProtectionPeriodActive) {
-        let protectionDate = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+        const isProtectedNow = isAfter(now, finalProtectionTime);
 
-        if (isBefore(protectionDate, firstDoseInSession.time)) {
-            protectionDate = firstDoseInSession.time;
+        if (isProtectedNow) {
+            const formattedDate = format(finalProtectionTime, 'eeee dd MMMM HH:mm', { locale: fr });
+            if (doseCount < 3) {
+                protectionEndsAtText = `Si vous continuez les prises, vos rapports seront protégés jusqu'au ${formattedDate}`;
+            } else {
+                protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${formattedDate}`;
+            }
         }
-
-        const formattedDate = format(protectionDate, 'eeee dd MMMM HH:mm', { locale: fr });
-        if (doseCount < 3) {
-            protectionEndsAtText = `Si vous continuez les prises, vos rapports seront protégés jusqu'au ${formattedDate}`;
-        } else {
-            protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${formattedDate}`;
-        }
-    }
   }
 
 
@@ -361,7 +358,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
-    pushEnabled: !!subscription, // Single source of truth for the switch state
+    pushEnabled: !!subscription,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
