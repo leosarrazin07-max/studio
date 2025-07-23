@@ -142,19 +142,19 @@ export function usePrepState(): UsePrepStateReturn {
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
             
-            const currentSub = subscription;
-            if (newState.pushEnabled && currentSub) {
+            // This now only runs when push is enabled and there's a subscription
+            if (newState.pushEnabled && subscription) {
                  fetch('/api/tasks/notification', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ subscription: currentSub, state: stateToSave })
+                    body: JSON.stringify({ subscription: subscription, state: stateToSave })
                 }).catch(err => console.error("Failed to sync state to server:", err));
             }
         } catch (e) {
             console.error("Could not save state", e);
         }
       }
-  }, [subscription]);
+  }, [subscription]); // Dependency on subscription is key
   
   const requestNotificationPermission = useCallback(async () => {
     if (!('Notification' in window) || !navigator.serviceWorker) {
@@ -188,12 +188,13 @@ export function usePrepState(): UsePrepStateReturn {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(sub)
         });
-        setSubscription(sub);
+        setSubscription(sub); // This will trigger the useEffect below
         toast({ title: "Notifications activées!" });
         return true;
     } catch (error) {
         console.error("Error subscribing:", error);
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
+        setSubscription(null); // Ensure subscription is null on error
         return false;
     }
   }, [toast]);
@@ -207,7 +208,7 @@ export function usePrepState(): UsePrepStateReturn {
             body: JSON.stringify({ endpoint: subscription.endpoint })
         });
         await subscription.unsubscribe();
-        setSubscription(null);
+        setSubscription(null); // This will trigger the useEffect below
         toast({ title: "Notifications désactivées." });
       } catch (error) {
          console.error("Error unsubscribing:", error);
@@ -215,13 +216,16 @@ export function usePrepState(): UsePrepStateReturn {
       }
     }
   }, [subscription, toast]);
-
+  
+  // This useEffect is the single source of truth for syncing pushEnabled state
   useEffect(() => {
+    // Only run on client after initial mount
     if (isClient) {
         saveState({...state, pushEnabled: !!subscription });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subscription, isClient]);
+
 
   useEffect(() => {
     setIsClient(true);
@@ -231,10 +235,13 @@ export function usePrepState(): UsePrepStateReturn {
         if (savedState) setState(savedState);
     }
 
+    // On initial load, check for an existing subscription
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.ready
         .then(registration => registration.pushManager.getSubscription())
         .then(sub => {
+            // This will set the initial state of the subscription
+            // which in turn will trigger the useEffect above to set pushEnabled
             if (sub) {
                 setSubscription(sub);
             }
@@ -351,7 +358,6 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
-    pushEnabled: !!subscription,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
@@ -369,3 +375,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
