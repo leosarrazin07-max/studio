@@ -216,11 +216,12 @@ export function usePrepState(): UsePrepStateReturn {
       statusText = 'Protection active';
       
       const duration = intervalToDuration({ start: now, end: nextDoseDueTime });
-      const hours = duration.hours ?? 0;
-      const minutes = duration.minutes ?? 0;
+      const totalHours = Math.floor((nextDoseDueTime.getTime() - now.getTime()) / (1000 * 60 * 60));
+      const totalMinutes = Math.floor(((nextDoseDueTime.getTime() - now.getTime()) / (1000 * 60)) % 60);
+
       let timeParts = [];
-      if (hours > 0) timeParts.push(`${hours}h`);
-      if (minutes > 0) timeParts.push(`${minutes}min`);
+      if (totalHours > 0) timeParts.push(`${totalHours}h`);
+      if (totalMinutes > 0) timeParts.push(`${totalMinutes}min`);
       nextDoseIn = `Prochaine prise dans ${timeParts.join(' ')}`;
       
       const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
