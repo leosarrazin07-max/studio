@@ -107,10 +107,6 @@ const defaultState: PrepState = {
 };
 
 const getInitialState = () => {
-    // In development, ALWAYS start with mock data for consistent testing.
-    if (process.env.NODE_ENV === 'development') {
-        return createMockData();
-    }
     // In production, get the state from localStorage.
     if (typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
@@ -125,7 +121,7 @@ export function usePrepState(): UsePrepStateReturn {
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   // Force mock data in dev, otherwise load from storage.
-  const [state, setState] = useState<PrepState>(getInitialState);
+  const [state, setState] = useState<PrepState>(process.env.NODE_ENV === 'development' ? createMockData() : getInitialState());
 
 
   const saveState = useCallback((newState: PrepState) => {
@@ -223,7 +219,7 @@ export function usePrepState(): UsePrepStateReturn {
   useEffect(() => {
     setIsClient(true);
 
-    // In dev mode, always ensure we are using the mock data on mount.
+    // In dev mode, always ensure we are using the mock data on mount, overriding localStorage.
     if (process.env.NODE_ENV === 'development') {
       setState(createMockData());
     } else {
@@ -296,10 +292,10 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
+    // Protection ends 48h BEFORE the last dose.
     const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    if(isAfter(protectionEndsAt, now)) {
-        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-    }
+    // This message should always be calculated if there is a last dose.
+    protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
@@ -314,10 +310,11 @@ export function usePrepState(): UsePrepStateReturn {
       statusText = 'Protection en cours...';
       protectionStartsIn = `Sera active ${formatDistanceToNowStrict(protectionStartTime, { addSuffix: true, locale: fr })}`;
     } else if (isBefore(now, reminderWindowStartTime)) {
+      // Before the reminder window (0 to 22h)
       status = 'effective';
       statusColor = 'bg-accent';
       statusText = 'Protection active';
-      
+
       const milliseconds = differenceInMilliseconds(reminderWindowStartTime, now);
       const totalHours = Math.floor(milliseconds / (1000 * 60 * 60));
       const totalMinutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
@@ -333,6 +330,7 @@ export function usePrepState(): UsePrepStateReturn {
       }
 
     } else if (isBefore(now, reminderWindowEndTime)) {
+        // Within the reminder window (22h to 26h)
         status = 'effective';
         statusColor = 'bg-accent';
         statusText = 'Protection active';
@@ -389,3 +387,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
