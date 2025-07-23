@@ -118,6 +118,7 @@ const getInitialState = () => {
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isPushLoading, setIsPushLoading] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
@@ -156,20 +157,24 @@ export function usePrepState(): UsePrepStateReturn {
   }, [subscription]);
   
   const requestNotificationPermission = useCallback(async () => {
+    setIsPushLoading(true);
     if (!('Notification' in window) || !navigator.serviceWorker) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
+        setIsPushLoading(false);
         return false;
     }
 
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
         toast({ title: "Notifications refusées", variant: "destructive" });
+        setIsPushLoading(false);
         return false;
     }
 
     const vapidPublicKey = await getVapidKey();
     if (!vapidPublicKey) {
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
+        setIsPushLoading(false);
         return false;
     }
 
@@ -203,15 +208,18 @@ export function usePrepState(): UsePrepStateReturn {
             return currentState; // No state change needed here, just sending data
         });
         toast({ title: "Notifications activées!" });
+        setIsPushLoading(false);
         return true;
     } catch (error) {
         console.error("Error subscribing:", error);
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
+        setIsPushLoading(false);
         return false;
     }
   }, [toast]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
+    setIsPushLoading(true);
     if (subscription) {
       try {
         await fetch('/api/subscription', {
@@ -227,6 +235,7 @@ export function usePrepState(): UsePrepStateReturn {
          toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
       }
     }
+    setIsPushLoading(false);
   }, [subscription, toast]);
 
   useEffect(() => {
@@ -305,24 +314,18 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose && firstDoseInSession) {
-    const protectionReferenceTime = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    const effectiveProtectionEndDate = isAfter(protectionEndsAt, firstDoseInSession.time) ? protectionEndsAt : firstDoseInSession.time;
     
-    // Ensure the calculated protection time isn't before the session started
-    const finalProtectionTime = isAfter(protectionReferenceTime, firstDoseInSession.time) 
-        ? protectionReferenceTime 
-        : firstDoseInSession.time;
-
-    // Check if the user is currently protected based on the corrected reference time
-    if (isAfter(now, finalProtectionTime)) {
-        const formattedDate = format(finalProtectionTime, 'eeee dd MMMM HH:mm', { locale: fr });
-        const messagePrefix = doseCount < 3 
-            ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
-            : "Vos rapports sont protégés jusqu'au";
-        
-        protectionEndsAtText = `${messagePrefix} ${formattedDate}`;
+    if (isAfter(now, effectiveProtectionEndDate)) {
+        protectionEndsAtText = "";
+    } else {
+        const messagePrefix = doseCount < 3
+          ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
+          : "Vos rapports sont protégés jusqu'au";
+        protectionEndsAtText = `${messagePrefix} ${format(effectiveProtectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
   }
-
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
     const lastDoseTime = lastDose.time;
@@ -380,6 +383,7 @@ export function usePrepState(): UsePrepStateReturn {
   return {
     ...state,
     isInitializing,
+    isPushLoading,
     pushEnabled: !!subscription,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
@@ -398,5 +402,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    

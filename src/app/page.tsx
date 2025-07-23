@@ -25,6 +25,7 @@ export default function Home() {
     clearHistory,
     pushEnabled,
     isInitializing,
+    isPushLoading,
     requestNotificationPermission,
     unsubscribeFromNotifications,
     welcomeScreenVisible,
@@ -137,7 +138,7 @@ export default function Home() {
         onClearHistory={clearHistory}
         pushEnabled={pushEnabled}
         onTogglePush={handleTogglePush}
-        isPushLoading={isInitializing}
+        isPushLoading={isPushLoading}
       />
     </div>
   );

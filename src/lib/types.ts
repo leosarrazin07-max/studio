@@ -19,6 +19,7 @@ export interface PrepState {
 export interface UsePrepStateReturn extends PrepState {
   pushEnabled: boolean;
   isInitializing: boolean;
+  isPushLoading: boolean;
   addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
   endSession: () => void;
