@@ -14,39 +14,34 @@ import { app } from "@/lib/firebase-client";
 const createMockData = (): PrepState => {
     const mockPrises: Prise[] = [];
     const now = new Date();
-    
-    // To simulate being inside the 4-hour reminder window with ~2h left,
-    // we set the last dose to have occurred 24 hours ago.
-    // Reminder window is 22h-26h, so at 24h, there are 2h left.
-    const lastDoseTime = sub(now, { hours: 24 });
-
-    // Find the original start time based on the fixed last dose time.
-    // Assuming 10 doses in total (1 start + 9 daily).
-    const firstDoseTime = sub(lastDoseTime, { days: 9 });
+    // Start the session 10 days ago at a fixed time (e.g., 09:00) for consistency
+    let lastDoseTime = set(sub(now, { days: 10 }), { hours: 9, minutes: 0, seconds: 0, milliseconds: 0 });
 
     // Initial dose (2 pills)
     mockPrises.push({
-        time: firstDoseTime,
+        time: lastDoseTime,
         pills: 2,
         type: 'start',
         id: `mock_0`
     });
 
-    // Subsequent 9 daily doses (1 pill each) leading up to lastDoseTime
-    let currentDoseTime = firstDoseTime;
+    // Subsequent 9 daily doses (1 pill each), always at the same time
     for (let i = 1; i < 10; i++) {
-        currentDoseTime = add(currentDoseTime, { hours: 24 });
+        // Add exactly 24 hours to maintain the same time of day
+        const nextDoseTime = add(lastDoseTime, { hours: 24 });
+        
         mockPrises.push({
-            time: currentDoseTime,
+            time: nextDoseTime,
             pills: 1,
             type: 'dose',
             id: `mock_${i}`
         });
+        lastDoseTime = nextDoseTime;
     }
 
     return {
         prises: mockPrises.sort((a, b) => a.time.getTime() - b.time.getTime()), // Ensure they are sorted
-        sessionActive: true,
+        sessionActive: true, // Ensure the session is marked as active
         pushEnabled: false,
     };
 };
@@ -110,6 +105,13 @@ const defaultState: PrepState = {
     sessionActive: false,
     pushEnabled: false,
 };
+
+// Extend the window interface to include workbox
+declare global {
+  interface Window {
+    workbox: any;
+  }
+}
 
 const getInitialState = () => {
     // In development, ALWAYS start with mock data for consistent testing.
@@ -228,7 +230,6 @@ export function usePrepState(): UsePrepStateReturn {
   useEffect(() => {
     setIsClient(true);
 
-    // In dev mode, always ensure we are using the mock data on mount, overriding localStorage.
     if (process.env.NODE_ENV === 'development') {
       setState(createMockData());
     } else {
@@ -238,11 +239,16 @@ export function usePrepState(): UsePrepStateReturn {
         }
     }
 
+    // Correctly wait for the service worker to be ready
     if ('serviceWorker' in navigator && window.workbox !== undefined) {
       navigator.serviceWorker.ready.then(registration => {
         registration.pushManager.getSubscription().then(sub => {
           if (sub) {
             setSubscription(sub);
+            // Sync pushEnabled state from subscription status
+            setState(prevState => ({ ...prevState, pushEnabled: true }));
+          } else {
+            setState(prevState => ({ ...prevState, pushEnabled: false }));
           }
         });
       });
@@ -299,8 +305,11 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
+    // Protection ends 48h BEFORE the last dose.
     const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+    if(isAfter(now, protectionEndsAt)) {
+        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+    }
   }
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
@@ -319,21 +328,7 @@ export function usePrepState(): UsePrepStateReturn {
       status = 'effective';
       statusColor = 'bg-accent';
       statusText = 'Protection active';
-
-      const milliseconds = differenceInMilliseconds(reminderWindowStartTime, now);
-      const totalHours = Math.floor(milliseconds / (1000 * 60 * 60));
-      const totalMinutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
-
-      let timeParts = [];
-      if (totalHours > 0) timeParts.push(`${totalHours}h`);
-      if (totalMinutes > 0) timeParts.push(`${totalMinutes}min`);
-        
-      if (timeParts.length > 0) {
-        nextDoseIn = `Prochaine prise dans ${timeParts.join(' ')}`;
-      } else {
-        nextDoseIn = `Prochaine prise imminente`;
-      }
-
+      nextDoseIn = `Prochaine prise dans ${formatDistanceToNowStrict(reminderWindowStartTime, { locale: fr })}`;
     } else if (isBefore(now, reminderWindowEndTime)) {
         // Within the reminder window (22h to 26h)
         status = 'effective';
@@ -392,3 +387,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
