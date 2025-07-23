@@ -2,8 +2,8 @@
 import { NextResponse } from 'next/server';
 import { firestore } from '@/lib/firebase-admin';
 import * as webpush from 'web-push';
-import { add, isBefore } from 'date-fns';
-import { DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
+import { add, isBefore, isAfter } from 'date-fns';
+import { DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS, LAPSES_AFTER_HOURS } from '@/lib/constants';
 
 if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY || !process.env.VAPID_MAILTO) {
   console.warn('VAPID keys are not configured. Push notifications will not work.');
@@ -15,71 +15,68 @@ if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY || !process.
     );
 }
 
-// This endpoint is now used to schedule notifications based on client state.
-// It is NOT a cron job handler.
-export async function POST(req: Request) {
+// This is a CRON job endpoint, triggered by an external scheduler (e.g., Google Cloud Scheduler)
+export async function GET() {
     if (!process.env.VAPID_PUBLIC_KEY) {
-         return NextResponse.json({ success: false, error: 'VAPID keys not configured on server' }, { status: 500 });
+        return NextResponse.json({ success: false, error: 'VAPID keys not configured on server' }, { status: 500 });
     }
-    
+
     try {
-        const { subscription, state } = await req.json();
-
-        if (!subscription || !state || !state.sessionActive) {
-            // No active session, no need to send notifications.
-            return NextResponse.json({ success: true, message: 'No active session.' });
+        const subscriptionsSnapshot = await firestore.collection('subscriptions').get();
+        if (subscriptionsSnapshot.empty) {
+            return NextResponse.json({ success: true, message: 'No subscriptions to process.' });
         }
 
-        const allPrises = state.prises
-            .filter((d: any) => d.type !== 'stop')
-            .sort((a: any, b: any) => new Date(b.time).getTime() - new Date(a.time).getTime());
+        const now = new Date();
+        const processingPromises: Promise<any>[] = [];
 
-        const lastDose = allPrises[0] ?? null;
+        subscriptionsSnapshot.forEach(doc => {
+            const subscription = doc.data();
+            const { state } = subscription; // The state is now stored with the subscription
 
-        if (!lastDose) {
-            return NextResponse.json({ success: true, message: 'No doses found.' });
-        }
+            if (!state || !state.sessionActive) {
+                return; // Skip inactive sessions
+            }
+            
+            const allPrises = state.prises
+                .filter((d: any) => d.type !== 'stop')
+                .sort((a: any, b: any) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
-        const lastDoseTime = new Date(lastDose.time);
-        const reminderTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
+            const lastDose = allPrises[0] ?? null;
+            if (!lastDose) {
+                return; // Skip if no doses
+            }
 
-        // Only schedule if the reminder time is in the future.
-        if (isBefore(new Date(), reminderTime)) {
-            const payload = JSON.stringify({
-                title: 'Rappel PrEPy !',
-                body: `C'est le moment de prendre votre comprimé. La fenêtre de prise se termine dans ${DOSE_REMINDER_WINDOW_END_HOURS - DOSE_REMINDER_WINDOW_START_HOURS}h.`,
-                icon: '/icons/icon-192x192.png',
-            });
-            
-            // The `sendNotification` function handles scheduling for us if the TTL is set.
-            // However, web-push does not directly support delayed sending.
-            // The correct approach is to use a task scheduler like Cloud Tasks.
-            // Since that is not available, we will send it immediately and rely on the client logic.
-            // This is a limitation of the current architecture.
-            // For a "real" implementation, this should be a task scheduler.
-            
-            // We will save the reminder to firestore and have a separate function (or manually trigger) to process it.
-            // This is a workaround.
-            const endpointHash = Buffer.from(subscription.endpoint).toString('base64').replace(/=/g, '').replace(/\//g, '_');
-            const reminderRef = firestore.collection('reminders').doc(endpointHash);
-            
-            await reminderRef.set({
-                subscription,
-                payload,
-                sendAt: reminderTime,
-            });
-            
-            // To simulate sending, we will try to send it now, but this is not ideal.
-            // In a real scenario, a scheduled function would read from 'reminders'.
-            await webpush.sendNotification(subscription, payload);
-            
-            return NextResponse.json({ success: true, message: 'Notification sent (simulated).' });
-        }
-        
-        return NextResponse.json({ success: true, message: 'Reminder time is in the past.' });
+            const lastDoseTime = new Date(lastDose.time);
+            const reminderTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
+            const lapsingTime = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
+
+            // Check if it's time to send a reminder
+            if (isAfter(now, reminderTime) && isBefore(now, lapsingTime)) {
+                const payload = JSON.stringify({
+                    title: 'Rappel PrEPy !',
+                    body: `C'est le moment de prendre votre comprimé. La fenêtre de prise se termine bientôt.`,
+                    icon: '/icons/icon-192x192.png',
+                });
+                
+                processingPromises.push(
+                    webpush.sendNotification(subscription.push, payload).catch(error => {
+                        console.error(`Error sending notification to ${subscription.push.endpoint}:`, error);
+                        // If subscription is expired or invalid, delete it
+                        if (error.statusCode === 410 || error.statusCode === 404) {
+                            return doc.ref.delete();
+                        }
+                    })
+                );
+            }
+        });
+
+        await Promise.all(processingPromises);
+
+        return NextResponse.json({ success: true, message: `Processed ${processingPromises.length} notifications.` });
 
     } catch (error) {
-        console.error('Error sending notification:', error);
+        console.error('Error processing notifications:', error);
         if (error instanceof Error) {
              return NextResponse.json({ success: false, error: error.message }, { status: 500 });
         }
@@ -87,4 +84,31 @@ export async function POST(req: Request) {
     }
 }
 
-    
+
+// This endpoint is used by the client to sync its state for the cron job to use.
+export async function POST(req: Request) {
+     try {
+        const { subscription, state } = await req.json();
+
+        if (!subscription || !subscription.endpoint || !state) {
+            return NextResponse.json({ success: false, error: 'Invalid payload' }, { status: 400 });
+        }
+        
+        const endpointHash = Buffer.from(subscription.endpoint).toString('base64').replace(/=/g, '').replace(/\//g, '_');
+        const subscriptionRef = firestore.collection('subscriptions').doc(endpointHash);
+
+        await subscriptionRef.set({
+            push: subscription,
+            state: state,
+        }, { merge: true }); // Merge to avoid overwriting the push object if only state is sent
+
+        return NextResponse.json({ success: true, message: 'State synced.' });
+
+    } catch (error) {
+        console.error('Error syncing state:', error);
+        if (error instanceof Error) {
+             return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        }
+        return NextResponse.json({ success: false, error: 'Unknown error' }, { status: 500 });
+    }
+}

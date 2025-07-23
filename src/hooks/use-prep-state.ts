@@ -7,8 +7,6 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { getRemoteConfig, getString, fetchAndActivate } from "firebase/remote-config";
-import { app } from "@/lib/firebase-client";
 
 // --- MOCK DATA GENERATION FOR DEVELOPMENT ---
 const createMockData = (): PrepState => {
@@ -107,11 +105,12 @@ const getInitialState = (): PrepState => {
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [isPushLoading, setIsPushLoading] = useState(false);
+  const [isPushLoading, setIsPushLoading] = useState(true); // Start with loading true
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
+
 
   const saveState = useCallback((newState: PrepState) => {
       // In development, just update the state without saving to localStorage to keep mock data consistent.
@@ -129,20 +128,23 @@ export function usePrepState(): UsePrepStateReturn {
                 prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
-            
-            // Sync with server for notifications
-            if (subscription) {
-                 fetch('/api/tasks/notification', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ subscription, state: stateToSave })
-                }).catch(err => console.error("Failed to sync state to server:", err));
-            }
         } catch (e) {
             console.error("Could not save state", e);
         }
       }
-  }, [subscription]);
+  }, []);
+
+  const syncStateWithServer = useCallback((sub: PushSubscription, currentState: PrepState) => {
+    const stateToSave = {
+      ...currentState,
+      prises: currentState.prises.map(d => ({...d, time: d.time.toISOString()}))
+    };
+    fetch('/api/tasks/notification', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ subscription: sub, state: stateToSave })
+    }).catch(err => console.error("Failed to sync state to server:", err));
+  }, []);
   
   const requestNotificationPermission = useCallback(async () => {
     setIsPushLoading(true);
@@ -233,6 +235,7 @@ export function usePrepState(): UsePrepStateReturn {
                 console.error('Erreur Service Worker:', error);
             }
         }
+        setIsPushLoading(false); // Push check is complete
         setIsInitializing(false);
     };
 
@@ -241,6 +244,13 @@ export function usePrepState(): UsePrepStateReturn {
     const timer = setInterval(() => setNow(new Date()), 1000 * 30);
     return () => clearInterval(timer);
   }, []);
+
+  // Effect to sync state to server whenever it changes and there's a subscription
+  useEffect(() => {
+    if (subscription && state.sessionActive) {
+      syncStateWithServer(subscription, state);
+    }
+  }, [state, subscription, syncStateWithServer]);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
@@ -297,9 +307,7 @@ export function usePrepState(): UsePrepStateReturn {
       ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
       : "Vos rapports sont protégés jusqu'au";
       
-    if (isAfter(finalProtectionDate, new Date())) {
-        protectionEndsAtText = `${messagePrefix} ${format(finalProtectionDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-    }
+    protectionEndsAtText = `${messagePrefix} ${format(finalProtectionDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
 
@@ -346,6 +354,10 @@ export function usePrepState(): UsePrepStateReturn {
      status = 'inactive';
      statusColor = 'bg-gray-500';
      statusText = 'Session terminée';
+     if(protectionEndsAtText === '') {
+        const protectionEndDateCalc = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndDateCalc, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+     }
   }
 
   if (!isClient || isInitializing) {
@@ -378,6 +390,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-
-    
