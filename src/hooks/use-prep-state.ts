@@ -325,6 +325,8 @@ export function usePrepState(): UsePrepStateReturn {
       status = 'missed';
       statusColor = 'bg-destructive';
       statusText = 'Prise manquée';
+      // Here is the logic you want fixed.
+      // We check if the last dose was taken less than 48 hours ago.
       const protectionCutoff = sub(now, { hours: FINAL_PROTECTION_HOURS });
       if (isAfter(lastDose.time, protectionCutoff)) {
           const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
@@ -333,14 +335,16 @@ export function usePrepState(): UsePrepStateReturn {
     }
   } else if (isClient && !state.sessionActive && lastDose) {
       status = 'inactive';
-      statusColor = 'bg-destructive';
+      statusColor = 'bg-gray-500';
       statusText = 'Session terminée';
       
+      // And also here.
       const protectionCutoff = sub(now, { hours: FINAL_PROTECTION_HOURS });
       if (isAfter(lastDose.time, protectionCutoff)) {
-        statusColor = 'bg-gray-500';
         const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
         protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+      } else {
+        statusColor = 'bg-destructive';
       }
   }
 
