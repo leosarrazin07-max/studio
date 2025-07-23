@@ -61,7 +61,7 @@ export function PrepDashboard({
           </>
         );
       case 'missed':
-        return <p className="text-white/90 font-medium">Prenez un comprimé dès que possible.</p>;
+        return <p className="text-white/90 font-medium">Prenez une prise dès que possible.</p>;
       case 'inactive':
          return <p className="text-sm text-white/90 font-medium">{protectionEndsAtText}</p>;
       default:
@@ -89,7 +89,7 @@ export function PrepDashboard({
                         className="bg-accent hover:bg-accent/90 text-accent-foreground shadow-md"
                         onClick={() => setIsLogDoseOpen(true)}
                     >
-                        <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris mon comprimé
+                        <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris ma prise
                     </Button>
                     <AlertDialog>
                         <AlertDialogTrigger asChild>

@@ -223,11 +223,13 @@ export function usePrepState(): UsePrepStateReturn {
   useEffect(() => {
     setIsClient(true);
 
-    if (process.env.NODE_ENV !== 'development') {
-      const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-      if (savedState) {
-        setState(savedState);
-      }
+    if (process.env.NODE_ENV === 'development') {
+      setState(createMockData());
+    } else {
+        const savedState = safelyParseJSON(localStorage.getItem('prepState'));
+        if (savedState) {
+            setState(savedState);
+        }
     }
 
     if ('serviceWorker' in navigator) {
@@ -281,7 +283,6 @@ export function usePrepState(): UsePrepStateReturn {
 
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
   const lastDose = allPrises[0] ?? null;
-  const secondToLastDose = allPrises[1] ?? null;
   
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
@@ -292,20 +293,16 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
+  if (isClient && lastDose) {
+    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+  }
+
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
     const lastDoseTime = lastDose.time;
     const protectionStartTime = add(firstDoseInSession.time, { hours: PROTECTION_START_HOURS });
     const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
     const protectionLapsesTime = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
-
-    // La protection est considérée comme assurée jusqu'à 48h après l'AVANT-DERNIÈRE prise.
-    // Si il n'y a qu'une seule prise (la prise de départ), on ne peut pas encore calculer la protection finale.
-    const doseForFinalProtectionCalc = secondToLastDose ?? null;
-    if (doseForFinalProtectionCalc) {
-        const protectionEndsAt = add(doseForFinalProtectionCalc.time, { hours: FINAL_PROTECTION_HOURS });
-        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-    }
-
 
     if (isBefore(now, protectionStartTime)) {
       status = 'loading';
@@ -337,11 +334,6 @@ export function usePrepState(): UsePrepStateReturn {
       statusText = 'Prise manquée';
     }
   } else if (isClient && !state.sessionActive && state.prises.length > 0) {
-     const doseForFinalProtectionCalc = secondToLastDose ?? null;
-     if (doseForFinalProtectionCalc) {
-        const protectionEndsAt = add(doseForFinalProtectionCalc.time, { hours: FINAL_PROTECTION_HOURS });
-        protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-     }
      status = 'missed';
      statusColor = 'bg-destructive';
      statusText = 'Session terminée';
