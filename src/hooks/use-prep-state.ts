@@ -106,14 +106,6 @@ const defaultState: PrepState = {
     pushEnabled: false,
 };
 
-// Extend the window interface to include workbox
-declare global {
-  interface Window {
-    workbox: any;
-  }
-}
-
-
 const getInitialState = () => {
     // In development, ALWAYS start with mock data for consistent testing.
     if (process.env.NODE_ENV === 'development') {
@@ -230,27 +222,27 @@ export function usePrepState(): UsePrepStateReturn {
 
   useEffect(() => {
     setIsClient(true);
-
-    if (process.env.NODE_ENV === 'development') {
-      setState(createMockData());
-    } else {
+    // This now reloads state from localStorage on every mount in production, ensuring consistency.
+    if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) {
             setState(savedState);
         }
     }
 
-    if ('serviceWorker' in navigator && typeof window.workbox !== 'undefined') {
-       window.workbox.ready.then((registration: ServiceWorkerRegistration) => {
-        registration.pushManager.getSubscription().then(sub => {
-          if (sub) {
-            setSubscription(sub);
-            setState(prevState => ({ ...prevState, pushEnabled: true }));
-          } else {
-            setState(prevState => ({ ...prevState, pushEnabled: false }));
-          }
-        });
-      });
+    if ('serviceWorker' in navigator) {
+      // We just register the service worker, and check for existing subscriptions.
+      // The logic to request permission is now fully user-driven via the settings panel.
+      navigator.serviceWorker.register('/sw.js')
+        .then(registration => registration.pushManager.getSubscription())
+        .then(sub => {
+            if (sub) {
+                setSubscription(sub);
+                // Sync pushEnabled state based on actual subscription status
+                setState(prevState => ({ ...prevState, pushEnabled: true }));
+            }
+        })
+        .catch(error => console.error('Erreur Service Worker:', error));
     }
     
     const timer = setInterval(() => setNow(new Date()), 1000 * 30);
@@ -384,3 +376,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
