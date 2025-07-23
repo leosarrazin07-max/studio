@@ -188,7 +188,7 @@ export function usePrepState(): UsePrepStateReturn {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(sub)
         });
-        setSubscription(sub); // This will trigger the useEffect below
+        setSubscription(sub);
         toast({ title: "Notifications activées!" });
         return true;
     } catch (error) {
@@ -207,7 +207,7 @@ export function usePrepState(): UsePrepStateReturn {
             body: JSON.stringify({ endpoint: subscription.endpoint })
         });
         await subscription.unsubscribe();
-        setSubscription(null); // This will trigger the useEffect below
+        setSubscription(null);
         toast({ title: "Notifications désactivées." });
       } catch (error) {
          console.error("Error unsubscribing:", error);
@@ -233,7 +233,7 @@ export function usePrepState(): UsePrepStateReturn {
         if (savedState) setState(savedState);
     }
 
-    if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
         navigator.serviceWorker.ready
         .then(registration => registration.pushManager.getSubscription())
         .then(sub => {
