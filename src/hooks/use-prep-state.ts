@@ -158,6 +158,16 @@ export function usePrepState(): UsePrepStateReturn {
     }
   }, [state, subscription, syncStateWithServer]);
 
+  useEffect(() => {
+    if (subscription) {
+      fetch('/api/subscription', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(subscription)
+      });
+    }
+  }, [subscription]);
+
   const requestNotificationPermission = useCallback(async () => {
     setIsPushLoading(true);
     if (!('Notification' in window) || !navigator.serviceWorker) {
@@ -171,7 +181,7 @@ export function usePrepState(): UsePrepStateReturn {
 
     if (permission !== 'granted') {
         if (permission === 'denied') {
-            toast({ title: "Notifications bloquées", description: "Veuillez autoriser les notifications dans les paramètres de votre navigateur.", variant: "destructive" });
+            toast({ title: "Notifications bloquées", description: "Veuillez autoriser les notifications dans les paramètres de votre navigateur et vider le cache.", variant: "destructive" });
         } else {
             toast({ title: "Notifications refusées", variant: "destructive" });
         }
@@ -195,13 +205,6 @@ export function usePrepState(): UsePrepStateReturn {
                 applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
             });
         }
-        
-        await fetch('/api/subscription', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(sub)
-        });
-        
         setSubscription(sub);
         toast({ title: "Notifications activées!" });
     } catch (error) {
@@ -309,14 +312,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-      let finalProtectionDate: Date;
-      const calculatedDate = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-
-      if (firstDoseInSession && allPrises.length < 3) {
-          finalProtectionDate = new Date(Math.max(calculatedDate.getTime(), firstDoseInSession.time.getTime()));
-      } else {
-          finalProtectionDate = calculatedDate;
-      }
+      const finalProtectionDate = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
       
       const messagePrefix = allPrises.length < 3
           ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
@@ -402,3 +398,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
