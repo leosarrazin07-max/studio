@@ -55,7 +55,12 @@ export function PrepDashboard({
       case 'loading':
         return <p className="text-white/80">{protectionStartsIn}</p>;
       case 'effective':
-        return <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>;
+        return (
+          <>
+            <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>
+            {protectionEndsAtText && <p className="text-xs text-white/70 mt-2">{protectionEndsAtText}</p>}
+          </>
+        );
       case 'missed':
         return <p className="text-white/90 font-medium">Prenez un comprimé dès que possible.</p>;
       case 'inactive':
