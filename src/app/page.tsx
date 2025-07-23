@@ -57,7 +57,6 @@ export default function Home() {
   const {
     prises,
     sessionActive,
-    now,
     isClient,
     addDose,
     startSession,
@@ -79,7 +78,6 @@ export default function Home() {
       prises,
       sessionActive,
       isClient,
-      now,
   });
 
   const pushEnabled = !!subscription;
@@ -276,5 +274,3 @@ export default function Home() {
     </div>
   );
 }
-
-    

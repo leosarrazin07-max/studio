@@ -75,7 +75,6 @@ const getInitialState = () => {
 
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
-  const [now, setNow] = useState(new Date());
   const { toast } = useToast();
   const [state, setState] = useState<PrepState>(getInitialState);
 
@@ -123,9 +122,6 @@ export function usePrepState(): UsePrepStateReturn {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) setState(savedState);
     }
-    
-    const timer = setInterval(() => setNow(new Date()), 1000 * 30);
-    return () => clearInterval(timer);
   }, []);
 
   const startSession = useCallback((time: Date) => {
@@ -166,9 +162,8 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
-    now,
     isClient,
-    prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
+    prises: state.prises.filter(dose => isAfter(dose.time, sub(new Date(), { days: MAX_HISTORY_DAYS }))),
     addDose,
     startSession,
     endSession,

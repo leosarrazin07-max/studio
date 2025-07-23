@@ -18,7 +18,6 @@ export interface PrepState {
 
 // The return type of the main state management hook
 export interface UsePrepStateReturn extends PrepState {
-  now: Date;
   isClient: boolean;
   addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
@@ -34,7 +33,6 @@ export interface PrepCalculatorInput {
     prises: Prise[];
     sessionActive: boolean;
     isClient: boolean;
-    now: Date;
 }
 
 // The return type of the calculator hook, contains only derived values
