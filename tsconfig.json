@@ -36,9 +36,7 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "public"
+    "node_modules"
   ]
 }
-
     
