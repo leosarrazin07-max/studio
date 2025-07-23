@@ -9,7 +9,7 @@ import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_
 import { useToast } from './use-toast';
 
 // --- MOCK DATA GENERATION FOR DEVELOPMENT ---
-const createMockData = (): Omit<PrepState, 'pushEnabled'> => {
+const createMockData = (): PrepState => {
     const mockPrises: Prise[] = [];
     const now = new Date();
     // Start the session 10 days ago at a fixed time (e.g., 09:00) for consistency
@@ -58,12 +58,12 @@ const safelyParseJSON = (jsonString: string | null) => {
   }
 };
 
-const defaultState: Omit<PrepState, 'pushEnabled'> = {
+const defaultState: PrepState = {
     prises: [],
     sessionActive: false,
 };
 
-const getInitialState = (): Omit<PrepState, 'pushEnabled'> => {
+const getInitialState = (): PrepState => {
     if (typeof window === 'undefined') {
         return defaultState;
     }
@@ -71,37 +71,30 @@ const getInitialState = (): Omit<PrepState, 'pushEnabled'> => {
         return createMockData();
     }
     const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-    // We no longer manage pushEnabled here, so we don't need to check for subscription.
-    return savedState ? { prises: savedState.prises, sessionActive: savedState.sessionActive } : defaultState;
+    return savedState || defaultState;
 }
 
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
-  const [state, setState] = useState(getInitialState);
+  const [state, setState] = useState<PrepState>(getInitialState);
 
-  // The state that is saved to localStorage should not contain the push subscription.
-  const saveState = useCallback((newState: Omit<PrepState, 'pushEnabled'>) => {
-      // In dev, just update state without saving to keep mock data consistent.
+
+  const saveState = useCallback((newState: PrepState) => {
       if (process.env.NODE_ENV === 'development') {
           setState(newState);
           return;
       }
       
-      // Production logic
       setState(newState);
       if (typeof window !== 'undefined') {
         try {
-            // We only save the PrEP-related state now.
             const stateToSave = {
                 ...newState,
                 prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
-            
-            // Syncing state to server for notifications is now handled separately
-            // whenever the subscription or the state changes.
         } catch (e) {
             console.error("Could not save state", e);
         }
@@ -127,24 +120,16 @@ export function usePrepState(): UsePrepStateReturn {
 
   const addDose = useCallback((prise: { time: Date; pills: number }) => {
     const newDose = { ...prise, type: 'dose' as const, id: new Date().toISOString() };
-    setState(prevState => {
-        const newPrises = [...prevState.prises, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
-        const newState = { ...prevState, prises: newPrises };
-        saveState(newState);
-        return newState;
-    });
-  }, [saveState]);
+    const newPrises = [...state.prises, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
+    saveState({ ...state, prises: newPrises });
+  }, [state, saveState]);
 
   const endSession = useCallback(() => {
     const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
-    setState(prevState => {
-        const updatedDoses = [...prevState.prises, stopEvent];
-        const newState = { ...prevState, sessionActive: false, prises: updatedDoses };
-        saveState(newState);
-        return newState;
-    });
+    const updatedDoses = [...state.prises, stopEvent];
+    saveState({ ...state, sessionActive: false, prises: updatedDoses });
     toast({ title: "Session terminée", description: "Les rappels de notification sont maintenant arrêtés." });
-  }, [saveState, toast]);
+  }, [state, saveState, toast]);
 
   const clearHistory = useCallback(() => {
     if (process.env.NODE_ENV === 'development') {

@@ -63,7 +63,7 @@ export default function Home() {
   useEffect(() => {
     if (subscription) {
         const stateToSave = {
-            ...prepState,
+            sessionActive: prepState.sessionActive,
             prises: prepState.prises.map(d => ({...d, time: d.time.toISOString()}))
         };
         fetch('/api/tasks/notification', {
@@ -72,7 +72,7 @@ export default function Home() {
             body: JSON.stringify({ subscription, state: stateToSave })
         }).catch(err => console.error("Failed to sync state to server:", err));
     }
-  }, [prepState, subscription]);
+  }, [prepState.prises, prepState.sessionActive, subscription]);
 
   // Check for existing subscription on mount
   useEffect(() => {

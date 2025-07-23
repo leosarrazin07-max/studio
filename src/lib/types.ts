@@ -13,7 +13,6 @@ export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed';
 export interface PrepState {
   prises: Prise[];
   sessionActive: boolean;
-  pushEnabled: boolean;
 }
 
 export interface PrepLogic {
@@ -32,4 +31,4 @@ export interface PrepLogic {
 }
 
 // This return type is now simpler as notification logic is handled in the component.
-export type UsePrepStateReturn = Omit<PrepState, 'pushEnabled'> & Omit<PrepLogic, 'pushEnabled'>;
+export type UsePrepStateReturn = PrepState & PrepLogic;
