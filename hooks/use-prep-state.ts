@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import type { Dose, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
+import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
 
@@ -25,8 +25,8 @@ const safelyParseJSON = (jsonString: string | null) => {
   if (!jsonString) return null;
   try {
     const parsed = JSON.parse(jsonString);
-    if (parsed.doses) {
-        parsed.doses = parsed.doses.map((d: any) => ({...d, time: new Date(d.time)}));
+    if (parsed.prises) {
+        parsed.prises = parsed.prises.map((d: any) => ({...d, time: new Date(d.time)}));
     }
     return parsed;
   } catch (e) {
@@ -36,7 +36,7 @@ const safelyParseJSON = (jsonString: string | null) => {
 };
 
 const defaultState: PrepState = {
-    doses: [],
+    prises: [],
     sessionActive: false,
     pushEnabled: false,
 };
@@ -53,7 +53,7 @@ export function usePrepState(): UsePrepStateReturn {
       try {
         const stateToSave = {
             ...newState,
-            doses: newState.doses.map(d => ({...d, time: d.time.toISOString()}))
+            prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
         };
         localStorage.setItem('prepState', JSON.stringify(stateToSave));
       } catch (e) {
@@ -137,20 +137,20 @@ export function usePrepState(): UsePrepStateReturn {
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
-    const newDoses = [newDose];
-    saveState({ ...defaultState, doses: newDoses, sessionActive: true, pushEnabled: state.pushEnabled });
+    const newPrises = [newDose];
+    saveState({ ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled });
   }, [saveState, state.pushEnabled]);
 
-  const addDose = useCallback((dose: { time: Date; pills: number }) => {
-    const newDose = { ...dose, type: 'dose' as const, id: new Date().toISOString() };
-    const newDoses = [...state.doses, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
-    saveState({ ...state, doses: newDoses });
+  const addDose = useCallback((prise: { time: Date; pills: number }) => {
+    const newDose = { ...prise, type: 'dose' as const, id: new Date().toISOString() };
+    const newPrises = [...state.prises, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
+    saveState({ ...state, prises: newPrises });
   }, [state, saveState]);
 
   const endSession = useCallback(() => {
     const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
-    const updatedDoses = [...state.doses, stopEvent];
-    saveState({ ...state, sessionActive: false, doses: updatedDoses });
+    const updatedDoses = [...state.prises, stopEvent];
+    saveState({ ...state, sessionActive: false, prises: updatedDoses });
     toast({ title: "Session terminée", description: "Les rappels de notification sont maintenant arrêtés." });
   }, [state, saveState, toast]);
 
@@ -160,8 +160,8 @@ export function usePrepState(): UsePrepStateReturn {
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
   }, [saveState, state.pushEnabled, toast]);
 
-  const lastDose = state.doses.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
-  const firstDoseInSession = state.doses.find(d => d.type === 'start');
+  const lastDose = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
+  const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
   let status: PrepStatus = 'inactive';
   let statusColor = 'bg-gray-500';
@@ -195,8 +195,8 @@ export function usePrepState(): UsePrepStateReturn {
       const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
-  } else if (isClient && !state.sessionActive && state.doses.length > 0) {
-     const lastEffectiveDose = state.doses.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
+  } else if (isClient && !state.sessionActive && state.prises.length > 0) {
+     const lastEffectiveDose = state.prises.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
      if (lastEffectiveDose) {
         status = 'missed';
         statusColor = 'bg-destructive';
@@ -211,9 +211,12 @@ export function usePrepState(): UsePrepStateReturn {
     statusColor = "bg-muted";
   }
 
+  const welcomeScreenVisible = isClient && state.prises.length === 0;
+  const dashboardVisible = isClient && state.prises.length > 0;
+
   return {
     ...state,
-    doses: state.doses.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
+    prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
     statusText,
@@ -225,6 +228,8 @@ export function usePrepState(): UsePrepStateReturn {
     endSession,
     clearHistory,
     requestNotificationPermission,
-    unsubscribeFromNotifications
+    unsubscribeFromNotifications,
+    welcomeScreenVisible,
+    dashboardVisible,
   };
 }

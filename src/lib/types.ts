@@ -5,7 +5,7 @@ export interface Prise {
   time: Date; // Stored as Date object in state, ISO string in storage
   pills: number;
   type: PriseType;
-  id: string; // Unique ID for each prise
+  id: string; // Unique ID for each dose
 }
 
 export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed';
@@ -23,11 +23,12 @@ export interface PrepLogic {
   nextDoseIn: string;
   protectionStartsIn: string;
   protectionEndsAtText: string;
-  addDose: (prise: { time: Date; pills: number }) => void;
+  addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
-  togglePushNotifications: () => void;
+  requestNotificationPermission: () => Promise<boolean>;
+  unsubscribeFromNotifications: () => Promise<void>;
   welcomeScreenVisible: boolean;
   dashboardVisible: boolean;
 }

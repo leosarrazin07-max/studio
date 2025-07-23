@@ -25,7 +25,6 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { BellRing, Trash2, AlertTriangle, BellOff } from "lucide-react";
-import { getVapidKey } from "@/lib/firebase-client";
 
 interface SettingsSheetProps {
   isOpen: boolean;
@@ -44,16 +43,10 @@ export function SettingsSheet({
 }: SettingsSheetProps) {
 
   const [notificationPermission, setNotificationPermission] = useState('default');
-  const [isVapidKeyConfigured, setIsVapidKeyConfigured] = useState(false);
-
+  
   useEffect(() => {
-    if (isOpen) {
-      if ('Notification' in window) {
-        setNotificationPermission(Notification.permission);
-      }
-      getVapidKey().then(key => {
-        setIsVapidKeyConfigured(!!key);
-      });
+    if (isOpen && 'Notification' in window) {
+      setNotificationPermission(Notification.permission);
     }
   }, [isOpen]);
 
@@ -62,7 +55,7 @@ export function SettingsSheet({
     onOpenChange(false);
   }
 
-  const isSwitchDisabled = !isVapidKeyConfigured || notificationPermission === 'denied';
+  const isSwitchDisabled = notificationPermission === 'denied';
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
@@ -92,16 +85,16 @@ export function SettingsSheet({
                   disabled={isSwitchDisabled}
                 />
             </div>
-             {!isVapidKeyConfigured && (
-                <div className="flex items-center gap-2 text-xs text-destructive pt-2 border-t border-destructive/20 mt-2">
-                    <AlertTriangle size={14}/>
-                    <p>Fonctionnalité non disponible : configuration serveur manquante.</p>
-                </div>
-            )}
             {notificationPermission === 'denied' && (
                 <div className="flex items-center gap-2 text-xs text-destructive pt-2 border-t border-destructive/20 mt-2">
                     <BellOff size={14}/>
                     <p>Les notifications sont bloquées dans les paramètres de votre navigateur.</p>
+                </div>
+            )}
+             {process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ? null : (
+                <div className="flex items-center gap-2 text-xs text-destructive pt-2 border-t border-destructive/20 mt-2">
+                    <AlertTriangle size={14}/>
+                    <p>Fonctionnalité non disponible : configuration serveur manquante.</p>
                 </div>
             )}
           </div>
@@ -135,5 +128,3 @@ export function SettingsSheet({
     </Sheet>
   );
 }
-
-    

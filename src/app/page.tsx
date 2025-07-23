@@ -15,7 +15,7 @@ export default function Home() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const prepState = usePrepState();
 
-  const { addDose, startSession, status, clearHistory, pushEnabled, togglePushNotifications, welcomeScreenVisible, dashboardVisible } = prepState;
+  const { addDose, startSession, clearHistory, requestNotificationPermission, unsubscribeFromNotifications, pushEnabled, welcomeScreenVisible, dashboardVisible } = prepState;
 
   const WelcomeScreen = () => (
     <div className="flex flex-col items-center justify-center h-full text-center p-4 md:p-8">
@@ -61,8 +61,8 @@ export default function Home() {
       </header>
       <main className="flex-1 flex flex-col items-center justify-center">
         <div className="container mx-auto w-full max-w-md flex-1 py-8">
-          {!dashboardVisible && !welcomeScreenVisible && <LoadingScreen />}
           {welcomeScreenVisible && <WelcomeScreen />}
+          {!welcomeScreenVisible && !dashboardVisible && <LoadingScreen />}
           {dashboardVisible && <PrepDashboard {...prepState} />}
         </div>
       </main>
@@ -71,14 +71,14 @@ export default function Home() {
           onOpenChange={setIsLogDoseOpen}
           onLogDose={addDose}
           onStartSession={startSession}
-          status={status}
+          status={prepState.status}
         />
       <SettingsSheet
         isOpen={isSettingsOpen}
         onOpenChange={setIsSettingsOpen}
         onClearHistory={clearHistory}
         pushEnabled={pushEnabled}
-        onTogglePush={togglePushNotifications}
+        onTogglePush={pushEnabled ? unsubscribeFromNotifications : requestNotificationPermission}
       />
     </div>
   );

@@ -5,9 +5,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
-import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_REMINDER_WINDOW_START_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
+import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { getVapidKey } from '@/lib/firebase-client';
+
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -26,9 +27,6 @@ const safelyParseJSON = (jsonString: string | null) => {
     const parsed = JSON.parse(jsonString);
     if (parsed.prises) {
         parsed.prises = parsed.prises.map((d: any) => ({...d, time: new Date(d.time)}));
-    } else if (parsed.doses) { // Handle old data format
-        parsed.prises = parsed.doses.map((d: any) => ({...d, time: new Date(d.time)}));
-        delete parsed.doses;
     }
     return parsed;
   } catch (e) {
@@ -43,182 +41,134 @@ const defaultState: PrepState = {
     pushEnabled: false,
 };
 
-async function syncStateWithServer(state: PrepState) {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        return;
-    }
-    const registration = await navigator.serviceWorker.ready;
-    const subscription = await registration.pushManager.getSubscription();
-
-    if (subscription) {
-        const stateToSync = {
-            ...state,
-            prises: state.prises.map(d => ({ ...d, time: d.time.toISOString() })),
-        };
-        try {
-            await fetch('/api/tasks/notification', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ subscription, state: stateToSync }),
-            });
-        } catch (error) {
-            console.error("Failed to sync state with server:", error);
-        }
-    }
-}
-
-
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
+  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(defaultState);
-  
-  const saveState = useCallback((newState: Partial<PrepState>) => {
-    setState(prevState => {
-        const updatedState = { ...prevState, ...newState };
-        if (typeof window !== 'undefined') {
-            try {
-                const stateToSave = {
-                    ...updatedState,
-                    prises: updatedState.prises.map(d => ({ ...d, time: d.time.toISOString() })),
-                };
-                localStorage.setItem('prepState', JSON.stringify(stateToSave));
-                syncStateWithServer(updatedState);
-            } catch (e) {
-                console.error("Could not save state to localStorage", e);
-            }
+
+  const saveState = useCallback((newState: PrepState) => {
+      setState(newState);
+      if (typeof window !== 'undefined') {
+        try {
+            const stateToSave = {
+                ...newState,
+                prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
+            };
+            localStorage.setItem('prepState', JSON.stringify(stateToSave));
+        } catch (e) {
+            console.error("Could not save state to localStorage", e);
         }
-        return updatedState;
-    });
+      }
   }, []);
 
-  const syncPushSubscription = useCallback(async () => {
+  const updateSubscriptionObject = useCallback(async () => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       try {
         const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
-        if (!!subscription !== state.pushEnabled) {
-          saveState({ pushEnabled: !!subscription });
-        }
+        const sub = await registration.pushManager.getSubscription();
+        setSubscription(sub);
+        setState(prevState => ({...prevState, pushEnabled: !!sub}));
       } catch (error) {
-        console.error("Error syncing push subscription:", error);
+        console.error("Error getting push subscription:", error);
       }
     }
-  }, [saveState, state.pushEnabled]);
+  }, []);
 
-
-  useEffect(() => {
-    setIsClient(true);
-    if (typeof window !== 'undefined') {
-        const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-        if (savedState) {
-          setState(prevState => ({...prevState, ...savedState}));
-        }
-
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/service-worker.js')
-              .then(() => syncPushSubscription())
-              .catch(error => console.error('Erreur Service Worker:', error));
-        }
-
-        const timer = setInterval(() => setNow(new Date()), 1000 * 60);
-        return () => clearInterval(timer);
-    }
-  }, [syncPushSubscription]);
-  
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        syncPushSubscription();
-      }
-    };
-    window.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => window.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [syncPushSubscription]);
-
-
-  const togglePushNotifications = useCallback(async () => {
-    const VAPID_PUBLIC_KEY = await getVapidKey();
+  const requestNotificationPermission = useCallback(async () => {
     if (!VAPID_PUBLIC_KEY) {
-        console.error("VAPID public key not found in Remote Config.");
+        console.error("VAPID public key not found.");
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
-        return;
+        return false;
     }
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
-        return;
+        return false;
     }
-
     try {
         const registration = await navigator.serviceWorker.ready;
-        const currentSubscription = await registration.pushManager.getSubscription();
-        
-        if (currentSubscription) {
-            await fetch('/api/subscription', {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ endpoint: currentSubscription.endpoint }),
-            });
-            await currentSubscription.unsubscribe();
-            saveState({ pushEnabled: false });
-            toast({ title: "Notifications désactivées." });
-        } else {
-            const permission = await Notification.requestPermission();
-            if (permission !== 'granted') {
-                toast({ title: "Permission refusée", description: "Vous devez autoriser les notifications dans les paramètres de votre navigateur.", variant: "destructive" });
-                saveState({ pushEnabled: false });
-                return;
-            }
-
-            const newSubscription = await registration.pushManager.subscribe({
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            toast({ title: "Notifications refusées", variant: "destructive" });
+            return false;
+        }
+        let sub = await registration.pushManager.getSubscription();
+        if (!sub) {
+            sub = await registration.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
             });
-            
-            await fetch('/api/subscription', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newSubscription),
-            });
-            
-            saveState({ pushEnabled: true });
-            await syncStateWithServer({ ...state, pushEnabled: true });
-            toast({ title: "Notifications activées !" });
         }
-    } catch (e) {
-        console.error("Error toggling push notifications:", e);
-        toast({ title: "Une erreur est survenue", variant: "destructive" });
-        syncPushSubscription();
+        setSubscription(sub);
+        saveState({...state, pushEnabled: true});
+        toast({ title: "Notifications activées!" });
+        return true;
+    } catch (error) {
+        console.error("Error subscribing:", error);
+        toast({ title: "Erreur d'abonnement", variant: "destructive" });
+        return false;
     }
-  }, [state, saveState, toast, syncPushSubscription]);
+  }, [toast, state, saveState]);
+
+  const unsubscribeFromNotifications = useCallback(async () => {
+    if (subscription) {
+        await subscription.unsubscribe();
+        setSubscription(null);
+        saveState({...state, pushEnabled: false});
+        toast({ title: "Notifications désactivées." });
+    }
+  }, [subscription, toast, state, saveState]);
+
+  useEffect(() => {
+    setIsClient(true);
+    
+    if (typeof window !== 'undefined') {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(() => updateSubscriptionObject())
+            .catch(error => console.error('Erreur Service Worker:', error));
+        }
+        
+        const savedState = safelyParseJSON(localStorage.getItem('prepState'));
+        if (savedState) {
+            setState(savedState);
+        }
+    }
+    
+    const timer = setInterval(() => setNow(new Date()), 1000 * 60); // Update "now" every minute
+    return () => clearInterval(timer);
+  }, [updateSubscriptionObject]);
 
   const startSession = useCallback((time: Date) => {
-    const newPrise = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
-    const newPrises = [newPrise];
+    const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
+    const newPrises = [newDose];
     saveState({ ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled });
   }, [saveState, state.pushEnabled]);
 
   const addDose = useCallback((prise: { time: Date; pills: number }) => {
-    const newPrise = { ...prise, type: 'dose' as const, id: new Date().toISOString() };
-    const newPrises = [...state.prises, newPrise].sort((a, b) => a.time.getTime() - b.time.getTime());
-    saveState({ prises: newPrises, sessionActive: true });
-  }, [state.prises, saveState]);
+    const newDose = { ...prise, type: 'dose' as const, id: new Date().toISOString() };
+    const newPrises = [...state.prises, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
+    saveState({ ...state, prises: newPrises });
+  }, [state, saveState]);
 
   const endSession = useCallback(() => {
     const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
-    const updatedPrises = [...state.prises, stopEvent];
-    saveState({ sessionActive: false, prises: updatedPrises });
+    const updatedDoses = [...state.prises, stopEvent];
+    saveState({ ...state, sessionActive: false, prises: updatedDoses });
     toast({ title: "Session terminée", description: "Les rappels de notification sont maintenant arrêtés." });
-  }, [state.prises, saveState, toast]);
+  }, [state, saveState, toast]);
 
   const clearHistory = useCallback(() => {
+    if (typeof window !== 'undefined') {
+        localStorage.removeItem('prepState');
+    }
     saveState({ ...defaultState, pushEnabled: state.pushEnabled });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
   }, [saveState, state.pushEnabled, toast]);
 
-  const lastPrise = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
-  const firstPriseInSession = state.prises.find(d => d.type === 'start');
+  const lastDose = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
+  const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
   let status: PrepStatus = 'inactive';
   let statusColor = 'bg-gray-500';
@@ -227,10 +177,10 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
-  if (isClient && state.sessionActive && lastPrise && firstPriseInSession) {
-    const lastDoseTime = lastPrise.time;
-    const protectionStartTime = add(firstPriseInSession.time, { hours: PROTECTION_START_HOURS });
-    const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
+  if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
+    const lastDoseTime = lastDose.time;
+    const protectionStartTime = add(firstDoseInSession.time, { hours: PROTECTION_START_HOURS });
+    const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
     const protectionLapsesTime = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
 
     if (isBefore(now, protectionStartTime)) {
@@ -242,14 +192,14 @@ export function usePrepState(): UsePrepStateReturn {
       status = 'effective';
       statusColor = 'bg-accent';
       statusText = 'Protection active';
-      nextDoseIn = `Prochain comprimé ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
-      const protectionEndsAt = add(lastPrise.time, { hours: FINAL_PROTECTION_HOURS });
+      nextDoseIn = `Prochaine dose ${formatDistanceToNowStrict(nextDoseDueTime, { addSuffix: true, locale: fr })}`;
+      const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     } else {
       status = 'missed';
       statusColor = 'bg-destructive';
-      statusText = 'Comprimé manqué';
-      const protectionEndsAt = add(lastPrise.time, { hours: FINAL_PROTECTION_HOURS });
+      statusText = 'Dose manquée';
+      const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
   } else if (isClient && !state.sessionActive && state.prises.length > 0) {
@@ -263,19 +213,17 @@ export function usePrepState(): UsePrepStateReturn {
      }
   }
 
-
   if (!isClient) {
     statusText = "Chargement...";
     statusColor = "bg-muted";
   }
-  
-  const welcomeScreenVisible = !isClient || (!state.sessionActive && state.prises.length === 0);
-  const dashboardVisible = isClient && (state.sessionActive || state.prises.length > 0);
 
+  const welcomeScreenVisible = isClient && state.prises.length === 0;
+  const dashboardVisible = isClient && state.prises.length > 0;
 
   return {
     ...state,
-    prises: state.prises.filter(prise => isAfter(prise.time, sub(now, { days: MAX_HISTORY_DAYS }))),
+    prises: state.prises.filter(dose => isClient && isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
     statusText,
@@ -286,10 +234,9 @@ export function usePrepState(): UsePrepStateReturn {
     startSession,
     endSession,
     clearHistory,
-    togglePushNotifications,
+    requestNotificationPermission,
+    unsubscribeFromNotifications,
     welcomeScreenVisible,
     dashboardVisible,
   };
 }
-
-    

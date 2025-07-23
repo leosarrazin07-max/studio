@@ -4,43 +4,31 @@ import { firestore } from '@/lib/firebase-admin';
 import webpush from 'web-push';
 import { add, isBefore } from 'date-fns';
 import { DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
-import * as functions from 'firebase-functions/v2';
-
-// Initialize firebase-functions
-functions.setGlobalOptions({ region: 'europe-west9' });
 
 const getVapidKeys = async () => {
     try {
-        const vapidKeys = functions.params.defineString('VAPID_KEYS', {
-            description: 'VAPID public and private keys, separated by a pipe (|).',
-            input: {
-                text: {
-                    validationRegex: '.*\\|.*',
-                    validationErrorMessage: 'Keys must be separated by a pipe (|).',
-                },
-            },
-        });
-        
-        const keys = vapidKeys.value();
-        const [publicKey, privateKey] = keys.split('|');
-
-        if (!publicKey || !privateKey) {
-            console.error("VAPID keys are not fully configured in Firebase Functions parameters.");
+        const configDoc = await firestore.collection('configuration').doc('vapid').get();
+        if (!configDoc.exists) {
+            console.error("Le document de configuration 'vapid' n'a pas été trouvé dans Firestore.");
             return null;
         }
-        return { publicKey, privateKey };
+        const keys = configDoc.data();
+        if (!keys || !keys.publicKey || !keys.privateKey) {
+            console.error("Le document 'vapid' dans Firestore ne contient pas publicKey et privateKey.");
+            return null;
+        }
+        return { publicKey: keys.publicKey, privateKey: keys.privateKey };
     } catch(e) {
-        console.error("Could not retrieve VAPID keys from function parameters. Please configure them in the Google Cloud Console for the function 'VAPID_KEYS'.", e);
+        console.error("Impossible de récupérer les clés VAPID depuis Firestore.", e);
         return null;
     }
 };
-
 
 // This function is triggered by a cron job (e.g., Google Cloud Scheduler)
 export async function GET() {
   const vapidKeys = await getVapidKeys();
   if (!vapidKeys) {
-      return NextResponse.json({ success: false, error: 'VAPID keys not configured on server' }, { status: 500 });
+      return NextResponse.json({ success: false, error: 'VAPID keys not configured on server in Firestore' }, { status: 500 });
   }
 
   webpush.setVapidDetails(
@@ -72,10 +60,10 @@ export async function GET() {
 
       const state = localDataSnapshot.data();
       if (!state || !state.sessionActive || !state.prises || state.prises.length === 0) {
-        return; // Session inactive or no prises
+        return; // Session inactive or no doses
       }
 
-      // Prises are stored as ISO strings, convert them back to Dates
+      // Doses are stored as ISO strings, convert them back to Dates
       const prises = state.prises.map((d: any) => ({ ...d, time: new Date(d.time) }));
       const lastPrise = prises.filter((d: any) => d.type !== 'stop').sort((a: any, b: any) => b.time.getTime() - a.time.getTime())[0];
 
@@ -132,5 +120,3 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });
     }
 }
-
-    
