@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { usePrepState } from "@/hooks/use-prep-state";
+import { usePrepCalculator } from "@/hooks/use-prep-calculator";
 import { Button } from "@/components/ui/button";
 import { LogDoseDialog } from "@/components/log-dose-dialog";
 import { PrepDashboard } from "@/components/prep-dashboard";
@@ -49,22 +50,29 @@ export default function Home() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   
-  const prepState = usePrepState();
-  const { addDose, startSession, clearHistory, welcomeScreenVisible, dashboardVisible, setPushEnabled } = prepState;
-
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [isPushLoading, setIsPushLoading] = useState(true);
   
+  const prepState = usePrepState();
+  const { addDose, startSession, clearHistory, welcomeScreenVisible, dashboardVisible, setPushEnabled, sessionActive, prises, now, isClient } = prepState;
+  
+  const prepLogic = usePrepCalculator({
+      prises,
+      sessionActive,
+      isClient,
+      now,
+  });
+
   const pushEnabled = !!subscription;
 
-  // Effect to check for existing subscription on mount and sync state
+  // Effect to check for existing subscription on mount and inform the hook
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       navigator.serviceWorker.ready.then(reg => {
         reg.pushManager.getSubscription().then(sub => {
           setSubscription(sub);
-          setPushEnabled(!!sub); // Inform the hook about the push state
+          setPushEnabled(!!sub); // Inform the hook
           setIsPushLoading(false);
         });
       });
@@ -76,13 +84,14 @@ export default function Home() {
   // Effect to sync state to server whenever subscription or prepState changes
   useEffect(() => {
     if (pushEnabled && subscription) {
-         fetch('/api/tasks/notification', {
+        // We only want to sync when the actual state changes, not just the subscription object
+        fetch('/api/tasks/notification', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ subscription, state: prepState })
+            body: JSON.stringify({ subscription, state: { prises, sessionActive, pushEnabled } })
         }).catch(err => console.error("Failed to sync state to server:", err));
     }
-  }, [pushEnabled, subscription, prepState]);
+  }, [pushEnabled, subscription, prises, sessionActive]); // Added dependencies
 
 
   useEffect(() => {
@@ -130,7 +139,7 @@ export default function Home() {
           body: JSON.stringify(sub)
       });
       setSubscription(sub);
-      setPushEnabled(true); // Inform the hook
+      setPushEnabled(true);
       toast({ title: "Notifications activées!" });
     } catch(error) {
         console.error("Error subscribing:", error);
@@ -151,7 +160,7 @@ export default function Home() {
         });
         await subscription.unsubscribe();
         setSubscription(null);
-        setPushEnabled(false); // Inform the hook
+        setPushEnabled(false);
         toast({ title: "Notifications désactivées." });
     } catch (error) {
         console.error("Error unsubscribing:", error);
@@ -215,7 +224,10 @@ export default function Home() {
         <div className="container mx-auto w-full max-w-md flex-1 py-8">
           {welcomeScreenVisible && <WelcomeScreen />}
           {!dashboardVisible && !welcomeScreenVisible && <LoadingScreen />}
-          {dashboardVisible && <PrepDashboard {...prepState} />}
+          {dashboardVisible && <PrepDashboard 
+                                {...prepState} 
+                                {...prepLogic}
+                              />}
         </div>
       </main>
       <WelcomeDialog isOpen={isWelcomeOpen} onClose={handleWelcomeClose} />
@@ -224,7 +236,7 @@ export default function Home() {
           onOpenChange={setIsLogDoseOpen}
           onLogDose={addDose}
           onStartSession={startSession}
-          status={prepState.status}
+          status={prepLogic.status}
         />
       <SettingsSheet
         isOpen={isSettingsOpen}

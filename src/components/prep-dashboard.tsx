@@ -16,9 +16,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info, PowerOff } from 'lucide-react';
-import type { UsePrepStateReturn } from '@/lib/types';
+import type { UsePrepStateReturn, PrepCalculatorResult } from '@/lib/types';
 import { LogDoseDialog } from './log-dose-dialog';
 import { DoseHistory } from './dose-history';
+
+type PrepDashboardProps = UsePrepStateReturn & PrepCalculatorResult;
 
 export function PrepDashboard({
   prises,
@@ -32,7 +34,7 @@ export function PrepDashboard({
   endSession,
   sessionActive,
   startSession
-}: UsePrepStateReturn) {
+}: PrepDashboardProps) {
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
 
   const StatusIcon = () => {

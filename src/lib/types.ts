@@ -2,10 +2,10 @@
 export type PriseType = 'start' | 'dose' | 'stop';
 
 export interface Prise {
-  time: Date; // Stored as Date object in state, ISO string in storage
+  time: Date; 
   pills: number;
   type: PriseType;
-  id: string; // Unique ID for each dose
+  id: string; 
 }
 
 export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed';
@@ -16,13 +16,10 @@ export interface PrepState {
   pushEnabled: boolean;
 }
 
-export interface PrepLogic {
-  status: PrepStatus;
-  statusColor: string;
-  statusText: string;
-  nextDoseIn: string;
-  protectionStartsIn: string;
-  protectionEndsAtText: string;
+// The return type of the main state management hook
+export interface UsePrepStateReturn extends PrepState {
+  now: Date;
+  isClient: boolean;
   addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
   endSession: () => void;
@@ -32,4 +29,20 @@ export interface PrepLogic {
   dashboardVisible: boolean;
 }
 
-export type UsePrepStateReturn = PrepState & PrepLogic;
+// Input for the calculator hook
+export interface PrepCalculatorInput {
+    prises: Prise[];
+    sessionActive: boolean;
+    isClient: boolean;
+    now: Date;
+}
+
+// The return type of the calculator hook, contains only derived values
+export interface PrepCalculatorResult {
+  status: PrepStatus;
+  statusColor: string;
+  statusText: string;
+  nextDoseIn: string;
+  protectionStartsIn: string;
+  protectionEndsAtText: string;
+}
