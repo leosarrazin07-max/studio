@@ -26,6 +26,7 @@ const createMockData = (): PrepState => {
     // Subsequent 9 daily doses (1 pill each), always at the same time
     for (let i = 1; i < 10; i++) {
         const nextDoseTime = add(lastDoseTime, { hours: 24 });
+        
         mockPrises.push({
             time: nextDoseTime,
             pills: 1,
@@ -36,8 +37,9 @@ const createMockData = (): PrepState => {
     }
 
     return {
-        prises: mockPrises.sort((a, b) => a.time.getTime() - b.time.getTime()),
-        sessionActive: true,
+        prises: mockPrises.sort((a, b) => a.time.getTime() - b.time.getTime()), // Ensure they are sorted
+        sessionActive: true, // Ensure the session is marked as active
+        pushEnabled: false,
     };
 };
 // --- END MOCK DATA ---
@@ -47,6 +49,7 @@ const safelyParseJSON = (jsonString: string | null) => {
   try {
     const parsed = JSON.parse(jsonString);
     if (Array.isArray(parsed.prises)) {
+        // Ensure time is a Date object
         parsed.prises = parsed.prises.map((d: any) => ({...d, time: new Date(d.time)}));
     } else {
         parsed.prises = [];
@@ -61,15 +64,18 @@ const safelyParseJSON = (jsonString: string | null) => {
 const defaultState: PrepState = {
     prises: [],
     sessionActive: false,
+    pushEnabled: false,
 };
 
-const getInitialState = (): PrepState => {
+const getInitialState = () => {
     if (typeof window === 'undefined') {
         return defaultState;
     }
+    // In development, ALWAYS start with mock data for consistent testing.
     if (process.env.NODE_ENV === 'development') {
         return createMockData();
     }
+    // In production, get the state from localStorage.
     const savedState = safelyParseJSON(localStorage.getItem('prepState'));
     return savedState || defaultState;
 }
@@ -80,13 +86,14 @@ export function usePrepState(): UsePrepStateReturn {
   const { toast } = useToast();
   const [state, setState] = useState<PrepState>(getInitialState);
 
-
   const saveState = useCallback((newState: PrepState) => {
+      // In development, just update the state without saving to localStorage to keep mock data consistent.
       if (process.env.NODE_ENV === 'development') {
           setState(newState);
           return;
       }
       
+      // Production logic
       setState(newState);
       if (typeof window !== 'undefined') {
         try {
@@ -95,16 +102,37 @@ export function usePrepState(): UsePrepStateReturn {
                 prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
+            
+            // The server sync is now dependent on the state managed by this hook
+            if (newState.pushEnabled) {
+                 // We need to get the subscription from the service worker registration
+                 navigator.serviceWorker.ready.then(registration => {
+                    registration.pushManager.getSubscription().then(subscription => {
+                        if (subscription) {
+                             fetch('/api/tasks/notification', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ subscription, state: stateToSave })
+                            }).catch(err => console.error("Failed to sync state to server:", err));
+                        }
+                    });
+                 });
+            }
         } catch (e) {
             console.error("Could not save state", e);
         }
       }
   }, []);
   
+  const setPushEnabled = useCallback((enabled: boolean) => {
+    saveState({ ...state, pushEnabled: enabled });
+  }, [state, saveState]);
+
   useEffect(() => {
     setIsClient(true);
+    // Reload state from localStorage on mount in production.
     if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
-        const savedState = getInitialState();
+        const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) setState(savedState);
     }
     
@@ -115,8 +143,9 @@ export function usePrepState(): UsePrepStateReturn {
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
     const newPrises = [newDose];
-    saveState({ ...defaultState, prises: newPrises, sessionActive: true });
-  }, [saveState]);
+    // Preserve pushEnabled state
+    saveState({ ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled });
+  }, [saveState, state.pushEnabled]);
 
   const addDose = useCallback((prise: { time: Date; pills: number }) => {
     const newDose = { ...prise, type: 'dose' as const, id: new Date().toISOString() };
@@ -141,9 +170,10 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    saveState(defaultState);
+    // Preserve pushEnabled state on clear
+    setState({ ...defaultState, pushEnabled: state.pushEnabled });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [toast, saveState]);
+  }, [state.pushEnabled, toast]);
 
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
   const lastDose = allPrises[0] ?? null;
@@ -158,7 +188,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
@@ -228,6 +258,7 @@ export function usePrepState(): UsePrepStateReturn {
     startSession,
     endSession,
     clearHistory,
+    setPushEnabled,
     welcomeScreenVisible,
     dashboardVisible,
   };

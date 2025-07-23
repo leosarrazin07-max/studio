@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { usePrepState } from "@/hooks/use-prep-state";
 import { Button } from "@/components/ui/button";
 import { LogDoseDialog } from "@/components/log-dose-dialog";
@@ -49,44 +49,29 @@ export default function Home() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   
-  // Prep state logic is now separated from notification logic
   const prepState = usePrepState();
-  const { addDose, startSession, clearHistory, welcomeScreenVisible, dashboardVisible } = prepState;
+  const { addDose, startSession, clearHistory, welcomeScreenVisible, dashboardVisible, setPushEnabled } = prepState;
 
-  // Notification logic is now handled directly in the component
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [isPushLoading, setIsPushLoading] = useState(true);
-  const pushEnabled = !!subscription;
+  
+  const pushEnabled = prepState.pushEnabled;
 
-  // Sync state with server whenever it changes, if subscribed.
-  useEffect(() => {
-    if (subscription) {
-        const stateToSave = {
-            sessionActive: prepState.sessionActive,
-            prises: prepState.prises.map(d => ({...d, time: d.time.toISOString()}))
-        };
-        fetch('/api/tasks/notification', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ subscription, state: stateToSave })
-        }).catch(err => console.error("Failed to sync state to server:", err));
-    }
-  }, [prepState.prises, prepState.sessionActive, subscription]);
-
-  // Check for existing subscription on mount
+  // Effect to check for existing subscription on mount and sync state
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       navigator.serviceWorker.ready.then(reg => {
         reg.pushManager.getSubscription().then(sub => {
           setSubscription(sub);
+          setPushEnabled(!!sub); // Inform the hook about the push state
           setIsPushLoading(false);
         });
       });
     } else {
         setIsPushLoading(false);
     }
-  }, []);
+  }, [setPushEnabled]);
 
   useEffect(() => {
     if (welcomeScreenVisible) {
@@ -133,6 +118,7 @@ export default function Home() {
           body: JSON.stringify(sub)
       });
       setSubscription(sub);
+      setPushEnabled(true); // Inform the hook
       toast({ title: "Notifications activées!" });
     } catch(error) {
         console.error("Error subscribing:", error);
@@ -153,6 +139,7 @@ export default function Home() {
         });
         await subscription.unsubscribe();
         setSubscription(null);
+        setPushEnabled(false); // Inform the hook
         toast({ title: "Notifications désactivées." });
     } catch (error) {
         console.error("Error unsubscribing:", error);
