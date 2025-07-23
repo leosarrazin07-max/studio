@@ -124,6 +124,7 @@ export function usePrepState(): UsePrepStateReturn {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
 
+
   const saveState = useCallback((newState: PrepState) => {
       // In development, just update the state without saving to localStorage to keep mock data consistent.
       if (process.env.NODE_ENV === 'development') {
@@ -187,7 +188,7 @@ export function usePrepState(): UsePrepStateReturn {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(sub)
         });
-        setSubscription(sub); // This will trigger the useEffect below
+        setSubscription(sub);
         toast({ title: "Notifications activées!" });
         return true;
     } catch (error) {
@@ -206,7 +207,7 @@ export function usePrepState(): UsePrepStateReturn {
             body: JSON.stringify({ endpoint: subscription.endpoint })
         });
         await subscription.unsubscribe();
-        setSubscription(null); // This will trigger the useEffect below
+        setSubscription(null);
         toast({ title: "Notifications désactivées." });
       } catch (error) {
          console.error("Error unsubscribing:", error);
@@ -215,9 +216,8 @@ export function usePrepState(): UsePrepStateReturn {
     }
   }, [subscription, toast]);
 
-  // This useEffect correctly syncs the `pushEnabled` state AFTER the subscription has been updated.
   useEffect(() => {
-    if (isClient) { // Only run after initial client-side mount
+    if (isClient) {
         saveState({...state, pushEnabled: !!subscription });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -231,15 +231,12 @@ export function usePrepState(): UsePrepStateReturn {
         if (savedState) setState(savedState);
     }
 
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
+    if ('serviceWorker' in navigator) {
         navigator.serviceWorker.ready
         .then(registration => registration.pushManager.getSubscription())
         .then(sub => {
             if (sub) {
                 setSubscription(sub);
-            } else {
-                // Ensures the state is correct on load if there's no subscription.
-                setState(prevState => ({ ...prevState, pushEnabled: false }));
             }
         })
         .catch(error => console.error('Erreur Service Worker:', error));
@@ -282,8 +279,8 @@ export function usePrepState(): UsePrepStateReturn {
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
   }, [subscription, toast]);
 
-  const allPrises = state.prises.filter(d => d.type !== 'stop');
-  const lastDose = allPrises.length > 0 ? allPrises.reduce((latest, current) => current.time > latest.time ? current : latest) : null;
+  const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
+  const lastDose = allPrises[0] ?? null;
   
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
@@ -295,7 +292,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
@@ -372,5 +369,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
