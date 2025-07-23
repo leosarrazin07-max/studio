@@ -232,6 +232,7 @@ export function usePrepState(): UsePrepStateReturn {
         .then(sub => {
             if (sub) {
                 setSubscription(sub);
+                // We also update the state to be sure the component re-renders
                 setState(prevState => ({ ...prevState, pushEnabled: true }));
             }
         })
@@ -287,14 +288,29 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
+  if (isClient && lastDose) {
+      const protectionCutoffDate = sub(now, { hours: FINAL_PROTECTION_HOURS });
+
+      if (isAfter(lastDose.time, protectionCutoffDate)) {
+        let protectionEndDate: Date;
+        if (doseCount < 3) {
+            // Cannot go beyond the start date
+            const startDateProtection = add(firstDoseInSession!.time, { hours: FINAL_PROTECTION_HOURS });
+            protectionEndDate = startDateProtection;
+            protectionEndsAtText = `Si vous continuez les prises, vos rapports seront protégés jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+        } else {
+            protectionEndDate = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+            protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+        }
+      }
+  }
+
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
     const lastDoseTime = lastDose.time;
     const protectionStartTime = add(firstDoseInSession.time, { hours: PROTECTION_START_HOURS });
     const reminderWindowStartTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
     const reminderWindowEndTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_END_HOURS });
     
-    const protectionCutoffDate = sub(now, { hours: FINAL_PROTECTION_HOURS });
-
     if (isBefore(now, protectionStartTime)) {
       status = 'loading';
       statusColor = 'bg-primary';
@@ -328,27 +344,13 @@ export function usePrepState(): UsePrepStateReturn {
       statusColor = 'bg-destructive';
       statusText = 'Prise manquée';
     }
-
-    if (isAfter(lastDose.time, protectionCutoffDate)) {
-        let protectionEndDate: Date;
-        if (doseCount < 3) {
-            protectionEndDate = add(firstDoseInSession.time, { hours: FINAL_PROTECTION_HOURS });
-            protectionEndsAtText = `Si vous continuez les prises, vos rapports seront protégés jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-        } else {
-            protectionEndDate = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-            protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-        }
-    }
   } else if (isClient && !state.sessionActive && lastDose) {
       status = 'inactive';
       statusColor = 'bg-gray-500';
       statusText = 'Session terminée';
       
       const protectionCutoffDate = sub(now, { hours: FINAL_PROTECTION_HOURS });
-      if (isAfter(lastDose.time, protectionCutoffDate)) {
-        const protectionEndDate = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-      } else {
+      if (!isAfter(lastDose.time, protectionCutoffDate)) {
         statusColor = 'bg-destructive';
       }
   }
