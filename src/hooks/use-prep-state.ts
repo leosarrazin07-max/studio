@@ -53,6 +53,7 @@ const getVapidKey = async () => {
         const remoteConfig = getRemoteConfig(app);
         // Note: Remote Config values are not available until fetched and activated.
         // This might not work on initial load without a proper fetching strategy.
+        // await fetchAndActivate(remoteConfig);
         const vapidKey = remoteConfig.getString("NEXT_PUBLIC_VAPID_PUBLIC_KEY");
         if (vapidKey) {
             return vapidKey;
@@ -128,7 +129,7 @@ export function usePrepState(): UsePrepStateReturn {
 
 
   const saveState = useCallback((newState: PrepState) => {
-      // Don't save to localStorage in development to keep mock data on every refresh
+      // In development, state is managed in memory to keep mock data on every refresh.
       if (process.env.NODE_ENV === 'development') {
           setState(newState);
           return;
@@ -222,6 +223,13 @@ export function usePrepState(): UsePrepStateReturn {
   useEffect(() => {
     setIsClient(true);
 
+    if (process.env.NODE_ENV !== 'development') {
+      const savedState = safelyParseJSON(localStorage.getItem('prepState'));
+      if (savedState) {
+        setState(savedState);
+      }
+    }
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js')
         .then(registration => registration.pushManager.getSubscription())
@@ -258,23 +266,23 @@ export function usePrepState(): UsePrepStateReturn {
   }, [state, saveState, toast]);
 
   const clearHistory = useCallback(() => {
-    // In development, "clearing" reloads the mock data.
     if (process.env.NODE_ENV === 'development') {
         setState(createMockData());
         toast({ title: "Données de test rechargées" });
         return;
     }
     
-    // Production logic
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    // Keep pushEnabled status
     setState({ ...defaultState, pushEnabled: !!subscription });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
   }, [subscription, toast]);
+
+  const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
+  const lastDose = allPrises[0] ?? null;
+  const secondToLastDose = allPrises[1] ?? null;
   
-  const lastDose = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
   let status: PrepStatus = 'inactive';
@@ -289,6 +297,15 @@ export function usePrepState(): UsePrepStateReturn {
     const protectionStartTime = add(firstDoseInSession.time, { hours: PROTECTION_START_HOURS });
     const nextDoseDueTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
     const protectionLapsesTime = add(lastDoseTime, { hours: LAPSES_AFTER_HOURS });
+
+    // La protection est considérée comme assurée jusqu'à 48h après l'AVANT-DERNIÈRE prise.
+    // Si il n'y a qu'une seule prise (la prise de départ), on ne peut pas encore calculer la protection finale.
+    const doseForFinalProtectionCalc = secondToLastDose ?? null;
+    if (doseForFinalProtectionCalc) {
+        const protectionEndsAt = add(doseForFinalProtectionCalc.time, { hours: FINAL_PROTECTION_HOURS });
+        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+    }
+
 
     if (isBefore(now, protectionStartTime)) {
       status = 'loading';
@@ -314,24 +331,20 @@ export function usePrepState(): UsePrepStateReturn {
         nextDoseIn = `Prochaine prise imminente`;
       }
       
-      const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
-      protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     } else {
       status = 'missed';
       statusColor = 'bg-destructive';
       statusText = 'Prise manquée';
-      const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
-      protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
   } else if (isClient && !state.sessionActive && state.prises.length > 0) {
-     const lastEffectiveDose = state.prises.filter(d => d.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0] ?? null;
-     if (lastEffectiveDose) {
-        status = 'missed';
-        statusColor = 'bg-destructive';
-        statusText = 'Session terminée';
-        const protectionEndsAt = add(lastEffectiveDose.time, { hours: FINAL_PROTECTION_HOURS });
+     const doseForFinalProtectionCalc = secondToLastDose ?? null;
+     if (doseForFinalProtectionCalc) {
+        const protectionEndsAt = add(doseForFinalProtectionCalc.time, { hours: FINAL_PROTECTION_HOURS });
         protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
      }
+     status = 'missed';
+     statusColor = 'bg-destructive';
+     statusText = 'Session terminée';
   }
 
   if (!isClient) {
@@ -362,5 +375,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    

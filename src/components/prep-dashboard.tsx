@@ -58,7 +58,6 @@ export function PrepDashboard({
         return (
           <>
             <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>
-            {protectionEndsAtText && <p className="text-xs text-white/70 mt-2">{protectionEndsAtText}</p>}
           </>
         );
       case 'missed':
@@ -130,7 +129,7 @@ export function PrepDashboard({
         </CardContent>
       </Card>
       
-      {sessionActive && (
+      {protectionEndsAtText && (
         <div className="bg-blue-50 border-l-4 border-primary p-4 rounded-md">
             <div className="flex">
                 <div className="flex-shrink-0">
@@ -138,7 +137,7 @@ export function PrepDashboard({
                 </div>
                 <div className="ml-3">
                     <p className="text-sm text-primary/90">
-                        Rappel : Pour être protégé, continuez de prendre 1 comprimé par jour pendant les 2 jours qui suivent votre dernier rapport sexuel.
+                       {protectionEndsAtText}
                     </p>
                 </div>
             </div>
@@ -158,5 +157,3 @@ export function PrepDashboard({
     </div>
   );
 }
-
-    
