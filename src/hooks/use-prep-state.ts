@@ -40,7 +40,7 @@ const createMockData = (): PrepState => {
     }
 
     return {
-        prises: mockPrises,
+        prises: mockPrises.sort((a, b) => a.time.getTime() - b.time.getTime()), // Ensure they are sorted
         sessionActive: true, // Ensure the session is marked as active
         pushEnabled: false,
     };
@@ -294,7 +294,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
@@ -367,3 +367,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
