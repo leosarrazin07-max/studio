@@ -124,6 +124,7 @@ export function usePrepState(): UsePrepStateReturn {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
 
+
   const saveState = useCallback((newState: PrepState) => {
       // In development, just update the state without saving to localStorage to keep mock data consistent.
       if (process.env.NODE_ENV === 'development') {
@@ -286,21 +287,6 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
-  if (isClient && lastDose) {
-    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    if (isAfter(now, protectionEndsAt) || !state.sessionActive) {
-        status = 'inactive';
-        statusText = 'Session terminée';
-        statusColor = 'bg-destructive';
-    }
-     if (isBefore(now, protectionEndsAt) && !state.sessionActive) {
-        status = 'inactive';
-        statusText = 'Session terminée';
-        statusColor = 'bg-gray-500';
-        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-    }
-  }
-
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
     const lastDoseTime = lastDose.time;
     const protectionStartTime = add(firstDoseInSession.time, { hours: PROTECTION_START_HOURS });
@@ -340,9 +326,12 @@ export function usePrepState(): UsePrepStateReturn {
       statusColor = 'bg-destructive';
       statusText = 'Prise manquée';
       const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-      protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+      // Only show protection text if it's still valid
+      if(isBefore(now, protectionEndsAt)) {
+          protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+      }
     }
-  } else if (isClient && !state.sessionActive && state.prises.length > 0) {
+  } else if (isClient && !state.sessionActive && lastDose) {
      const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
       if (isAfter(now, protectionEndsAt)) {
           status = 'inactive';
@@ -384,3 +373,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
