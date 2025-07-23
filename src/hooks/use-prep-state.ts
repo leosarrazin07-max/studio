@@ -125,6 +125,7 @@ export function usePrepState(): UsePrepStateReturn {
   const [state, setState] = useState<PrepState>(getInitialState);
   const [isPushLoading, setIsPushLoading] = useState(false);
 
+
   const saveState = useCallback((newState: PrepState) => {
       // In development, just update the state without saving to localStorage to keep mock data consistent.
       if (process.env.NODE_ENV === 'development') {
@@ -241,7 +242,14 @@ export function usePrepState(): UsePrepStateReturn {
         .then(sub => {
             if (sub) {
                 setSubscription(sub);
-                setState(prevState => ({ ...prevState, pushEnabled: !!sub }));
+                // Sync the state with what the subscription status actually is.
+                setState(prevState => {
+                    const shouldBeEnabled = !!sub;
+                    if (prevState.pushEnabled !== shouldBeEnabled) {
+                        return {...prevState, pushEnabled: shouldBeEnabled};
+                    }
+                    return prevState;
+                });
             }
         })
         .catch(error => console.error('Erreur Service Worker:', error));
@@ -280,9 +288,9 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    setState({ ...defaultState, pushEnabled: !!subscription });
+    setState({ ...defaultState, pushEnabled: state.pushEnabled });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [subscription, toast]);
+  }, [state.pushEnabled, toast]);
 
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
   const lastDose = allPrises[0] ?? null;
@@ -297,7 +305,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
