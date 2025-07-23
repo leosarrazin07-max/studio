@@ -124,7 +124,6 @@ export function usePrepState(): UsePrepStateReturn {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
 
-
   const saveState = useCallback((newState: PrepState) => {
       // In development, just update the state without saving to localStorage to keep mock data consistent.
       if (process.env.NODE_ENV === 'development') {
@@ -188,7 +187,7 @@ export function usePrepState(): UsePrepStateReturn {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(sub)
         });
-        setSubscription(sub);
+        setSubscription(sub); // This will trigger the useEffect below
         toast({ title: "Notifications activées!" });
         return true;
     } catch (error) {
@@ -207,7 +206,7 @@ export function usePrepState(): UsePrepStateReturn {
             body: JSON.stringify({ endpoint: subscription.endpoint })
         });
         await subscription.unsubscribe();
-        setSubscription(null);
+        setSubscription(null); // This will trigger the useEffect below
         toast({ title: "Notifications désactivées." });
       } catch (error) {
          console.error("Error unsubscribing:", error);
@@ -215,15 +214,14 @@ export function usePrepState(): UsePrepStateReturn {
       }
     }
   }, [subscription, toast]);
-  
-  // This useEffect ensures saveState is called only after the subscription state has been updated.
+
+  // This useEffect correctly syncs the `pushEnabled` state AFTER the subscription has been updated.
   useEffect(() => {
     if (isClient) { // Only run after initial client-side mount
         saveState({...state, pushEnabled: !!subscription });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subscription, isClient]);
-
 
   useEffect(() => {
     setIsClient(true);
@@ -239,6 +237,9 @@ export function usePrepState(): UsePrepStateReturn {
         .then(sub => {
             if (sub) {
                 setSubscription(sub);
+            } else {
+                // Ensures the state is correct on load if there's no subscription.
+                setState(prevState => ({ ...prevState, pushEnabled: false }));
             }
         })
         .catch(error => console.error('Erreur Service Worker:', error));
@@ -281,9 +282,9 @@ export function usePrepState(): UsePrepStateReturn {
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
   }, [subscription, toast]);
 
-  const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => a.time.getTime() - b.time.getTime());
-  const lastDose = allPrises.length > 0 ? allPrises[allPrises.length - 1] : null;
-
+  const allPrises = state.prises.filter(d => d.type !== 'stop');
+  const lastDose = allPrises.length > 0 ? allPrises.reduce((latest, current) => current.time > latest.time ? current : latest) : null;
+  
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
   let status: PrepStatus = 'inactive';
@@ -371,5 +372,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
