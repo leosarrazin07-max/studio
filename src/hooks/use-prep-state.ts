@@ -72,7 +72,8 @@ const defaultState: PrepState = {
 const createMockData = (): PrepState => {
     const mockPrises: Prise[] = [];
     const now = new Date();
-    let lastDoseTime = sub(now, { days: 10, hours: 12 }); // Start 10.5 days ago
+    // Start 10 days ago to ensure all doses are within the 90-day history view
+    let lastDoseTime = sub(now, { days: 10 });
 
     // Initial dose
     mockPrises.push({
@@ -82,9 +83,9 @@ const createMockData = (): PrepState => {
         id: `mock_${mockPrises.length}`
     });
 
-    // Subsequent 9 doses
+    // Subsequent 9 doses, for a total of 10
     for (let i = 0; i < 9; i++) {
-        // Add between 23 and 25 hours to the last dose
+        // Add between 23 and 25 hours to the last dose to simulate real usage
         const hoursToAdd = 23 + Math.random() * 2;
         const minutesToAdd = Math.random() * 60;
         const nextDoseTime = add(lastDoseTime, { hours: Math.floor(hoursToAdd), minutes: Math.floor(minutesToAdd) });
@@ -115,8 +116,8 @@ export function usePrepState(): UsePrepStateReturn {
   const [state, setState] = useState<PrepState>(defaultState);
 
   const saveState = useCallback((newState: PrepState) => {
-      // Don't save mock data to localStorage
-      if (process.env.NODE_ENV === 'development' && newState.prises.some(p => p.id.startsWith('mock_'))) {
+      // Don't save mock data to localStorage to avoid persistence on reload
+      if (process.env.NODE_ENV === 'development') {
           setState(newState);
           return;
       }
@@ -209,9 +210,10 @@ export function usePrepState(): UsePrepStateReturn {
 
     if (process.env.NODE_ENV === 'development') {
         const hasSavedPrises = localStorage.getItem('prepState') ? (safelyParseJSON(localStorage.getItem('prepState'))?.prises.length ?? 0) > 0 : false;
+        // Always load mock data in dev unless there's already *real* data saved
         if (!hasSavedPrises) {
             setState(createMockData());
-            return; // Exit early to avoid overwriting mock data
+            return;
         }
     }
     
@@ -257,21 +259,21 @@ export function usePrepState(): UsePrepStateReturn {
   }, [state, saveState, toast]);
 
   const clearHistory = useCallback(() => {
+    // In dev mode, just reload the mock data for testing
+    if (process.env.NODE_ENV === 'development') {
+        setState(createMockData());
+        toast({ title: "Données de test rechargées" });
+        return;
+    }
+    
+    // In production, clear localStorage and state
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
     const emptyState = { ...defaultState, pushEnabled: state.pushEnabled };
-    setState(emptyState)
-     // In dev mode, after clearing, re-apply mock data for testing
-    if (process.env.NODE_ENV === 'development') {
-        setState(createMockData());
-    } else {
-        setState(emptyState);
-        // also save the cleared state
-        localStorage.setItem('prepState', JSON.stringify(emptyState));
-    }
+    saveState(emptyState);
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [state.pushEnabled, toast]);
+  }, [state.pushEnabled, toast, saveState]);
 
   const lastDose = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
@@ -338,7 +340,7 @@ export function usePrepState(): UsePrepStateReturn {
     statusColor = "bg-muted";
   }
 
-  const welcomeScreenVisible = isClient && state.prises.length === 0 && !state.prises.some(p => p.id.startsWith('mock_'));
+  const welcomeScreenVisible = isClient && state.prises.length === 0;
   const dashboardVisible = isClient && state.prises.length > 0;
 
   return {
@@ -360,3 +362,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
