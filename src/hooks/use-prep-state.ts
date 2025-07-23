@@ -7,6 +7,8 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
+import { getRemoteConfig, getString, fetchAndActivate } from "firebase/remote-config";
+import { app } from "@/lib/firebase-client";
 
 // --- MOCK DATA GENERATION FOR DEVELOPMENT ---
 const createMockData = (): PrepState => {
@@ -111,7 +113,6 @@ export function usePrepState(): UsePrepStateReturn {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
 
-
   const saveState = useCallback((newState: PrepState) => {
       // In development, just update the state without saving to localStorage to keep mock data consistent.
       if (process.env.NODE_ENV === 'development') {
@@ -129,11 +130,19 @@ export function usePrepState(): UsePrepStateReturn {
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
             
+            // Sync with server for notifications
+            if (subscription) {
+                 fetch('/api/tasks/notification', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ subscription, state: stateToSave })
+                }).catch(err => console.error("Failed to sync state to server:", err));
+            }
         } catch (e) {
             console.error("Could not save state", e);
         }
       }
-  }, []);
+  }, [subscription]);
   
   const requestNotificationPermission = useCallback(async () => {
     setIsPushLoading(true);
@@ -279,6 +288,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   if (isClient && lastDose && firstDoseInSession) {
     const protectionEndDateCalc = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    
     const finalProtectionDate = allPrises.length < 3 
       ? new Date(Math.max(protectionEndDateCalc.getTime(), firstDoseInSession.time.getTime()))
       : protectionEndDateCalc;
@@ -287,7 +297,9 @@ export function usePrepState(): UsePrepStateReturn {
       ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
       : "Vos rapports sont protégés jusqu'au";
       
-    protectionEndsAtText = `${messagePrefix} ${format(finalProtectionDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+    if (isAfter(finalProtectionDate, new Date())) {
+        protectionEndsAtText = `${messagePrefix} ${format(finalProtectionDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+    }
   }
 
 
@@ -366,5 +378,6 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
 
     
