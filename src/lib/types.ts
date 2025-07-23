@@ -17,7 +17,8 @@ export interface PrepState {
 }
 
 // The return type of the main state management hook
-export interface UsePrepStateReturn extends PrepState {
+export interface UsePrepStateReturn extends Omit<PrepState, 'pushEnabled'> {
+  pushEnabled: boolean;
   addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
   endSession: () => void;
