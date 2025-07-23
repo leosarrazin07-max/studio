@@ -113,6 +113,7 @@ declare global {
   }
 }
 
+
 const getInitialState = () => {
     // In development, ALWAYS start with mock data for consistent testing.
     if (process.env.NODE_ENV === 'development') {
@@ -239,13 +240,11 @@ export function usePrepState(): UsePrepStateReturn {
         }
     }
 
-    // Correctly wait for the service worker to be ready
-    if ('serviceWorker' in navigator && window.workbox !== undefined) {
-      navigator.serviceWorker.ready.then(registration => {
+    if ('serviceWorker' in navigator && typeof window.workbox !== 'undefined') {
+       window.workbox.ready.then((registration: ServiceWorkerRegistration) => {
         registration.pushManager.getSubscription().then(sub => {
           if (sub) {
             setSubscription(sub);
-            // Sync pushEnabled state from subscription status
             setState(prevState => ({ ...prevState, pushEnabled: true }));
           } else {
             setState(prevState => ({ ...prevState, pushEnabled: false }));
@@ -305,11 +304,9 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    // Protection ends 48h BEFORE the last dose.
-    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    if(isAfter(now, protectionEndsAt)) {
-        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-    }
+    // Protection is considered active until 48 hours after the last dose, but we give a text warning
+    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
@@ -387,5 +384,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
