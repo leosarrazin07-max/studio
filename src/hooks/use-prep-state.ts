@@ -123,7 +123,8 @@ export function usePrepState(): UsePrepStateReturn {
   const { toast } = useToast();
   const [state, setState] = useState<PrepState>(getInitialState);
 
-  const saveState = (newState: PrepState) => {
+
+  const saveState = useCallback((newState: PrepState) => {
       // In development, just update the state without saving to localStorage to keep mock data consistent.
       if (process.env.NODE_ENV === 'development') {
           setState(newState);
@@ -140,7 +141,6 @@ export function usePrepState(): UsePrepStateReturn {
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
             
-            // This now only runs when push is enabled and there's a subscription object
             if (newState.pushEnabled) {
                  navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(sub => {
                     if (sub) {
@@ -156,9 +156,9 @@ export function usePrepState(): UsePrepStateReturn {
             console.error("Could not save state", e);
         }
       }
-  };
+  }, []);
   
-  const requestNotificationPermission = async () => {
+  const requestNotificationPermission = useCallback(async () => {
     if (!('Notification' in window) || !navigator.serviceWorker) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
         return false;
@@ -196,14 +196,13 @@ export function usePrepState(): UsePrepStateReturn {
     } catch (error) {
         console.error("Error subscribing:", error);
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
-        // Make sure to clean up state on failure
         saveState({...state, pushEnabled: false});
         return false;
     }
-  };
+  }, [state, saveState, toast]);
 
-  const unsubscribeFromNotifications = async () => {
-    try {
+  const unsubscribeFromNotifications = useCallback(async () => {
+      try {
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.getSubscription();
         if (sub) {
@@ -220,7 +219,7 @@ export function usePrepState(): UsePrepStateReturn {
         console.error("Error unsubscribing:", error);
         toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
     }
-  };
+  }, [state, saveState, toast]);
 
   useEffect(() => {
     setIsClient(true);
@@ -230,39 +229,41 @@ export function usePrepState(): UsePrepStateReturn {
         if (savedState) setState(savedState);
     }
 
-    // On initial load, check for an existing subscription and update state
     if ('serviceWorker' in navigator && 'PushManager' in window) {
         navigator.serviceWorker.ready
         .then(registration => registration.pushManager.getSubscription())
         .then(sub => {
-            // This is the key: update state based on whether a subscription exists on load.
-            setState(currentState => ({ ...currentState, pushEnabled: !!sub }));
+            // Update state based on whether a subscription exists on load.
+            // This ensures the UI is in sync on app start.
+            if (!!sub !== state.pushEnabled) {
+               setState(currentState => ({ ...currentState, pushEnabled: !!sub }));
+            }
         })
         .catch(error => console.error('Erreur Service Worker:', error));
     }
     
     const timer = setInterval(() => setNow(new Date()), 1000 * 30);
     return () => clearInterval(timer);
-  }, []);
+  }, [state.pushEnabled]);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
     const newPrises = [newDose];
     saveState({ ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled });
-  }, [state.pushEnabled]);
+  }, [saveState, state.pushEnabled]);
 
   const addDose = useCallback((prise: { time: Date; pills: number }) => {
     const newDose = { ...prise, type: 'dose' as const, id: new Date().toISOString() };
     const newPrises = [...state.prises, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
     saveState({ ...state, prises: newPrises });
-  }, [state]);
+  }, [state, saveState]);
 
   const endSession = useCallback(() => {
     const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
     const updatedDoses = [...state.prises, stopEvent];
     saveState({ ...state, sessionActive: false, prises: updatedDoses });
     toast({ title: "Session terminée", description: "Les rappels de notification sont maintenant arrêtés." });
-  }, [state, toast]);
+  }, [state, saveState, toast]);
 
   const clearHistory = useCallback(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -274,9 +275,10 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    saveState({ ...defaultState, pushEnabled: state.pushEnabled });
-    toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [state.pushEnabled, toast]);
+    // We keep the pushEnabled state as it's tied to browser permission, not user data
+    saveState({ ...defaultState, prises: [], sessionActive: false, pushEnabled: state.pushEnabled });
+    toast({ title: "Données effacées", description: "Votre historique de prises a été supprimé." });
+  }, [state.pushEnabled, saveState, toast]);
 
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
   const lastDose = allPrises[0] ?? null;
