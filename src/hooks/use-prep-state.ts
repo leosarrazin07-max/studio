@@ -283,7 +283,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => a.time.getTime() - b.time.getTime());
   const lastDose = allPrises.length > 0 ? allPrises[allPrises.length - 1] : null;
-  
+
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
   let status: PrepStatus = 'inactive';
