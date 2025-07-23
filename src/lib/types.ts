@@ -27,12 +27,9 @@ export interface PrepLogic {
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
-  requestNotificationPermission: () => Promise<boolean>;
-  unsubscribeFromNotifications: () => Promise<boolean>;
-  setPushState: (enabled: boolean) => void;
   welcomeScreenVisible: boolean;
   dashboardVisible: boolean;
-  isPushLoading: boolean;
 }
 
-export type UsePrepStateReturn = PrepState & PrepLogic;
+// This return type is now simpler as notification logic is handled in the component.
+export type UsePrepStateReturn = Omit<PrepState, 'pushEnabled'> & Omit<PrepLogic, 'pushEnabled'>;

@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { usePrepState } from "@/hooks/use-prep-state";
 import { Button } from "@/components/ui/button";
 import { LogDoseDialog } from "@/components/log-dose-dialog";
@@ -10,25 +10,83 @@ import { Pill, Menu } from 'lucide-react';
 import { SettingsSheet } from "@/components/settings-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WelcomeDialog } from "@/components/welcome-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { getRemoteConfig, getString, fetchAndActivate } from "firebase/remote-config";
+import { app } from "@/lib/firebase-client";
+
+function urlBase64ToUint8Array(base64String: string) {
+  if (typeof window === "undefined") return new Uint8Array(0);
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+const getVapidKey = async () => {
+    if (typeof window === "undefined") return null;
+    try {
+        const remoteConfig = getRemoteConfig(app);
+        await fetchAndActivate(remoteConfig);
+        const vapidKey = getString(remoteConfig, "NEXT_PUBLIC_VAPID_PUBLIC_KEY");
+        if (vapidKey) return vapidKey;
+    } catch (error) {
+        console.error("Error fetching VAPID key from Remote Config:", error);
+    }
+    if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+        return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    }
+    console.error("VAPID public key is not set in env vars or Remote Config.");
+    return null;
+};
+
 
 export default function Home() {
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
+  
+  // Prep state logic is now separated from notification logic
   const prepState = usePrepState();
+  const { addDose, startSession, clearHistory, welcomeScreenVisible, dashboardVisible } = prepState;
 
-  const { 
-    addDose, 
-    startSession, 
-    clearHistory, 
-    requestNotificationPermission, 
-    unsubscribeFromNotifications, 
-    setPushState,
-    pushEnabled, 
-    welcomeScreenVisible, 
-    dashboardVisible, 
-    isPushLoading 
-  } = prepState;
+  // Notification logic is now handled directly in the component
+  const { toast } = useToast();
+  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
+  const [isPushLoading, setIsPushLoading] = useState(true);
+  const pushEnabled = !!subscription;
+
+  // Sync state with server whenever it changes, if subscribed.
+  useEffect(() => {
+    if (subscription) {
+        const stateToSave = {
+            ...prepState,
+            prises: prepState.prises.map(d => ({...d, time: d.time.toISOString()}))
+        };
+        fetch('/api/tasks/notification', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ subscription, state: stateToSave })
+        }).catch(err => console.error("Failed to sync state to server:", err));
+    }
+  }, [prepState, subscription]);
+
+  // Check for existing subscription on mount
+  useEffect(() => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      navigator.serviceWorker.ready.then(reg => {
+        reg.pushManager.getSubscription().then(sub => {
+          setSubscription(sub);
+          setIsPushLoading(false);
+        });
+      });
+    } else {
+        setIsPushLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (welcomeScreenVisible) {
@@ -44,17 +102,71 @@ export default function Home() {
     setIsWelcomeOpen(false);
   };
   
+  const subscribeToPush = async () => {
+    if (!('Notification' in window) || !navigator.serviceWorker) {
+        toast({ title: "Navigateur non compatible", variant: "destructive" });
+        return;
+    }
+    setIsPushLoading(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+          toast({ title: "Notifications refusées", variant: "destructive" });
+          return;
+      }
+
+      const vapidPublicKey = await getVapidKey();
+      if (!vapidPublicKey) {
+          toast({ title: "Erreur de configuration", variant: "destructive" });
+          return;
+      }
+      
+      const registration = await navigator.serviceWorker.ready;
+      const sub = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+      });
+
+      await fetch('/api/subscription', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(sub)
+      });
+      setSubscription(sub);
+      toast({ title: "Notifications activées!" });
+    } catch(error) {
+        console.error("Error subscribing:", error);
+        toast({ title: "Erreur d'abonnement", variant: "destructive" });
+    } finally {
+        setIsPushLoading(false);
+    }
+  };
+  
+  const unsubscribeFromPush = async () => {
+    if (!subscription) return;
+    setIsPushLoading(true);
+    try {
+        await fetch('/api/subscription', {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ endpoint: subscription.endpoint })
+        });
+        await subscription.unsubscribe();
+        setSubscription(null);
+        toast({ title: "Notifications désactivées." });
+    } catch (error) {
+        console.error("Error unsubscribing:", error);
+        toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
+    } finally {
+        setIsPushLoading(false);
+    }
+  };
+
   const handleTogglePush = async () => {
     if (pushEnabled) {
-      const success = await unsubscribeFromNotifications();
-      if (success) {
-        setPushState(false);
-      }
+      await unsubscribeFromPush();
     } else {
-      const success = await requestNotificationPermission();
-      if (success) {
-        setPushState(true);
-      }
+      await subscribeToPush();
     }
   };
 

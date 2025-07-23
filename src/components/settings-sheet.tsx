@@ -24,7 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { BellRing, Trash2, AlertTriangle, BellOff, Loader2 } from "lucide-react";
+import { BellRing, Trash2, BellOff, Loader2 } from "lucide-react";
 
 interface SettingsSheetProps {
   isOpen: boolean;
@@ -47,6 +47,7 @@ export function SettingsSheet({
   const [notificationPermission, setNotificationPermission] = useState('default');
   
   useEffect(() => {
+    // Check notification permission when the sheet opens
     if (isOpen && 'Notification' in window) {
       setNotificationPermission(Notification.permission);
     }
@@ -57,6 +58,7 @@ export function SettingsSheet({
     onOpenChange(false);
   }
 
+  // The switch is disabled if permission is denied by the user in browser settings, or during an async operation.
   const isSwitchDisabled = notificationPermission === 'denied' || isPushLoading;
 
   return (
@@ -85,6 +87,7 @@ export function SettingsSheet({
                   checked={pushEnabled}
                   onCheckedChange={onTogglePush}
                   disabled={isSwitchDisabled}
+                  aria-label="Toggle Push Notifications"
                 />
             </div>
             {notificationPermission === 'denied' && (
@@ -124,5 +127,3 @@ export function SettingsSheet({
     </Sheet>
   );
 }
-
-    
