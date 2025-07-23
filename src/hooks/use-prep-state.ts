@@ -312,7 +312,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-      const finalProtectionDate = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+      const finalProtectionDate = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
       
       const messagePrefix = allPrises.length < 3
           ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
