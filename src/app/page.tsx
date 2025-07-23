@@ -54,10 +54,28 @@ export default function Home() {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [isPushLoading, setIsPushLoading] = useState(true);
   
-  const prepState = usePrepState();
-  const { addDose, startSession, endSession, clearHistory, welcomeScreenVisible, dashboardVisible, setPushEnabled, sessionActive, prises, now, isClient } = prepState;
+  const {
+    prises,
+    sessionActive,
+    now,
+    isClient,
+    addDose,
+    startSession,
+    endSession,
+    clearHistory,
+    setPushEnabled,
+    welcomeScreenVisible,
+    dashboardVisible
+  } = usePrepState();
   
-  const prepLogic = usePrepCalculator({
+  const {
+      status,
+      statusColor,
+      statusText,
+      nextDoseIn,
+      protectionStartsIn,
+      protectionEndsAtText
+  } = usePrepCalculator({
       prises,
       sessionActive,
       isClient,
@@ -225,12 +243,17 @@ export default function Home() {
           {welcomeScreenVisible && <WelcomeScreen />}
           {!dashboardVisible && !welcomeScreenVisible && <LoadingScreen />}
           {dashboardVisible && <PrepDashboard 
-                                prises={prepState.prises}
+                                prises={prises}
                                 addDose={addDose}
                                 endSession={endSession}
                                 sessionActive={sessionActive}
                                 startSession={startSession}
-                                {...prepLogic}
+                                status={status}
+                                statusColor={statusColor}
+                                statusText={statusText}
+                                nextDoseIn={nextDoseIn}
+                                protectionStartsIn={protectionStartsIn}
+                                protectionEndsAtText={protectionEndsAtText}
                               />}
         </div>
       </main>
@@ -240,7 +263,7 @@ export default function Home() {
           onOpenChange={setIsLogDoseOpen}
           onLogDose={addDose}
           onStartSession={startSession}
-          status={prepLogic.status}
+          status={status}
         />
       <SettingsSheet
         isOpen={isSettingsOpen}
@@ -253,3 +276,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
