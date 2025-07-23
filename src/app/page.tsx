@@ -17,7 +17,7 @@ export default function Home() {
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const prepState = usePrepState();
 
-  const { addDose, startSession, clearHistory, requestNotificationPermission, unsubscribeFromNotifications, pushEnabled, welcomeScreenVisible, dashboardVisible } = prepState;
+  const { addDose, startSession, clearHistory, requestNotificationPermission, unsubscribeFromNotifications, pushEnabled, welcomeScreenVisible, dashboardVisible, isPushLoading } = prepState;
 
   useEffect(() => {
     if (welcomeScreenVisible) {
@@ -96,6 +96,7 @@ export default function Home() {
         onClearHistory={clearHistory}
         pushEnabled={pushEnabled}
         onTogglePush={pushEnabled ? unsubscribeFromNotifications : requestNotificationPermission}
+        isPushLoading={isPushLoading}
       />
     </div>
   );

@@ -24,7 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { BellRing, Trash2, AlertTriangle, BellOff } from "lucide-react";
+import { BellRing, Trash2, AlertTriangle, BellOff, Loader2 } from "lucide-react";
 
 interface SettingsSheetProps {
   isOpen: boolean;
@@ -32,6 +32,7 @@ interface SettingsSheetProps {
   onClearHistory: () => void;
   pushEnabled: boolean;
   onTogglePush: () => void;
+  isPushLoading: boolean;
 }
 
 export function SettingsSheet({
@@ -39,7 +40,8 @@ export function SettingsSheet({
   onOpenChange,
   onClearHistory,
   pushEnabled,
-  onTogglePush
+  onTogglePush,
+  isPushLoading
 }: SettingsSheetProps) {
 
   const [notificationPermission, setNotificationPermission] = useState('default');
@@ -55,7 +57,7 @@ export function SettingsSheet({
     onOpenChange(false);
   }
 
-  const isSwitchDisabled = notificationPermission === 'denied';
+  const isSwitchDisabled = notificationPermission === 'denied' || isPushLoading;
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
@@ -71,7 +73,7 @@ export function SettingsSheet({
             <div className="flex items-center justify-between space-x-2">
                 <Label htmlFor="notifications-switch" className={`flex flex-col space-y-1 ${isSwitchDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                   <span className="font-medium flex items-center gap-2">
-                    <BellRing className="h-4 w-4" />
+                    {isPushLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
                     Notifications Push
                   </span>
                   <span className="text-xs font-normal leading-snug text-muted-foreground">

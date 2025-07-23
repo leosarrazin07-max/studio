@@ -123,17 +123,14 @@ export function usePrepState(): UsePrepStateReturn {
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
+  const [isPushLoading, setIsPushLoading] = useState(false);
 
 
   const saveState = useCallback((updater: (prevState: PrepState) => PrepState) => {
-      console.log("DEBUG: 6. Entrée dans saveState");
       setState(prevState => {
-          console.log("DEBUG: 7. Exécution de l'updater de saveState. État précédent:", prevState);
           const newState = updater(prevState);
-          console.log("DEBUG: 8. Nouvel état à sauvegarder:", newState);
           
           if (process.env.NODE_ENV === 'development') {
-              console.log("DEBUG: 9. Mode développement, mise à jour de l'état local uniquement.");
               return newState;
           }
           
@@ -144,18 +141,17 @@ export function usePrepState(): UsePrepStateReturn {
                     prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
                 };
                 localStorage.setItem('prepState', JSON.stringify(stateToSave));
-                console.log("DEBUG: 10. État sauvegardé dans le localStorage.");
                 
+                // Use the subscription object from the component's state directly
                 if (newState.pushEnabled && subscription) {
                      fetch('/api/tasks/notification', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ subscription: subscription, state: stateToSave })
-                    }).then(() => console.log("DEBUG: 11. État synchronisé avec le serveur."))
-                      .catch(err => console.error("DEBUG: Failed to sync state to server:", err));
+                    }).catch(err => console.error("Failed to sync state to server:", err));
                 }
             } catch (e) {
-                console.error("DEBUG: Could not save state", e);
+                console.error("Could not save state", e);
             }
           }
           return newState;
@@ -163,34 +159,32 @@ export function usePrepState(): UsePrepStateReturn {
   }, [subscription]);
   
   const requestNotificationPermission = useCallback(async () => {
-    console.log("DEBUG: 1. Clic sur le bouton, appel de requestNotificationPermission");
     if (!('Notification' in window) || !navigator.serviceWorker) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
-        return false;
+        return;
     }
-
-    console.log("DEBUG: 2. Demande de permission au navigateur...");
-    const permission = await Notification.requestPermission();
-    console.log("DEBUG: 3. Permission obtenue:", permission);
-    if (permission !== 'granted') {
-        toast({ title: "Notifications refusées", variant: "destructive" });
-        return false;
-    }
-
-    const vapidPublicKey = await getVapidKey();
-    if (!vapidPublicKey) {
-        toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
-        return false;
-    }
+    setIsPushLoading(true);
 
     try {
-        console.log("DEBUG: 4. Obtention de l'abonnement push...");
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            toast({ title: "Notifications refusées", variant: "destructive" });
+            setIsPushLoading(false);
+            return;
+        }
+
+        const vapidPublicKey = await getVapidKey();
+        if (!vapidPublicKey) {
+            toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
+            setIsPushLoading(false);
+            return;
+        }
+
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
         });
-        console.log("DEBUG: 5. Abonnement push obtenu:", sub);
         
         await fetch('/api/subscription', {
             method: 'POST',
@@ -201,16 +195,20 @@ export function usePrepState(): UsePrepStateReturn {
         setSubscription(sub);
         saveState(prevState => ({...prevState, pushEnabled: true}));
         toast({ title: "Notifications activées!" });
-        return true;
+
     } catch (error) {
-        console.error("DEBUG: Erreur lors de l'abonnement:", error);
+        console.error("Error subscribing:", error);
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
-        return false;
+        // Restore previous state in case of error
+        saveState(prevState => ({...prevState, pushEnabled: false}));
+    } finally {
+        setIsPushLoading(false);
     }
-  }, [toast, saveState]);
+  }, [saveState, toast]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
     if (subscription) {
+      setIsPushLoading(true);
       try {
         await fetch('/api/subscription', {
             method: 'DELETE',
@@ -224,6 +222,8 @@ export function usePrepState(): UsePrepStateReturn {
       } catch (error) {
          console.error("Error unsubscribing:", error);
          toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
+      } finally {
+        setIsPushLoading(false);
       }
     }
   }, [subscription, toast, saveState]);
@@ -239,16 +239,9 @@ export function usePrepState(): UsePrepStateReturn {
         navigator.serviceWorker.ready
         .then(registration => registration.pushManager.getSubscription())
         .then(sub => {
-            if (sub) {
-                setSubscription(sub);
-                 if (!state.pushEnabled) {
-                    saveState(prevState => ({ ...prevState, pushEnabled: true }));
-                }
-            } else {
-                 if (state.pushEnabled) {
-                    saveState(prevState => ({ ...prevState, pushEnabled: false }));
-                }
-            }
+            setSubscription(sub);
+            // Sync state with subscription status on load
+            saveState(prevState => ({ ...prevState, pushEnabled: !!sub }));
         })
         .catch(error => console.error('Erreur Service Worker:', error));
     }
@@ -378,7 +371,6 @@ export function usePrepState(): UsePrepStateReturn {
     unsubscribeFromNotifications,
     welcomeScreenVisible,
     dashboardVisible,
+    isPushLoading,
   };
 }
-
-    

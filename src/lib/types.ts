@@ -27,12 +27,11 @@ export interface PrepLogic {
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
-  requestNotificationPermission: () => Promise<boolean>;
+  requestNotificationPermission: () => Promise<void>;
   unsubscribeFromNotifications: () => Promise<void>;
   welcomeScreenVisible: boolean;
   dashboardVisible: boolean;
+  isPushLoading: boolean;
 }
 
 export type UsePrepStateReturn = PrepState & PrepLogic;
-
-    
