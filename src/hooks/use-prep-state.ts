@@ -5,9 +5,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format, set, differenceInMilliseconds } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
-import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
+import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { getRemoteConfig } from "firebase/remote-config";
+import { getRemoteConfig, getString, fetchAndActivate } from "firebase/remote-config";
 import { app } from "@/lib/firebase-client";
 
 // --- MOCK DATA GENERATION FOR DEVELOPMENT ---
@@ -51,10 +51,9 @@ const getVapidKey = async () => {
     if (typeof window === "undefined") return null;
     try {
         const remoteConfig = getRemoteConfig(app);
-        // Note: Remote Config values are not available until fetched and activated.
-        // This might not work on initial load without a proper fetching strategy.
-        // await fetchAndActivate(remoteConfig);
-        const vapidKey = remoteConfig.getString("NEXT_PUBLIC_VAPID_PUBLIC_KEY");
+        // This is crucial: we must fetch and activate to get the latest values.
+        await fetchAndActivate(remoteConfig);
+        const vapidKey = getString(remoteConfig, "NEXT_PUBLIC_VAPID_PUBLIC_KEY");
         if (vapidKey) {
             return vapidKey;
         }
@@ -107,16 +106,16 @@ const defaultState: PrepState = {
 };
 
 const getInitialState = () => {
+    if (typeof window === 'undefined') {
+        return defaultState;
+    }
     // In development, ALWAYS start with mock data for consistent testing.
     if (process.env.NODE_ENV === 'development') {
         return createMockData();
     }
     // In production, get the state from localStorage.
-    if (typeof window !== 'undefined') {
-        const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-        if (savedState) return savedState;
-    }
-    return defaultState;
+    const savedState = safelyParseJSON(localStorage.getItem('prepState'));
+    return savedState || defaultState;
 }
 
 export function usePrepState(): UsePrepStateReturn {
@@ -124,7 +123,6 @@ export function usePrepState(): UsePrepStateReturn {
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
-  // Force mock data in dev, otherwise load from storage.
   const [state, setState] = useState<PrepState>(getInitialState);
 
 
@@ -160,24 +158,25 @@ export function usePrepState(): UsePrepStateReturn {
   }, [subscription]);
   
   const requestNotificationPermission = useCallback(async () => {
+    if (!('Notification' in window) || !navigator.serviceWorker) {
+        toast({ title: "Navigateur non compatible", variant: "destructive" });
+        return false;
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+        toast({ title: "Notifications refusées", variant: "destructive" });
+        return false;
+    }
+
     const vapidPublicKey = await getVapidKey();
     if (!vapidPublicKey) {
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
         return false;
     }
 
-    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-        toast({ title: "Navigateur non compatible", variant: "destructive" });
-        return false;
-    }
-
     try {
         const registration = await navigator.serviceWorker.ready;
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-            toast({ title: "Notifications refusées", variant: "destructive" });
-            return false;
-        }
         let sub = await registration.pushManager.getSubscription();
         if (!sub) {
             sub = await registration.pushManager.subscribe({
@@ -222,23 +221,18 @@ export function usePrepState(): UsePrepStateReturn {
 
   useEffect(() => {
     setIsClient(true);
-    // This now reloads state from localStorage on every mount in production, ensuring consistency.
+    // Reload state from localStorage on mount in production.
     if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-        if (savedState) {
-            setState(savedState);
-        }
+        if (savedState) setState(savedState);
     }
 
     if ('serviceWorker' in navigator) {
-      // We just register the service worker, and check for existing subscriptions.
-      // The logic to request permission is now fully user-driven via the settings panel.
-      navigator.serviceWorker.register('/sw.js')
+        navigator.serviceWorker.ready
         .then(registration => registration.pushManager.getSubscription())
         .then(sub => {
             if (sub) {
                 setSubscription(sub);
-                // Sync pushEnabled state based on actual subscription status
                 setState(prevState => ({ ...prevState, pushEnabled: true }));
             }
         })
@@ -278,7 +272,6 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    // Set state back to default, keeping push preference
     setState({ ...defaultState, pushEnabled: !!subscription });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
   }, [subscription, toast]);
@@ -296,7 +289,6 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    // Protection is considered active until 48 hours after the last dose, but we give a text warning
     const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
@@ -313,13 +305,11 @@ export function usePrepState(): UsePrepStateReturn {
       statusText = 'Protection en cours...';
       protectionStartsIn = `Sera active ${formatDistanceToNowStrict(protectionStartTime, { addSuffix: true, locale: fr })}`;
     } else if (isBefore(now, reminderWindowStartTime)) {
-      // Before the reminder window (0 to 22h)
       status = 'effective';
       statusColor = 'bg-accent';
       statusText = 'Protection active';
       nextDoseIn = `Prochaine prise dans ${formatDistanceToNowStrict(reminderWindowStartTime, { locale: fr })}`;
     } else if (isBefore(now, reminderWindowEndTime)) {
-        // Within the reminder window (22h to 26h)
         status = 'effective';
         statusColor = 'bg-accent';
         statusText = 'Protection active';
