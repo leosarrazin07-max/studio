@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePrepState } from "@/hooks/use-prep-state";
 import { Button } from "@/components/ui/button";
 import { LogDoseDialog } from "@/components/log-dose-dialog";
@@ -9,13 +9,29 @@ import { PrepDashboard } from "@/components/prep-dashboard";
 import { Pill, Menu } from 'lucide-react';
 import { SettingsSheet } from "@/components/settings-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { WelcomeDialog } from "@/components/welcome-dialog";
 
 export default function Home() {
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const prepState = usePrepState();
 
   const { addDose, startSession, clearHistory, requestNotificationPermission, unsubscribeFromNotifications, pushEnabled, welcomeScreenVisible, dashboardVisible } = prepState;
+
+  useEffect(() => {
+    if (welcomeScreenVisible) {
+        const hasSeenWelcome = localStorage.getItem('hasSeenWelcomePopup');
+        if (!hasSeenWelcome) {
+            setIsWelcomeOpen(true);
+        }
+    }
+  }, [welcomeScreenVisible]);
+
+  const handleWelcomeClose = () => {
+    localStorage.setItem('hasSeenWelcomePopup', 'true');
+    setIsWelcomeOpen(false);
+  };
 
   const WelcomeScreen = () => (
     <div className="flex flex-col items-center justify-center h-full text-center p-4 md:p-8">
@@ -62,10 +78,11 @@ export default function Home() {
       <main className="flex-1 flex flex-col items-center justify-center">
         <div className="container mx-auto w-full max-w-md flex-1 py-8">
           {welcomeScreenVisible && <WelcomeScreen />}
-          {!welcomeScreenVisible && !dashboardVisible && <LoadingScreen />}
+          {!dashboardVisible && !welcomeScreenVisible && <LoadingScreen />}
           {dashboardVisible && <PrepDashboard {...prepState} />}
         </div>
       </main>
+      <WelcomeDialog isOpen={isWelcomeOpen} onClose={handleWelcomeClose} />
        <LogDoseDialog
           isOpen={isLogDoseOpen}
           onOpenChange={setIsLogDoseOpen}
