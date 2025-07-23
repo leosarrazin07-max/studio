@@ -293,9 +293,7 @@ export function usePrepState(): UsePrepStateReturn {
     const protectionStartTime = add(firstDoseInSession.time, { hours: PROTECTION_START_HOURS });
     const reminderWindowStartTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
     const reminderWindowEndTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_END_HOURS });
-
     const protectionCutoffDate = sub(now, { hours: FINAL_PROTECTION_HOURS });
-    const isProtectionLapsed = isBefore(lastDose.time, protectionCutoffDate);
 
     if (isBefore(now, protectionStartTime)) {
       status = 'loading';
@@ -331,15 +329,18 @@ export function usePrepState(): UsePrepStateReturn {
       statusText = 'Prise manquée';
     }
 
-    if (!isProtectionLapsed) {
+    if (isAfter(lastDose.time, protectionCutoffDate)) {
+        let protectionEndDate: Date;
         if (doseCount < 3) {
-            const protectionEndDate = add(firstDoseInSession.time, { hours: FINAL_PROTECTION_HOURS });
+            const calculatedDate = sub(firstDoseInSession.time, { hours: FINAL_PROTECTION_HOURS });
+            protectionEndDate = isAfter(calculatedDate, firstDoseInSession.time) ? calculatedDate : firstDoseInSession.time;
             protectionEndsAtText = `Si vous continuez les prises, vos rapports seront protégés jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
         } else {
-            const protectionEndDate = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+            protectionEndDate = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
             protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
         }
     }
+
 
   } else if (isClient && !state.sessionActive && lastDose) {
       status = 'inactive';
@@ -348,7 +349,7 @@ export function usePrepState(): UsePrepStateReturn {
       
       const protectionCutoffDate = sub(now, { hours: FINAL_PROTECTION_HOURS });
       if (isAfter(lastDose.time, protectionCutoffDate)) {
-        const protectionEndDate = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+        const protectionEndDate = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
         protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
       } else {
         statusColor = 'bg-destructive';
@@ -383,5 +384,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
