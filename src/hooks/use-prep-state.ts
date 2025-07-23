@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format, differenceInMilliseconds, set } from 'date-fns';
+import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format, set, differenceInMilliseconds } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
@@ -325,9 +325,9 @@ export function usePrepState(): UsePrepStateReturn {
       status = 'missed';
       statusColor = 'bg-destructive';
       statusText = 'Prise manquée';
-      const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-      // Only show protection text if it's still valid
-      if(isBefore(now, protectionEndsAt)) {
+      const protectionCutoff = sub(now, { hours: FINAL_PROTECTION_HOURS });
+      if (isAfter(lastDose.time, protectionCutoff)) {
+          const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
           protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
       }
     }
@@ -335,9 +335,11 @@ export function usePrepState(): UsePrepStateReturn {
       status = 'inactive';
       statusColor = 'bg-destructive';
       statusText = 'Session terminée';
-     const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-      if (isBefore(now, protectionEndsAt)) {
+      
+      const protectionCutoff = sub(now, { hours: FINAL_PROTECTION_HOURS });
+      if (isAfter(lastDose.time, protectionCutoff)) {
         statusColor = 'bg-gray-500';
+        const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
         protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
       }
   }
@@ -370,3 +372,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
