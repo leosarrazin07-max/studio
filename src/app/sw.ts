@@ -5,6 +5,7 @@ import { PrecacheController } from 'workbox-precaching';
 
 declare const self: ServiceWorkerGlobalScope;
 
+// Installation du service worker
 const precacheController = new PrecacheController();
 precacheController.addToCacheList(defaultCache);
 
@@ -20,13 +21,14 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(precacheController.handle(event));
 });
 
+// Gestion des notifications push
 self.addEventListener('push', (event) => {
   const data = event.data ? event.data.json() : {};
   const title = data.title || 'PrEPy';
   const options = {
     body: data.body || 'Notification de PrEPy',
-    icon: '/icons/android-chrome-192x192.png',
-    badge: '/icons/badge.png',
+    icon: '/icons/android-chrome-192x192.png', // Icône pour les notifications
+    badge: '/icons/badge.png', // Icône pour la barre de statut (optionnel)
     ...data,
   };
   event.waitUntil(self.registration.showNotification(title, options));
