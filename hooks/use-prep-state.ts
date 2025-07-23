@@ -125,7 +125,7 @@ export function usePrepState(): UsePrepStateReturn {
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   // Force mock data in dev, otherwise load from storage.
-  const [state, setState] = useState<PrepState>(process.env.NODE_ENV === 'development' ? createMockData() : getInitialState);
+  const [state, setState] = useState<PrepState>(getInitialState);
 
 
   const saveState = useCallback((newState: PrepState) => {
@@ -222,11 +222,8 @@ export function usePrepState(): UsePrepStateReturn {
 
   useEffect(() => {
     setIsClient(true);
-
-    // In dev mode, always ensure we are using the mock data on mount.
-    if (process.env.NODE_ENV === 'development') {
-      setState(createMockData());
-    } else {
+    // This now reloads state from localStorage on every mount in production, ensuring consistency.
+    if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) {
             setState(savedState);
@@ -234,12 +231,16 @@ export function usePrepState(): UsePrepStateReturn {
     }
 
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker.js')
+        // We DO NOT manually register the service worker.
+        // The 'next-pwa' library handles this automatically.
+        // We just check for an existing subscription.
+        navigator.serviceWorker.ready
         .then(registration => registration.pushManager.getSubscription())
         .then(sub => {
             if (sub) {
                 setSubscription(sub);
-                // No need to set state here, it's derived from the presence of `subscription` now.
+                // Sync pushEnabled state based on actual subscription status
+                setState(prevState => ({ ...prevState, pushEnabled: true }));
             }
         })
         .catch(error => console.error('Erreur Service Worker:', error));
@@ -296,17 +297,15 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    // Protection ends 48h BEFORE the last dose.
-    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    if(isAfter(now, protectionEndsAt)) {
-        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-    }
+    // Protection is considered active until 48 hours after the last dose, but we give a text warning
+    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
     const lastDoseTime = lastDose.time;
     const protectionStartTime = add(firstDoseInSession.time, { hours: PROTECTION_START_HOURS });
-    const reminderWindowStartTime = add(lastDoseTime, { hours: DOSE_INTERVAL_HOURS });
+    const reminderWindowStartTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
     const reminderWindowEndTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_END_HOURS });
 
     if (isBefore(now, protectionStartTime)) {
