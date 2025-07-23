@@ -6,7 +6,11 @@ import { Toaster } from "@/components/ui/toaster"
 export const metadata: Metadata = {
   title: 'PrEPy',
   description: 'Your PrEP medication companion',
-  manifest: '/manifest.json'
+  manifest: '/manifest.json',
+  icons: {
+    icon: '/icon-192x192.png',
+    apple: '/icon-192x192.png',
+  },
 };
 
 export default function RootLayout({
@@ -21,8 +25,6 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
         <meta name="theme-color" content="#039BE5" />
-        <link rel="icon" href="/icon-192x192.png" type="image/png" />
-        <link rel="apple-touch-icon" href="/icon-192x192.png" />
       </head>
       <body className="font-body antialiased">
         {children}
