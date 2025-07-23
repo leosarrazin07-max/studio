@@ -3,7 +3,6 @@
 
 import { useState, useEffect } from "react";
 import { usePrepState } from "@/hooks/use-prep-state";
-import { usePrepCalculator } from "@/hooks/use-prep-calculator";
 import { Button } from "@/components/ui/button";
 import { LogDoseDialog } from "@/components/log-dose-dialog";
 import { PrepDashboard } from "@/components/prep-dashboard";
@@ -11,38 +10,6 @@ import { Pill, Menu } from 'lucide-react';
 import { SettingsSheet } from "@/components/settings-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WelcomeDialog } from "@/components/welcome-dialog";
-import { useToast } from "@/hooks/use-toast";
-import { getRemoteConfig, getString, fetchAndActivate } from "firebase/remote-config";
-import { app } from "@/lib/firebase-client";
-
-function urlBase64ToUint8Array(base64String: string) {
-  if (typeof window === "undefined") return new Uint8Array(0);
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
-
-const getVapidKey = async () => {
-    if (typeof window === "undefined") return null;
-    try {
-        const remoteConfig = getRemoteConfig(app);
-        await fetchAndActivate(remoteConfig);
-        const vapidKey = getString(remoteConfig, "NEXT_PUBLIC_VAPID_PUBLIC_KEY");
-        if (vapidKey) return vapidKey;
-    } catch (error) {
-        console.error("Error fetching VAPID key from Remote Config:", error);
-    }
-    if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
-        return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    }
-    console.error("VAPID public key is not set in env vars or Remote Config.");
-    return null;
-};
 
 
 export default function Home() {
@@ -50,57 +17,25 @@ export default function Home() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   
-  const { toast } = useToast();
-  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
-  const [isPushLoading, setIsPushLoading] = useState(true);
-  
   const {
     prises,
-    sessionActive,
-    isClient,
     addDose,
     startSession,
     endSession,
     clearHistory,
-    setPushEnabled,
+    pushEnabled,
+    requestNotificationPermission,
+    unsubscribeFromNotifications,
     welcomeScreenVisible,
-    dashboardVisible
+    dashboardVisible,
+    status,
+    statusColor,
+    statusText,
+    nextDoseIn,
+    protectionStartsIn,
+    protectionEndsAtText,
+    sessionActive
   } = usePrepState();
-  
-  const {
-      status,
-      statusColor,
-      statusText,
-      nextDoseIn,
-      protectionStartsIn,
-      protectionEndsAtText
-  } = usePrepCalculator({
-      prises,
-      sessionActive,
-      isClient,
-  });
-
-  const pushEnabled = !!subscription;
-
-  // Effect to check for existing subscription on mount
-  useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      navigator.serviceWorker.ready.then(reg => {
-        reg.pushManager.getSubscription().then(sub => {
-          setSubscription(sub);
-          setIsPushLoading(false);
-        });
-      });
-    } else {
-        setIsPushLoading(false);
-    }
-  }, []);
-  
-  // Effect to inform the prepState hook about the push status
-  useEffect(() => {
-    setPushEnabled(pushEnabled);
-  }, [pushEnabled, setPushEnabled]);
-
 
   useEffect(() => {
     if (welcomeScreenVisible) {
@@ -110,80 +45,12 @@ export default function Home() {
         }
     }
   }, [welcomeScreenVisible]);
-  
-  const subscribeToPush = async () => {
-    if (!('Notification' in window) || !navigator.serviceWorker) {
-        toast({ title: "Navigateur non compatible", variant: "destructive" });
-        return;
-    }
-    setIsPushLoading(true);
-    try {
-      // Permission is requested first
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-          toast({ title: "Notifications refusées", description: "Vous pouvez les activer dans les paramètres de votre navigateur." });
-          return; // Stop the process if permission is denied
-      }
-
-      // If permission is granted, proceed with subscription
-      const vapidPublicKey = await getVapidKey();
-      if (!vapidPublicKey) {
-          toast({ title: "Erreur de configuration", variant: "destructive" });
-          return;
-      }
-      
-      const registration = await navigator.serviceWorker.ready;
-      let sub = await registration.pushManager.getSubscription();
-      if (!sub) {
-          sub = await registration.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-          });
-      }
-
-      await fetch('/api/subscription', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(sub)
-      });
-      setSubscription(sub);
-      toast({ title: "Notifications activées!" });
-    } catch(error) {
-        console.error("Error subscribing:", error);
-        toast({ title: "Erreur d'abonnement", variant: "destructive" });
-    } finally {
-        setIsPushLoading(false);
-        // Force re-render of settings sheet to update permission status
-        setIsSettingsOpen(false); 
-        setTimeout(() => setIsSettingsOpen(true), 0);
-    }
-  };
-  
-  const unsubscribeFromPush = async () => {
-    if (!subscription) return;
-    setIsPushLoading(true);
-    try {
-        await fetch('/api/subscription', {
-            method: 'DELETE',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ endpoint: subscription.endpoint })
-        });
-        await subscription.unsubscribe();
-        setSubscription(null);
-        toast({ title: "Notifications désactivées." });
-    } catch (error) {
-        console.error("Error unsubscribing:", error);
-        toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
-    } finally {
-        setIsPushLoading(false);
-    }
-  };
 
   const handleTogglePush = async () => {
     if (pushEnabled) {
-      await unsubscribeFromPush();
+      await unsubscribeFromNotifications();
     } else {
-      await subscribeToPush();
+      await requestNotificationPermission();
     }
   };
 
@@ -191,7 +58,7 @@ export default function Home() {
     localStorage.setItem('hasSeenWelcomePopup', 'true');
     setIsWelcomeOpen(false);
     // Directly trigger the notification prompt after the user confirms
-    subscribeToPush();
+    requestNotificationPermission();
   };
 
   const WelcomeScreen = () => (
@@ -269,8 +136,10 @@ export default function Home() {
         onClearHistory={clearHistory}
         pushEnabled={pushEnabled}
         onTogglePush={handleTogglePush}
-        isPushLoading={isPushLoading}
+        isPushLoading={false} // This is now managed internally by usePrepState
       />
     </div>
   );
 }
+
+    
