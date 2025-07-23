@@ -72,14 +72,13 @@ export default function Home() {
       navigator.serviceWorker.ready.then(reg => {
         reg.pushManager.getSubscription().then(sub => {
           setSubscription(sub);
-          setPushEnabled(!!sub);
           setIsPushLoading(false);
         });
       });
     } else {
         setIsPushLoading(false);
     }
-  }, [setPushEnabled]);
+  }, []);
   
   // Effect to inform the prepState hook about the push status
   useEffect(() => {
@@ -95,11 +94,6 @@ export default function Home() {
         }
     }
   }, [welcomeScreenVisible]);
-
-  const handleWelcomeClose = () => {
-    localStorage.setItem('hasSeenWelcomePopup', 'true');
-    setIsWelcomeOpen(false);
-  };
   
   const subscribeToPush = async () => {
     if (!('Notification' in window) || !navigator.serviceWorker) {
@@ -108,12 +102,14 @@ export default function Home() {
     }
     setIsPushLoading(true);
     try {
+      // Permission is requested first
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-          toast({ title: "Notifications refusées", variant: "destructive" });
-          return;
+          toast({ title: "Notifications refusées", description: "Vous pouvez les activer dans les paramètres de votre navigateur." });
+          return; // Stop the process if permission is denied
       }
 
+      // If permission is granted, proceed with subscription
       const vapidPublicKey = await getVapidKey();
       if (!vapidPublicKey) {
           toast({ title: "Erreur de configuration", variant: "destructive" });
@@ -121,10 +117,13 @@ export default function Home() {
       }
       
       const registration = await navigator.serviceWorker.ready;
-      const sub = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-      });
+      let sub = await registration.pushManager.getSubscription();
+      if (!sub) {
+          sub = await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+          });
+      }
 
       await fetch('/api/subscription', {
           method: 'POST',
@@ -138,6 +137,9 @@ export default function Home() {
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
     } finally {
         setIsPushLoading(false);
+        // Force re-render of settings sheet to update permission status
+        setIsSettingsOpen(false); 
+        setTimeout(() => setIsSettingsOpen(true), 0);
     }
   };
   
@@ -167,6 +169,13 @@ export default function Home() {
     } else {
       await subscribeToPush();
     }
+  };
+
+  const handleWelcomeConfirm = () => {
+    localStorage.setItem('hasSeenWelcomePopup', 'true');
+    setIsWelcomeOpen(false);
+    // Directly trigger the notification prompt after the user confirms
+    subscribeToPush();
   };
 
   const WelcomeScreen = () => (
@@ -225,7 +234,7 @@ export default function Home() {
                               />}
         </div>
       </main>
-      <WelcomeDialog isOpen={isWelcomeOpen} onClose={handleWelcomeClose} />
+      <WelcomeDialog isOpen={isWelcomeOpen} onConfirm={handleWelcomeConfirm} />
        <LogDoseDialog
           isOpen={isLogDoseOpen}
           onOpenChange={setIsLogDoseOpen}

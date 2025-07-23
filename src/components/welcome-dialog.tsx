@@ -14,12 +14,12 @@ import { Pill } from 'lucide-react';
 
 interface WelcomeDialogProps {
   isOpen: boolean;
-  onClose: () => void;
+  onConfirm: () => void;
 }
 
-export function WelcomeDialog({ isOpen, onClose }: WelcomeDialogProps) {
+export function WelcomeDialog({ isOpen, onConfirm }: WelcomeDialogProps) {
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onConfirm()}>
       <DialogContent className="sm:max-w-md border-primary border-2" hideCloseButton={true}>
         <DialogHeader className="items-center text-center">
             <Pill className="text-primary h-12 w-12 mb-4" />
@@ -29,7 +29,7 @@ export function WelcomeDialog({ isOpen, onClose }: WelcomeDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="mt-4">
-          <Button onClick={onClose} className="w-full">J'ai compris</Button>
+          <Button onClick={onConfirm} className="w-full">J'ai compris</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
