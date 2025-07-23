@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format, intervalToDuration } from 'date-fns';
+import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
@@ -104,13 +104,11 @@ const defaultState: PrepState = {
 };
 
 const getInitialState = () => {
+    // In development, always start with mock data for testing purposes.
     if (process.env.NODE_ENV === 'development') {
-        const savedState = safelyParseJSON(typeof window !== 'undefined' ? localStorage.getItem('prepState') : null);
-        if (!savedState || savedState.prises.length === 0) {
-            return createMockData();
-        }
-        return savedState;
+        return createMockData();
     }
+    // In production, get the state from localStorage.
     if (typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) return savedState;
@@ -118,39 +116,49 @@ const getInitialState = () => {
     return defaultState;
 }
 
-
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
-  const [state, setState] = useState<PrepState>(getInitialState);
+  const [state, setState] = useState<PrepState>(defaultState);
+
+  useEffect(() => {
+    // This effect runs once on the client after mounting.
+    // It sets the initial state based on the environment and localStorage.
+    setState(getInitialState());
+    setIsClient(true);
+  }, []);
 
   const saveState = useCallback((newState: PrepState) => {
-      setState(newState);
+      // In development, we don't save to localStorage to keep the mock data consistent
+      // unless we explicitly add a dose, clear history, etc. But for this logic,
+      // we can just re-evaluate the state without saving.
       if (process.env.NODE_ENV === 'development') {
-        // Don't persist over mock data in dev unless we explicitly add a dose
-      }
-
-      if (typeof window !== 'undefined') {
-        try {
-            const stateToSave = {
-                ...newState,
-                prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
-            };
-            localStorage.setItem('prepState', JSON.stringify(stateToSave));
-            
-            const currentSub = subscription;
-            if (newState.pushEnabled && currentSub) {
-                 fetch('/api/tasks/notification', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ subscription: currentSub, state: stateToSave })
-                }).catch(err => console.error("Failed to sync state to server:", err));
+          setState(newState);
+          // To see persistence in dev, you would comment out the return in getInitialState
+      } else {
+          setState(newState);
+          if (typeof window !== 'undefined') {
+            try {
+                const stateToSave = {
+                    ...newState,
+                    prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
+                };
+                localStorage.setItem('prepState', JSON.stringify(stateToSave));
+                
+                const currentSub = subscription;
+                if (newState.pushEnabled && currentSub) {
+                     fetch('/api/tasks/notification', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ subscription: currentSub, state: stateToSave })
+                    }).catch(err => console.error("Failed to sync state to server:", err));
+                }
+            } catch (e) {
+                console.error("Could not save state", e);
             }
-        } catch (e) {
-            console.error("Could not save state", e);
-        }
+          }
       }
   }, [subscription]);
   
@@ -216,18 +224,14 @@ export function usePrepState(): UsePrepStateReturn {
   }, [subscription, toast, state, saveState]);
 
   useEffect(() => {
-    setIsClient(true);
-    
-    // Initial state is now handled by getInitialState
-    // We just need to register the service worker and update timers/push status
-    
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js')
         .then(registration => registration.pushManager.getSubscription())
         .then(sub => {
             if (sub) {
                 setSubscription(sub);
-                setState(currentState => ({...currentState, pushEnabled: !!sub}));
+                // We shouldn't setState here as it can cause re-renders. 
+                // The pushEnabled state will be derived from the subscription object.
             }
         })
         .catch(error => console.error('Erreur Service Worker:', error));
@@ -259,7 +263,7 @@ export function usePrepState(): UsePrepStateReturn {
   const clearHistory = useCallback(() => {
     if (process.env.NODE_ENV === 'development') {
         const mockState = createMockData();
-        setState(mockState); // Just reload the mock data, don't save to localStorage
+        setState(mockState);
         toast({ title: "Données de test rechargées" });
         return;
     }
@@ -267,10 +271,10 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    setState({ ...defaultState, pushEnabled: state.pushEnabled });
+    setState({ ...defaultState, pushEnabled: !!subscription });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [state.pushEnabled, toast]);
-
+  }, [subscription, toast]);
+  
   const lastDose = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
@@ -341,6 +345,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
+    pushEnabled: !!subscription,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
@@ -358,5 +363,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
