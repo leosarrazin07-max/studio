@@ -124,7 +124,6 @@ export function usePrepState(): UsePrepStateReturn {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
 
-
   const saveState = useCallback((newState: PrepState) => {
       // In development, just update the state without saving to localStorage to keep mock data consistent.
       if (process.env.NODE_ENV === 'development') {
@@ -289,7 +288,15 @@ export function usePrepState(): UsePrepStateReturn {
 
   if (isClient && lastDose) {
     const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    if (!state.sessionActive) {
+    if (isAfter(now, protectionEndsAt) || !state.sessionActive) {
+        status = 'inactive';
+        statusText = 'Session terminée';
+        statusColor = 'bg-destructive';
+    }
+     if (isBefore(now, protectionEndsAt) && !state.sessionActive) {
+        status = 'inactive';
+        statusText = 'Session terminée';
+        statusColor = 'bg-gray-500';
         protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
   }
@@ -336,9 +343,17 @@ export function usePrepState(): UsePrepStateReturn {
       protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
   } else if (isClient && !state.sessionActive && state.prises.length > 0) {
-     status = 'missed';
-     statusColor = 'bg-destructive';
-     statusText = 'Session terminée';
+     const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+      if (isAfter(now, protectionEndsAt)) {
+          status = 'inactive';
+          statusText = 'Session terminée';
+          statusColor = 'bg-destructive';
+      } else {
+        status = 'inactive';
+        statusText = 'Session terminée';
+        statusColor = 'bg-gray-500';
+        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+      }
   }
 
   if (!isClient) {
@@ -369,5 +384,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    

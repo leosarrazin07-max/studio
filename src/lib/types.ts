@@ -18,25 +18,14 @@ export interface PrepState {
 
 // The return type of the main state management hook
 export interface UsePrepStateReturn extends PrepState {
-  isClient: boolean;
   addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
-  setPushEnabled: (enabled: boolean) => void;
+  requestNotificationPermission: () => Promise<boolean>;
+  unsubscribeFromNotifications: () => Promise<void>;
   welcomeScreenVisible: boolean;
   dashboardVisible: boolean;
-}
-
-// Input for the calculator hook
-export interface PrepCalculatorInput {
-    prises: Prise[];
-    sessionActive: boolean;
-    isClient: boolean;
-}
-
-// The return type of the calculator hook, contains only derived values
-export interface PrepCalculatorResult {
   status: PrepStatus;
   statusColor: string;
   statusText: string;
