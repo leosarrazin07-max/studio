@@ -43,7 +43,7 @@ export function LogDoseDialog({
     title = 'Démarrer votre session';
     description = 'Vous commencerez avec 2 comprimés. Confirmez quand vous avez fait votre prise initiale.';
   } else if (isMissedDose) {
-    title = 'Comprimé manqué';
+    title = 'Prise manquée';
     description = "Il semble que vous ayez manqué une prise. Choisissez une option pour mettre à jour votre statut.";
   }
 
@@ -136,3 +136,5 @@ export function LogDoseDialog({
     </Dialog>
   );
 }
+
+    
