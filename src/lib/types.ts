@@ -13,12 +13,11 @@ export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed';
 export interface PrepState {
   prises: Prise[];
   sessionActive: boolean;
-  // pushEnabled is no longer part of the core state, it's derived from subscription status
+  pushEnabled: boolean;
 }
 
 // The return type of the main state management hook
 export interface UsePrepStateReturn extends PrepState {
-  pushEnabled: boolean;
   addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
   endSession: () => void;
@@ -34,3 +33,5 @@ export interface UsePrepStateReturn extends PrepState {
   protectionStartsIn: string;
   protectionEndsAtText: string;
 }
+
+    
