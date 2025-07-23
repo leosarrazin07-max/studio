@@ -56,7 +56,7 @@ export default function Home() {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [isPushLoading, setIsPushLoading] = useState(true);
   
-  const pushEnabled = prepState.pushEnabled;
+  const pushEnabled = !!subscription;
 
   // Effect to check for existing subscription on mount and sync state
   useEffect(() => {
@@ -72,6 +72,18 @@ export default function Home() {
         setIsPushLoading(false);
     }
   }, [setPushEnabled]);
+
+  // Effect to sync state to server whenever subscription or prepState changes
+  useEffect(() => {
+    if (pushEnabled && subscription) {
+         fetch('/api/tasks/notification', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ subscription, state: prepState })
+        }).catch(err => console.error("Failed to sync state to server:", err));
+    }
+  }, [pushEnabled, subscription, prepState]);
+
 
   useEffect(() => {
     if (welcomeScreenVisible) {

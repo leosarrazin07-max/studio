@@ -13,7 +13,7 @@ export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed';
 export interface PrepState {
   prises: Prise[];
   sessionActive: boolean;
-  pushEnabled: boolean; // Re-introduced to track notification state
+  pushEnabled: boolean;
 }
 
 export interface PrepLogic {
@@ -27,7 +27,7 @@ export interface PrepLogic {
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
-  setPushEnabled: (enabled: boolean) => void; // New function to update push state
+  setPushEnabled: (enabled: boolean) => void;
   welcomeScreenVisible: boolean;
   dashboardVisible: boolean;
 }
