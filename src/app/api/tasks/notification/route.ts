@@ -48,6 +48,7 @@ export async function GET() {
       title: 'PrEPy : Rappel de prise',
       body: 'Il est temps de prendre votre comprimé pour rester protégé(e).',
       icon: '/icon-192x192.png',
+      badge: '/badge.svg'
     });
 
     const promises = subscriptionsSnapshot.docs.map(async (doc) => {
