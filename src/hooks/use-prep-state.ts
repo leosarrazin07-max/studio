@@ -15,14 +15,14 @@ const createMockData = (): PrepState => {
     const mockPrises: Prise[] = [];
     const now = new Date();
     
-    // To simulate being inside the 4-hour reminder window with ~2h15m left,
-    // we set the last dose to have occurred 23 hours and 45 minutes ago.
-    // 26 hours (window end) - 2h15m = 23h45m.
-    const lastDoseTime = sub(now, { hours: 23, minutes: 45 });
+    // To simulate being inside the 4-hour reminder window with ~2h left,
+    // we set the last dose to have occurred 24 hours ago.
+    // Reminder window is 22h-26h, so at 24h, there are 2h left.
+    const lastDoseTime = sub(now, { hours: 24 });
 
-    // The start of the session would be 9 days before that last dose
-    let firstDoseTime = sub(lastDoseTime, { days: 9 });
-    firstDoseTime = set(firstDoseTime, { hours: 9, minutes: 0, seconds: 0, milliseconds: 0 });
+    // Find the original start time based on the fixed last dose time.
+    // Assuming 10 doses in total (1 start + 9 daily).
+    const firstDoseTime = sub(lastDoseTime, { days: 9 });
 
     // Initial dose (2 pills)
     mockPrises.push({
@@ -32,24 +32,21 @@ const createMockData = (): PrepState => {
         id: `mock_0`
     });
 
-    // Subsequent 9 daily doses (1 pill each), always at the same time
+    // Subsequent 9 daily doses (1 pill each) leading up to lastDoseTime
     let currentDoseTime = firstDoseTime;
     for (let i = 1; i < 10; i++) {
-        // Add exactly 24 hours to maintain the same time of day
-        const nextDoseTime = add(currentDoseTime, { hours: 24 });
-        
+        currentDoseTime = add(currentDoseTime, { hours: 24 });
         mockPrises.push({
-            time: nextDoseTime,
+            time: currentDoseTime,
             pills: 1,
             type: 'dose',
             id: `mock_${i}`
         });
-        currentDoseTime = nextDoseTime;
     }
 
     return {
         prises: mockPrises.sort((a, b) => a.time.getTime() - b.time.getTime()), // Ensure they are sorted
-        sessionActive: true, // Ensure the session is marked as active
+        sessionActive: true,
         pushEnabled: false,
     };
 };
@@ -115,7 +112,7 @@ const defaultState: PrepState = {
 };
 
 const getInitialState = () => {
-    // In dev mode, ALWAYS start with mock data for consistent testing.
+    // In development, ALWAYS start with mock data for consistent testing.
     if (process.env.NODE_ENV === 'development') {
         return createMockData();
     }
@@ -397,5 +394,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
