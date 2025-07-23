@@ -10,13 +10,49 @@ import { useToast } from './use-toast';
 import { getRemoteConfig } from "firebase/remote-config";
 import { app } from "@/lib/firebase-client";
 
+// --- MOCK DATA GENERATION FOR DEVELOPMENT ---
+const createMockData = (): PrepState => {
+    const mockPrises: Prise[] = [];
+    const now = new Date();
+    // Start the session 10 days ago
+    let lastDoseTime = sub(now, { days: 10 });
+
+    // Initial dose (2 pills)
+    mockPrises.push({
+        time: lastDoseTime,
+        pills: 2,
+        type: 'start',
+        id: `mock_0`
+    });
+
+    // Subsequent 9 daily doses (1 pill each)
+    for (let i = 1; i < 10; i++) {
+        // Add roughly 24 hours, with some variation
+        const hoursToAdd = 23 + Math.random() * 2;
+        const minutesToAdd = Math.random() * 60;
+        const nextDoseTime = add(lastDoseTime, { hours: Math.floor(hoursToAdd), minutes: Math.floor(minutesToAdd) });
+        
+        mockPrises.push({
+            time: nextDoseTime,
+            pills: 1,
+            type: 'dose',
+            id: `mock_${i}`
+        });
+        lastDoseTime = nextDoseTime;
+    }
+
+    return {
+        prises: mockPrises,
+        sessionActive: true, // Ensure the session is marked as active
+        pushEnabled: false,
+    };
+};
+// --- END MOCK DATA ---
+
 const getVapidKey = async () => {
     if (typeof window === "undefined") return null;
     try {
         const remoteConfig = getRemoteConfig(app);
-        // Ensure the config is fetched and activated. In a real app, you might want more robust logic here.
-        // await fetchConfig(remoteConfig);
-        // await activate(remoteConfig);
         const vapidKey = remoteConfig.getString("NEXT_PUBLIC_VAPID_PUBLIC_KEY");
         if (vapidKey) {
             return vapidKey;
@@ -25,7 +61,6 @@ const getVapidKey = async () => {
         console.error("Error fetching VAPID key from Remote Config:", error);
     }
     
-    // Fallback for dev or if remote config fails
     if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
         return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     }
@@ -68,44 +103,20 @@ const defaultState: PrepState = {
     pushEnabled: false,
 };
 
-// --- MOCK DATA GENERATION FOR DEVELOPMENT ---
-const createMockData = (): PrepState => {
-    const mockPrises: Prise[] = [];
-    const now = new Date();
-    // Start 10 days ago to ensure all doses are within the 90-day history view
-    let lastDoseTime = sub(now, { days: 10 });
-
-    // Initial dose
-    mockPrises.push({
-        time: lastDoseTime,
-        pills: 2,
-        type: 'start',
-        id: `mock_${mockPrises.length}`
-    });
-
-    // Subsequent 9 doses, for a total of 10
-    for (let i = 0; i < 9; i++) {
-        // Add between 23 and 25 hours to the last dose to simulate real usage
-        const hoursToAdd = 23 + Math.random() * 2;
-        const minutesToAdd = Math.random() * 60;
-        const nextDoseTime = add(lastDoseTime, { hours: Math.floor(hoursToAdd), minutes: Math.floor(minutesToAdd) });
-        
-        mockPrises.push({
-            time: nextDoseTime,
-            pills: 1,
-            type: 'dose',
-            id: `mock_${mockPrises.length}`
-        });
-        lastDoseTime = nextDoseTime;
+const getInitialState = () => {
+    if (process.env.NODE_ENV === 'development') {
+        const savedState = safelyParseJSON(typeof window !== 'undefined' ? localStorage.getItem('prepState') : null);
+        if (!savedState || savedState.prises.length === 0) {
+            return createMockData();
+        }
+        return savedState;
     }
-
-    return {
-        prises: mockPrises,
-        sessionActive: true,
-        pushEnabled: false,
-    };
-};
-// --- END MOCK DATA ---
+    if (typeof window !== 'undefined') {
+        const savedState = safelyParseJSON(localStorage.getItem('prepState'));
+        if (savedState) return savedState;
+    }
+    return defaultState;
+}
 
 
 export function usePrepState(): UsePrepStateReturn {
@@ -113,15 +124,14 @@ export function usePrepState(): UsePrepStateReturn {
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
-  const [state, setState] = useState<PrepState>(defaultState);
+  const [state, setState] = useState<PrepState>(getInitialState);
 
   const saveState = useCallback((newState: PrepState) => {
-      // Don't save mock data to localStorage to avoid persistence on reload
-      if (process.env.NODE_ENV === 'development') {
-          setState(newState);
-          return;
-      }
       setState(newState);
+      if (process.env.NODE_ENV === 'development') {
+        // Don't persist over mock data in dev unless we explicitly add a dose
+      }
+
       if (typeof window !== 'undefined') {
         try {
             const stateToSave = {
@@ -207,21 +217,9 @@ export function usePrepState(): UsePrepStateReturn {
 
   useEffect(() => {
     setIsClient(true);
-
-    if (process.env.NODE_ENV === 'development') {
-        const hasSavedPrises = localStorage.getItem('prepState') ? (safelyParseJSON(localStorage.getItem('prepState'))?.prises.length ?? 0) > 0 : false;
-        // Always load mock data in dev unless there's already *real* data saved
-        if (!hasSavedPrises) {
-            setState(createMockData());
-            return;
-        }
-    }
     
-    // This part runs for production or if dev has existing data
-    const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-    if (savedState) {
-        setState(savedState);
-    }
+    // Initial state is now handled by getInitialState
+    // We just need to register the service worker and update timers/push status
     
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js')
@@ -259,21 +257,19 @@ export function usePrepState(): UsePrepStateReturn {
   }, [state, saveState, toast]);
 
   const clearHistory = useCallback(() => {
-    // In dev mode, just reload the mock data for testing
     if (process.env.NODE_ENV === 'development') {
-        setState(createMockData());
+        const mockState = createMockData();
+        setState(mockState); // Just reload the mock data, don't save to localStorage
         toast({ title: "Données de test rechargées" });
         return;
     }
     
-    // In production, clear localStorage and state
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    const emptyState = { ...defaultState, pushEnabled: state.pushEnabled };
-    saveState(emptyState);
+    setState({ ...defaultState, pushEnabled: state.pushEnabled });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [state.pushEnabled, toast, saveState]);
+  }, [state.pushEnabled, toast]);
 
   const lastDose = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
