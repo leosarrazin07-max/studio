@@ -7,19 +7,35 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
+import { getRemoteConfig } from "firebase/remote-config";
+import { app } from "@/lib/firebase-client";
 
 const getVapidKey = async () => {
+    if (typeof window === "undefined") return null;
+    try {
+        const remoteConfig = getRemoteConfig(app);
+        // Ensure the config is fetched and activated. In a real app, you might want more robust logic here.
+        // await fetchConfig(remoteConfig);
+        // await activate(remoteConfig);
+        const vapidKey = remoteConfig.getString("NEXT_PUBLIC_VAPID_PUBLIC_KEY");
+        if (vapidKey) {
+            return vapidKey;
+        }
+    } catch (error) {
+        console.error("Error fetching VAPID key from Remote Config:", error);
+    }
+    
+    // Fallback for dev or if remote config fails
     if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
         return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     }
-    // In a real app, you might fetch this from a secure endpoint or use Remote Config.
-    // For this example, we assume it's in env vars.
-    console.error("VAPID public key is not set in environment variables.");
-    return null; 
+    
+    console.error("VAPID public key is not set in environment variables or Remote Config.");
+    return null;
 };
 
-
 function urlBase64ToUint8Array(base64String: string) {
+  if (typeof window === "undefined") return new Uint8Array(0);
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = window.atob(base64);
@@ -190,30 +206,31 @@ export function usePrepState(): UsePrepStateReturn {
 
   useEffect(() => {
     setIsClient(true);
-    
-    if (typeof window !== 'undefined') {
-        const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-        
-        // --- INJECT MOCK DATA IN DEV MODE ---
-        if (process.env.NODE_ENV === 'development' && (!savedState || savedState.prises.length === 0)) {
+
+    if (process.env.NODE_ENV === 'development') {
+        const hasSavedPrises = localStorage.getItem('prepState') ? (safelyParseJSON(localStorage.getItem('prepState'))?.prises.length ?? 0) > 0 : false;
+        if (!hasSavedPrises) {
             setState(createMockData());
-        } else if (savedState) {
-            setState(savedState);
+            return; // Exit early to avoid overwriting mock data
         }
-        // --- END INJECTION ---
+    }
     
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.register('/service-worker.js')
-            .then(registration => registration.pushManager.getSubscription())
-            .then(sub => {
-                if (sub) {
-                    setSubscription(sub);
-                    // Update state without overwriting the entire state
-                    setState(currentState => ({...currentState, pushEnabled: !!sub}));
-                }
-            })
-            .catch(error => console.error('Erreur Service Worker:', error));
-        }
+    // This part runs for production or if dev has existing data
+    const savedState = safelyParseJSON(localStorage.getItem('prepState'));
+    if (savedState) {
+        setState(savedState);
+    }
+    
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(registration => registration.pushManager.getSubscription())
+        .then(sub => {
+            if (sub) {
+                setSubscription(sub);
+                setState(currentState => ({...currentState, pushEnabled: !!sub}));
+            }
+        })
+        .catch(error => console.error('Erreur Service Worker:', error));
     }
     
     const timer = setInterval(() => setNow(new Date()), 1000 * 30);
@@ -243,9 +260,18 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    saveState({ ...defaultState, pushEnabled: state.pushEnabled });
+    const emptyState = { ...defaultState, pushEnabled: state.pushEnabled };
+    setState(emptyState)
+     // In dev mode, after clearing, re-apply mock data for testing
+    if (process.env.NODE_ENV === 'development') {
+        setState(createMockData());
+    } else {
+        setState(emptyState);
+        // also save the cleared state
+        localStorage.setItem('prepState', JSON.stringify(emptyState));
+    }
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [saveState, state.pushEnabled, toast]);
+  }, [state.pushEnabled, toast]);
 
   const lastDose = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime())[0] ?? null;
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
@@ -312,7 +338,7 @@ export function usePrepState(): UsePrepStateReturn {
     statusColor = "bg-muted";
   }
 
-  const welcomeScreenVisible = isClient && state.prises.length === 0;
+  const welcomeScreenVisible = isClient && state.prises.length === 0 && !state.prises.some(p => p.id.startsWith('mock_'));
   const dashboardVisible = isClient && state.prises.length > 0;
 
   return {
