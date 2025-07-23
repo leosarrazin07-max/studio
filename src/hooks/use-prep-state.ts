@@ -163,20 +163,19 @@ export function usePrepState(): UsePrepStateReturn {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
         return;
     }
+    
     setIsPushLoading(true);
 
     try {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
             toast({ title: "Notifications refusées", variant: "destructive" });
-            setIsPushLoading(false);
             return;
         }
 
         const vapidPublicKey = await getVapidKey();
         if (!vapidPublicKey) {
             toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
-            setIsPushLoading(false);
             return;
         }
 
@@ -297,7 +296,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
@@ -356,6 +355,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
+    isPushLoading,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
@@ -371,8 +371,5 @@ export function usePrepState(): UsePrepStateReturn {
     unsubscribeFromNotifications,
     welcomeScreenVisible,
     dashboardVisible,
-    isPushLoading,
   };
 }
-
-    
