@@ -17,7 +17,18 @@ export default function Home() {
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const prepState = usePrepState();
 
-  const { addDose, startSession, clearHistory, requestNotificationPermission, unsubscribeFromNotifications, pushEnabled, welcomeScreenVisible, dashboardVisible, isPushLoading } = prepState;
+  const { 
+    addDose, 
+    startSession, 
+    clearHistory, 
+    requestNotificationPermission, 
+    unsubscribeFromNotifications, 
+    setPushState,
+    pushEnabled, 
+    welcomeScreenVisible, 
+    dashboardVisible, 
+    isPushLoading 
+  } = prepState;
 
   useEffect(() => {
     if (welcomeScreenVisible) {
@@ -31,6 +42,20 @@ export default function Home() {
   const handleWelcomeClose = () => {
     localStorage.setItem('hasSeenWelcomePopup', 'true');
     setIsWelcomeOpen(false);
+  };
+  
+  const handleTogglePush = async () => {
+    if (pushEnabled) {
+      const success = await unsubscribeFromNotifications();
+      if (success) {
+        setPushState(false);
+      }
+    } else {
+      const success = await requestNotificationPermission();
+      if (success) {
+        setPushState(true);
+      }
+    }
   };
 
   const WelcomeScreen = () => (
@@ -95,11 +120,9 @@ export default function Home() {
         onOpenChange={setIsSettingsOpen}
         onClearHistory={clearHistory}
         pushEnabled={pushEnabled}
-        onTogglePush={pushEnabled ? unsubscribeFromNotifications : requestNotificationPermission}
+        onTogglePush={handleTogglePush}
         isPushLoading={isPushLoading}
       />
     </div>
   );
 }
-
-    

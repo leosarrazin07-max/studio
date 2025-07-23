@@ -27,8 +27,9 @@ export interface PrepLogic {
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
-  requestNotificationPermission: () => Promise<void>;
-  unsubscribeFromNotifications: () => Promise<void>;
+  requestNotificationPermission: () => Promise<boolean>;
+  unsubscribeFromNotifications: () => Promise<boolean>;
+  setPushState: (enabled: boolean) => void;
   welcomeScreenVisible: boolean;
   dashboardVisible: boolean;
   isPushLoading: boolean;
