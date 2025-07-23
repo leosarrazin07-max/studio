@@ -80,12 +80,11 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-const safelyParseJSON = (jsonString: string | null) => {
+const safelyParseJSON = (jsonString: string | null): PrepState | null => {
   if (!jsonString) return null;
   try {
     const parsed = JSON.parse(jsonString);
     if (Array.isArray(parsed.prises)) {
-        // Ensure time is a Date object
         parsed.prises = parsed.prises.map((d: any) => ({...d, time: new Date(d.time)}));
     } else {
         parsed.prises = [];
@@ -102,15 +101,13 @@ const defaultState: PrepState = {
     sessionActive: false,
 };
 
-const getInitialState = () => {
+const getInitialState = (): PrepState => {
     if (typeof window === 'undefined') {
         return defaultState;
     }
-    // In development, ALWAYS start with mock data for consistent testing.
     if (process.env.NODE_ENV === 'development') {
         return createMockData();
     }
-    // In production, get the state from localStorage.
     const savedState = safelyParseJSON(localStorage.getItem('prepState'));
     return savedState || defaultState;
 }
@@ -122,6 +119,7 @@ export function usePrepState(): UsePrepStateReturn {
   const [isPushLoading, setIsPushLoading] = useState(true);
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
+
 
   const saveState = useCallback((newState: PrepState) => {
       if (process.env.NODE_ENV === 'development') {
@@ -305,11 +303,11 @@ export function usePrepState(): UsePrepStateReturn {
   if (isClient && lastDose && firstDoseInSession) {
     const protectionEndDateCalc = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
 
-    const finalProtectionDate = state.prises.length < 3
+    const finalProtectionDate = allPrises.length < 3
       ? new Date(Math.max(protectionEndDateCalc.getTime(), firstDoseInSession.time.getTime()))
       : protectionEndDateCalc;
 
-    const messagePrefix = state.prises.length < 3
+    const messagePrefix = allPrises.length < 3
       ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
       : "Vos rapports sont protégés jusqu'au";
       
@@ -392,5 +390,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    

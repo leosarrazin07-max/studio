@@ -32,7 +32,8 @@ export async function GET() {
 
         subscriptionsSnapshot.forEach(doc => {
             const subscriptionData = doc.data();
-            const { push: subscription, state } = subscriptionData; // The state is now stored with the subscription
+            // The state is stored with the subscription object which is now called 'push'
+            const { push: subscription, state } = subscriptionData; 
 
             if (!state || !state.sessionActive || !subscription) {
                 return; // Skip inactive sessions or malformed data
@@ -97,7 +98,7 @@ export async function POST(req: Request) {
         const endpointHash = Buffer.from(subscription.endpoint).toString('base64').replace(/=/g, '').replace(/\//g, '_');
         const subscriptionRef = firestore.collection('subscriptions').doc(endpointHash);
 
-        // We store the subscription object and the state together.
+        // We store the subscription object (named 'push') and the state together.
         await subscriptionRef.set({
             push: subscription,
             state: state,
@@ -113,5 +114,3 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: false, error: 'Unknown error' }, { status: 500 });
     }
 }
-
-    
