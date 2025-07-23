@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -46,40 +45,6 @@ const createMockData = (): PrepState => {
 };
 // --- END MOCK DATA ---
 
-const getVapidKey = async () => {
-    if (typeof window === "undefined") return null;
-    try {
-        const remoteConfig = getRemoteConfig(app);
-        await fetchAndActivate(remoteConfig);
-        const vapidKey = getString(remoteConfig, "NEXT_PUBLIC_VAPID_PUBLIC_KEY");
-        if (vapidKey) {
-            return vapidKey;
-        }
-    } catch (error) {
-        console.error("Error fetching VAPID key from Remote Config:", error);
-    }
-    
-    // Fallback to environment variable
-    if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
-        return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    }
-    
-    console.error("VAPID public key is not set in environment variables or Remote Config.");
-    return null;
-};
-
-function urlBase64ToUint8Array(base64String: string) {
-  if (typeof window === "undefined") return new Uint8Array(0);
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
-
 const safelyParseJSON = (jsonString: string | null): PrepState | null => {
   if (!jsonString) return null;
   try {
@@ -116,9 +81,6 @@ export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
-  const [isPushLoading, setIsPushLoading] = useState(false);
-  const [notificationPermission, setNotificationPermission] = useState<'default' | 'granted' | 'denied'>('default');
-  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
 
   const saveState = useCallback((newState: PrepState) => {
@@ -136,127 +98,12 @@ export function usePrepState(): UsePrepStateReturn {
     }
   }, []);
   
-  const syncStateWithServer = useCallback(async (sub: PushSubscription, currentState: PrepState) => {
-      const stateToSave = {
-          ...currentState,
-          prises: currentState.prises.map(d => ({ ...d, time: d.time.toISOString() }))
-      };
-      try {
-        await fetch('/api/tasks/notification', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ subscription: sub, state: stateToSave })
-        });
-      } catch (err) {
-          console.error("Failed to sync state to server:", err)
-      }
-  }, []);
-
-  useEffect(() => {
-    if (subscription && state.sessionActive) {
-      syncStateWithServer(subscription, state);
-    }
-  }, [state, subscription, syncStateWithServer]);
-
-  useEffect(() => {
-    if (subscription) {
-      fetch('/api/subscription', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(subscription)
-      });
-    }
-  }, [subscription]);
-
-  const requestNotificationPermission = useCallback(async () => {
-    setIsPushLoading(true);
-    if (!('Notification' in window) || !navigator.serviceWorker) {
-        toast({ title: "Navigateur non compatible", variant: "destructive" });
-        setIsPushLoading(false);
-        return;
-    }
-
-    const permission = await Notification.requestPermission();
-    setNotificationPermission(permission);
-
-    if (permission !== 'granted') {
-        if (permission === 'denied') {
-            toast({ title: "Notifications bloquées", description: "Veuillez autoriser les notifications dans les paramètres de votre navigateur et vider le cache.", variant: "destructive" });
-        } else {
-            toast({ title: "Notifications refusées", variant: "destructive" });
-        }
-        setIsPushLoading(false);
-        return;
-    }
-
-    const vapidPublicKey = await getVapidKey();
-    if (!vapidPublicKey) {
-        toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
-        setIsPushLoading(false);
-        return;
-    }
-
-    try {
-        const registration = await navigator.serviceWorker.ready;
-        let sub = await registration.pushManager.getSubscription();
-        if (!sub) {
-            sub = await registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-            });
-        }
-        setSubscription(sub);
-        toast({ title: "Notifications activées!" });
-    } catch (error) {
-        console.error("Error subscribing:", error);
-        toast({ title: "Erreur d'abonnement", variant: "destructive" });
-    } finally {
-        setIsPushLoading(false);
-    }
-  }, [toast]);
-
-  const unsubscribeFromNotifications = useCallback(async () => {
-    setIsPushLoading(true);
-    if (subscription) {
-      try {
-        await fetch('/api/subscription', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ endpoint: subscription.endpoint })
-        });
-        await subscription.unsubscribe();
-        setSubscription(null);
-        toast({ title: "Notifications désactivées." });
-      } catch (error) {
-         console.error("Error unsubscribing:", error);
-         toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
-      }
-    }
-    setIsPushLoading(false);
-  }, [subscription, toast]);
-  
   useEffect(() => {
     const init = async () => {
         setIsClient(true);
         if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
             const savedState = safelyParseJSON(localStorage.getItem('prepState'));
             if (savedState) setState(savedState);
-        }
-
-        if ('Notification' in window) {
-            setNotificationPermission(Notification.permission);
-        }
-
-        if ('serviceWorker' in navigator) {
-            try {
-                const registration = await navigator.serviceWorker.ready;
-                const sub = await registration.pushManager.getSubscription();
-                if (sub) {
-                    setSubscription(sub);
-                }
-            } catch (error) {
-                console.error('Erreur Service Worker:', error);
-            }
         }
     };
 
@@ -314,9 +161,7 @@ export function usePrepState(): UsePrepStateReturn {
   if (isClient && lastDose) {
       const finalProtectionDate = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
       
-      const messagePrefix = allPrises.length < 3
-          ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
-          : "Vos rapports sont protégés jusqu'au";
+      const messagePrefix = "Vos rapports sont protégés jusqu'au";
           
       protectionEndsAtText = `${messagePrefix} ${format(finalProtectionDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
@@ -372,15 +217,11 @@ export function usePrepState(): UsePrepStateReturn {
     statusColor = "bg-muted";
   }
 
-  const pushEnabled = !!subscription;
   const welcomeScreenVisible = isClient && state.prises.length === 0;
   const dashboardVisible = isClient && state.prises.length > 0;
 
   return {
     ...state,
-    pushEnabled,
-    isPushLoading,
-    notificationPermission,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
@@ -392,11 +233,7 @@ export function usePrepState(): UsePrepStateReturn {
     startSession,
     endSession,
     clearHistory,
-    requestNotificationPermission,
-    unsubscribeFromNotifications,
     welcomeScreenVisible,
     dashboardVisible,
   };
 }
-
-    

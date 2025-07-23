@@ -1,4 +1,3 @@
-
 export type PriseType = 'start' | 'dose' | 'stop';
 
 export interface Prise {
@@ -17,15 +16,10 @@ export interface PrepState {
 
 // The return type of the main state management hook
 export interface UsePrepStateReturn extends PrepState {
-  pushEnabled: boolean;
-  isPushLoading: boolean;
-  notificationPermission: 'default' | 'granted' | 'denied';
   addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
-  requestNotificationPermission: () => Promise<void>;
-  unsubscribeFromNotifications: () => Promise<void>;
   welcomeScreenVisible: boolean;
   dashboardVisible: boolean;
   status: PrepStatus;
@@ -44,4 +38,3 @@ export interface PrepCalculatorResult {
   protectionStartsIn: string;
   protectionEndsAtText: string;
 }
-    

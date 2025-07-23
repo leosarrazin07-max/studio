@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -23,11 +22,6 @@ export default function Home() {
     startSession,
     endSession,
     clearHistory,
-    pushEnabled,
-    isPushLoading,
-    notificationPermission,
-    requestNotificationPermission,
-    unsubscribeFromNotifications,
     welcomeScreenVisible,
     dashboardVisible,
     status,
@@ -48,19 +42,9 @@ export default function Home() {
     }
   }, [welcomeScreenVisible]);
 
-  const handleTogglePush = async () => {
-    if (pushEnabled) {
-      await unsubscribeFromNotifications();
-    } else {
-      await requestNotificationPermission();
-    }
-  };
-
   const handleWelcomeConfirm = () => {
     localStorage.setItem('hasSeenWelcomePopup', 'true');
     setIsWelcomeOpen(false);
-    // Directly trigger the notification prompt after the user confirms
-    requestNotificationPermission();
   };
 
   const WelcomeScreen = () => (
@@ -136,10 +120,6 @@ export default function Home() {
         isOpen={isSettingsOpen}
         onOpenChange={setIsSettingsOpen}
         onClearHistory={clearHistory}
-        pushEnabled={pushEnabled}
-        onTogglePush={handleTogglePush}
-        isPushLoading={isPushLoading}
-        notificationPermission={notificationPermission}
       />
     </div>
   );
