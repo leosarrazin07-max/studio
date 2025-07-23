@@ -4,20 +4,21 @@ import { firestore } from '@/lib/firebase-admin';
 import webpush from 'web-push';
 import { add, isBefore } from 'date-fns';
 import { DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
+import { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY } from '@/lib/vapid-keys';
 
-if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
   console.error("VAPID keys are not defined. Push notifications will not work.");
 } else {
   webpush.setVapidDetails(
     'mailto:webmaster@example.com',
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
+    VAPID_PUBLIC_KEY,
+    VAPID_PRIVATE_KEY
   );
 }
 
 // This function is triggered by a cron job (e.g., Google Cloud Scheduler)
 export async function GET() {
-  if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
       return NextResponse.json({ success: false, error: 'VAPID keys not configured on server' }, { status: 500 });
   }
     
