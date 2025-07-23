@@ -4,7 +4,6 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
 
 export const metadata: Metadata = {
-  metadataBase: new URL('http://localhost:9002'),
   title: 'PrEPy',
   description: 'Votre compagnon intelligent pour la PrEP à la demande.',
   manifest: '/manifest.json',
@@ -16,14 +15,11 @@ export const metadata: Metadata = {
   formatDetection: {
     telephone: false,
   },
-  icons: [
-    { rel: 'icon', type: 'image/png', sizes: '16x16', url: '/icon-16x16.png' },
-    { rel: 'icon', type: 'image/png', sizes: '32x32', url: '/icon-32x32.png' },
-    { rel: 'apple-touch-icon', type: 'image/png', sizes: '180x180', url: '/apple-icon.png' },
-    // Icons for manifest
-    { rel: 'icon', type: 'image/png', sizes: '192x192', url: '/icon-192x192.png' },
-    { rel: 'icon', type: 'image/png', sizes: '512x512', url: '/icon-512x512.png' },
-  ],
+  icons: {
+    icon: '/icon.png',
+    shortcut: '/icon.png',
+    apple: '/apple-icon.png',
+  },
 };
 
 export const viewport: Viewport = {
