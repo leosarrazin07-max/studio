@@ -25,6 +25,7 @@ export default function Home() {
     clearHistory,
     pushEnabled,
     isPushLoading,
+    notificationPermission,
     requestNotificationPermission,
     unsubscribeFromNotifications,
     welcomeScreenVisible,
@@ -138,6 +139,7 @@ export default function Home() {
         pushEnabled={pushEnabled}
         onTogglePush={handleTogglePush}
         isPushLoading={isPushLoading}
+        notificationPermission={notificationPermission}
       />
     </div>
   );

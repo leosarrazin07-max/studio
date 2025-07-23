@@ -19,11 +19,12 @@ export interface PrepState {
 export interface UsePrepStateReturn extends PrepState {
   pushEnabled: boolean;
   isPushLoading: boolean;
+  notificationPermission: 'default' | 'granted' | 'denied';
   addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
-  requestNotificationPermission: () => Promise<boolean>;
+  requestNotificationPermission: () => Promise<void>;
   unsubscribeFromNotifications: () => Promise<void>;
   welcomeScreenVisible: boolean;
   dashboardVisible: boolean;

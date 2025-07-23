@@ -1,7 +1,6 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
 import {
   Sheet,
   SheetContent,
@@ -33,6 +32,7 @@ interface SettingsSheetProps {
   pushEnabled: boolean;
   onTogglePush: () => void;
   isPushLoading: boolean;
+  notificationPermission: 'default' | 'granted' | 'denied';
 }
 
 export function SettingsSheet({
@@ -41,17 +41,9 @@ export function SettingsSheet({
   onClearHistory,
   pushEnabled,
   onTogglePush,
-  isPushLoading
+  isPushLoading,
+  notificationPermission
 }: SettingsSheetProps) {
-
-  const [notificationPermission, setNotificationPermission] = useState('default');
-  
-  useEffect(() => {
-    // Check notification permission when the sheet opens
-    if (isOpen && 'Notification' in window) {
-      setNotificationPermission(Notification.permission);
-    }
-  }, [isOpen]);
 
   const handleClearHistory = () => {
     onClearHistory();
@@ -93,7 +85,7 @@ export function SettingsSheet({
             {notificationPermission === 'denied' && (
                 <div className="flex items-center gap-2 text-xs text-destructive pt-2 border-t border-destructive/20 mt-2">
                     <BellOff size={14}/>
-                    <p>Les notifications sont bloquées dans les paramètres de votre navigateur.</p>
+                    <p>Notifications bloquées. Videz le cache et rechargez l'application pour autoriser de nouveau.</p>
                 </div>
             )}
           </div>
