@@ -124,12 +124,15 @@ export function usePrepState(): UsePrepStateReturn {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
 
+
   const saveState = useCallback((newState: PrepState) => {
+      // In development, just update the state without saving to localStorage to keep mock data consistent.
       if (process.env.NODE_ENV === 'development') {
           setState(newState);
           return;
       }
       
+      // Production logic
       setState(newState);
       if (typeof window !== 'undefined') {
         try {
@@ -139,12 +142,11 @@ export function usePrepState(): UsePrepStateReturn {
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
             
-            const currentSub = subscription;
-            if (currentSub) {
+            if (subscription) {
                  fetch('/api/tasks/notification', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ subscription: currentSub, state: stateToSave })
+                    body: JSON.stringify({ subscription: subscription, state: stateToSave })
                 }).catch(err => console.error("Failed to sync state to server:", err));
             }
         } catch (e) {
@@ -158,21 +160,21 @@ export function usePrepState(): UsePrepStateReturn {
     if (!('Notification' in window) || !navigator.serviceWorker) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
         setIsPushLoading(false);
-        return false;
+        return;
     }
 
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
         toast({ title: "Notifications refusées", variant: "destructive" });
         setIsPushLoading(false);
-        return false;
+        return;
     }
 
     const vapidPublicKey = await getVapidKey();
     if (!vapidPublicKey) {
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
         setIsPushLoading(false);
-        return false;
+        return;
     }
 
     try {
@@ -190,17 +192,14 @@ export function usePrepState(): UsePrepStateReturn {
             body: JSON.stringify(sub)
         });
         setSubscription(sub);
-        saveState(state);
         toast({ title: "Notifications activées!" });
-        setIsPushLoading(false);
-        return true;
     } catch (error) {
         console.error("Error subscribing:", error);
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
+    } finally {
         setIsPushLoading(false);
-        return false;
     }
-  }, [toast, state, saveState]);
+  }, [toast]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
     setIsPushLoading(true);
@@ -213,7 +212,6 @@ export function usePrepState(): UsePrepStateReturn {
         });
         await subscription.unsubscribe();
         setSubscription(null);
-        saveState(state);
         toast({ title: "Notifications désactivées." });
       } catch (error) {
          console.error("Error unsubscribing:", error);
@@ -221,7 +219,26 @@ export function usePrepState(): UsePrepStateReturn {
       }
     }
     setIsPushLoading(false);
-  }, [subscription, toast, state, saveState]);
+  }, [subscription, toast]);
+  
+  useEffect(() => {
+    const syncStateToServer = (sub: PushSubscription | null, currentState: PrepState) => {
+        if (process.env.NODE_ENV === 'development') return;
+        if (sub) {
+            const stateToSave = {
+                ...currentState,
+                prises: currentState.prises.map(d => ({...d, time: d.time.toISOString()}))
+            };
+            fetch('/api/tasks/notification', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ subscription: sub, state: stateToSave })
+            }).catch(err => console.error("Failed to sync state to server:", err));
+        }
+    };
+    syncStateToServer(subscription, state);
+  }, [state, subscription]);
+
 
   useEffect(() => {
     const init = async () => {
@@ -280,13 +297,13 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    setState({ ...defaultState, pushEnabled: !!subscription });
+    saveState({ ...defaultState });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [subscription, toast]);
+  }, [saveState, toast]);
 
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
   const lastDose = allPrises[0] ?? null;
-  const doseCount = allPrises.length;
+  const doseCount = allPrises.reduce((acc, prise) => acc + prise.pills, 0);
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
   let status: PrepStatus = 'inactive';
@@ -297,20 +314,18 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose && firstDoseInSession) {
-    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    // La date de protection effective est la plus tardive entre (dernière prise - 48h) et la première prise
-    const effectiveProtectionEndDate = isAfter(protectionEndsAt, firstDoseInSession.time) ? protectionEndsAt : firstDoseInSession.time;
+    const protectionDateCalc = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     
-    // N'affiche le message que si la protection est dans le futur
-    if (isAfter(now, effectiveProtectionEndDate)) {
-        protectionEndsAtText = "";
-    } else {
-        // Le message change si moins de 3 prises ont été effectuées
-        const messagePrefix = doseCount < 3
-          ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
-          : "Vos rapports sont protégés jusqu'au";
-        protectionEndsAtText = `${messagePrefix} ${format(effectiveProtectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-    }
+    // Si moins de 3 comprimés pris, la date de protection ne peut pas être antérieure à la première prise.
+    const finalProtectionDate = doseCount < 3 
+      ? new Date(Math.max(protectionDateCalc.getTime(), firstDoseInSession.time.getTime()))
+      : protectionDateCalc;
+
+    const messagePrefix = doseCount < 3
+      ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
+      : "Vos rapports sont protégés jusqu'au";
+      
+    protectionEndsAtText = `${messagePrefix} ${format(finalProtectionDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
@@ -358,7 +373,7 @@ export function usePrepState(): UsePrepStateReturn {
      statusText = 'Session terminée';
   }
 
-  if (!isClient) {
+  if (!isClient || isInitializing) {
     statusText = "Chargement...";
     statusColor = "bg-muted";
   }
