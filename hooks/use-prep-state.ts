@@ -25,8 +25,10 @@ const safelyParseJSON = (jsonString: string | null) => {
   if (!jsonString) return null;
   try {
     const parsed = JSON.parse(jsonString);
-    if (parsed.prises) {
+    if (Array.isArray(parsed.prises)) {
         parsed.prises = parsed.prises.map((d: any) => ({...d, time: new Date(d.time)}));
+    } else {
+        parsed.prises = [];
     }
     return parsed;
   } catch (e) {
@@ -50,40 +52,36 @@ export function usePrepState(): UsePrepStateReturn {
 
   const saveState = useCallback((newState: PrepState) => {
       setState(newState);
-      try {
-        const stateToSave = {
-            ...newState,
-            prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
-        };
-        localStorage.setItem('prepState', JSON.stringify(stateToSave));
-      } catch (e) {
-          console.error("Could not save state to localStorage", e);
+      if (typeof window !== 'undefined') {
+        try {
+            const stateToSave = {
+                ...newState,
+                prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
+            };
+            localStorage.setItem('prepState', JSON.stringify(stateToSave));
+            
+            // Also sync to server if push is enabled
+            const currentSub = subscription;
+            if (newState.pushEnabled && currentSub) {
+                 fetch('/api/tasks/notification', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ subscription: currentSub, state: stateToSave })
+                }).catch(err => console.error("Failed to sync state to server:", err));
+            }
+        } catch (e) {
+            console.error("Could not save state", e);
+        }
       }
-  }, []);
-
-  const updateSubscriptionObject = useCallback(async () => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        const sub = await registration.pushManager.getSubscription();
-        setSubscription(sub);
-        setState(prevState => ({...prevState, pushEnabled: !!sub}));
-      } catch (error) {
-        console.error("Error getting push subscription:", error);
-      }
-    }
-  }, []);
-
+  }, [subscription]);
+  
   const requestNotificationPermission = useCallback(async () => {
     if (!VAPID_PUBLIC_KEY) {
         console.error("VAPID public key not found.");
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
         return false;
     }
-    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-        toast({ title: "Navigateur non compatible", variant: "destructive" });
-        return false;
-    }
+
     try {
         const registration = await navigator.serviceWorker.ready;
         const permission = await Notification.requestPermission();
@@ -98,6 +96,11 @@ export function usePrepState(): UsePrepStateReturn {
                 applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
             });
         }
+        await fetch('/api/subscription', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(sub)
+        });
         setSubscription(sub);
         saveState({...state, pushEnabled: true});
         toast({ title: "Notifications activées!" });
@@ -111,29 +114,45 @@ export function usePrepState(): UsePrepStateReturn {
 
   const unsubscribeFromNotifications = useCallback(async () => {
     if (subscription) {
+      try {
+        await fetch('/api/subscription', {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ endpoint: subscription.endpoint })
+        });
         await subscription.unsubscribe();
         setSubscription(null);
         saveState({...state, pushEnabled: false});
         toast({ title: "Notifications désactivées." });
+      } catch (error) {
+         console.error("Error unsubscribing:", error);
+         toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
+      }
     }
   }, [subscription, toast, state, saveState]);
 
   useEffect(() => {
     setIsClient(true);
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker.js')
-        .then(() => updateSubscriptionObject())
-        .catch(error => console.error('Erreur Service Worker:', error));
-    }
     
     const savedState = safelyParseJSON(localStorage.getItem('prepState'));
     if (savedState) {
         setState(savedState);
     }
     
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(registration => registration.pushManager.getSubscription())
+        .then(sub => {
+            setSubscription(sub);
+            // Sync initial pushEnabled state after getting subscription
+            setState(currentState => ({...currentState, pushEnabled: !!sub}));
+        })
+        .catch(error => console.error('Erreur Service Worker:', error));
+    }
+    
     const timer = setInterval(() => setNow(new Date()), 1000 * 60); // Update "now" every minute
     return () => clearInterval(timer);
-  }, [updateSubscriptionObject]);
+  }, []);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };

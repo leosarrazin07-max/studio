@@ -91,12 +91,6 @@ export function SettingsSheet({
                     <p>Les notifications sont bloquées dans les paramètres de votre navigateur.</p>
                 </div>
             )}
-             {process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ? null : (
-                <div className="flex items-center gap-2 text-xs text-destructive pt-2 border-t border-destructive/20 mt-2">
-                    <AlertTriangle size={14}/>
-                    <p>Fonctionnalité non disponible : configuration serveur manquante.</p>
-                </div>
-            )}
           </div>
         </div>
         <SheetFooter className="absolute bottom-4 right-4 left-4">
