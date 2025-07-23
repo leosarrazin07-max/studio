@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -120,17 +121,22 @@ export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
+  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
 
+
   const saveState = useCallback((updater: (prevState: PrepState) => PrepState) => {
+      console.log("DEBUG: 6. Entrée dans saveState");
       setState(prevState => {
+          console.log("DEBUG: 7. Exécution de l'updater de saveState. État précédent:", prevState);
           const newState = updater(prevState);
-          // In development, just update the state without saving to localStorage to keep mock data consistent.
+          console.log("DEBUG: 8. Nouvel état à sauvegarder:", newState);
+          
           if (process.env.NODE_ENV === 'development') {
+              console.log("DEBUG: 9. Mode développement, mise à jour de l'état local uniquement.");
               return newState;
           }
           
-          // Production logic
           if (typeof window !== 'undefined') {
             try {
                 const stateToSave = {
@@ -138,33 +144,34 @@ export function usePrepState(): UsePrepStateReturn {
                     prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
                 };
                 localStorage.setItem('prepState', JSON.stringify(stateToSave));
+                console.log("DEBUG: 10. État sauvegardé dans le localStorage.");
                 
-                if (newState.pushEnabled) {
-                     navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(sub => {
-                        if (sub) {
-                            fetch('/api/tasks/notification', {
-                                method: 'POST',
-                                headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify({ subscription: sub, state: stateToSave })
-                            }).catch(err => console.error("Failed to sync state to server:", err));
-                        }
-                     });
+                if (newState.pushEnabled && subscription) {
+                     fetch('/api/tasks/notification', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ subscription: subscription, state: stateToSave })
+                    }).then(() => console.log("DEBUG: 11. État synchronisé avec le serveur."))
+                      .catch(err => console.error("DEBUG: Failed to sync state to server:", err));
                 }
             } catch (e) {
-                console.error("Could not save state", e);
+                console.error("DEBUG: Could not save state", e);
             }
           }
           return newState;
       });
-  }, []);
+  }, [subscription]);
   
   const requestNotificationPermission = useCallback(async () => {
+    console.log("DEBUG: 1. Clic sur le bouton, appel de requestNotificationPermission");
     if (!('Notification' in window) || !navigator.serviceWorker) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
         return false;
     }
 
+    console.log("DEBUG: 2. Demande de permission au navigateur...");
     const permission = await Notification.requestPermission();
+    console.log("DEBUG: 3. Permission obtenue:", permission);
     if (permission !== 'granted') {
         toast({ title: "Notifications refusées", variant: "destructive" });
         return false;
@@ -177,53 +184,52 @@ export function usePrepState(): UsePrepStateReturn {
     }
 
     try {
+        console.log("DEBUG: 4. Obtention de l'abonnement push...");
         const registration = await navigator.serviceWorker.ready;
-        let sub = await registration.pushManager.getSubscription();
-        if (!sub) {
-            sub = await registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-            });
-        }
+        const sub = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        });
+        console.log("DEBUG: 5. Abonnement push obtenu:", sub);
+        
         await fetch('/api/subscription', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(sub)
         });
+        
+        setSubscription(sub);
         saveState(prevState => ({...prevState, pushEnabled: true}));
         toast({ title: "Notifications activées!" });
         return true;
     } catch (error) {
-        console.error("Error subscribing:", error);
+        console.error("DEBUG: Erreur lors de l'abonnement:", error);
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
-        saveState(prevState => ({...prevState, pushEnabled: false}));
         return false;
     }
   }, [toast, saveState]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      const sub = await registration.pushManager.getSubscription();
-      if (sub) {
-          await fetch('/api/subscription', {
-              method: 'DELETE',
-              headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ endpoint: sub.endpoint })
-          });
-          await sub.unsubscribe();
+    if (subscription) {
+      try {
+        await fetch('/api/subscription', {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ endpoint: subscription.endpoint })
+        });
+        await subscription.unsubscribe();
+        setSubscription(null);
+        saveState(prevState => ({...prevState, pushEnabled: false}));
+        toast({ title: "Notifications désactivées." });
+      } catch (error) {
+         console.error("Error unsubscribing:", error);
+         toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
       }
-      saveState(prevState => ({...prevState, pushEnabled: false}));
-      toast({ title: "Notifications désactivées." });
-    } catch (error) {
-      console.error("Error unsubscribing:", error);
-      toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
     }
-  }, [saveState, toast]);
+  }, [subscription, toast, saveState]);
 
   useEffect(() => {
     setIsClient(true);
-    // Reload state from localStorage on mount in production.
     if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) setState(savedState);
@@ -233,10 +239,15 @@ export function usePrepState(): UsePrepStateReturn {
         navigator.serviceWorker.ready
         .then(registration => registration.pushManager.getSubscription())
         .then(sub => {
-            // Update state based on whether a subscription exists on load.
-            // This ensures the UI is in sync on app start.
-            if (!!sub !== state.pushEnabled) {
-               setState(currentState => ({ ...currentState, pushEnabled: !!sub }));
+            if (sub) {
+                setSubscription(sub);
+                 if (!state.pushEnabled) {
+                    saveState(prevState => ({ ...prevState, pushEnabled: true }));
+                }
+            } else {
+                 if (state.pushEnabled) {
+                    saveState(prevState => ({ ...prevState, pushEnabled: false }));
+                }
             }
         })
         .catch(error => console.error('Erreur Service Worker:', error));
@@ -244,7 +255,8 @@ export function usePrepState(): UsePrepStateReturn {
     
     const timer = setInterval(() => setNow(new Date()), 1000 * 30);
     return () => clearInterval(timer);
-  }, [state.pushEnabled]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
@@ -368,3 +380,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
