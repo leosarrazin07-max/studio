@@ -7,8 +7,7 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_REMINDER_WINDOW_START_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+import { getVapidKey } from '@/lib/firebase-client';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -45,7 +44,7 @@ const defaultState: PrepState = {
 };
 
 async function syncStateWithServer(state: PrepState) {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !VAPID_PUBLIC_KEY) {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         return;
     }
     const registration = await navigator.serviceWorker.ready;
@@ -95,7 +94,7 @@ export function usePrepState(): UsePrepStateReturn {
   }, []);
 
   const syncPushSubscription = useCallback(async () => {
-    if ('serviceWorker' in navigator && 'PushManager' in window && VAPID_PUBLIC_KEY) {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
       try {
         const registration = await navigator.serviceWorker.ready;
         const subscription = await registration.pushManager.getSubscription();
@@ -140,8 +139,9 @@ export function usePrepState(): UsePrepStateReturn {
 
 
   const togglePushNotifications = useCallback(async () => {
+    const VAPID_PUBLIC_KEY = await getVapidKey();
     if (!VAPID_PUBLIC_KEY) {
-        console.error("VAPID public key not found.");
+        console.error("VAPID public key not found in Remote Config.");
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
         return;
     }
@@ -291,3 +291,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    

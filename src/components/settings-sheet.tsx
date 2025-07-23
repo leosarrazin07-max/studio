@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { BellRing, Trash2, AlertTriangle, BellOff } from "lucide-react";
+import { getVapidKey } from "@/lib/firebase-client";
 
 interface SettingsSheetProps {
   isOpen: boolean;
@@ -33,8 +34,6 @@ interface SettingsSheetProps {
   pushEnabled: boolean;
   onTogglePush: () => void;
 }
-
-const VAPID_KEY_CONFIGURED = !!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
 export function SettingsSheet({
   isOpen,
@@ -45,29 +44,25 @@ export function SettingsSheet({
 }: SettingsSheetProps) {
 
   const [notificationPermission, setNotificationPermission] = useState('default');
+  const [isVapidKeyConfigured, setIsVapidKeyConfigured] = useState(false);
 
   useEffect(() => {
-    if (isOpen && 'Notification' in window) {
-      setNotificationPermission(Notification.permission);
+    if (isOpen) {
+      if ('Notification' in window) {
+        setNotificationPermission(Notification.permission);
+      }
+      getVapidKey().then(key => {
+        setIsVapidKeyConfigured(!!key);
+      });
     }
   }, [isOpen]);
-  
-  useEffect(() => {
-    // If permission is already granted, but push is not enabled in state,
-    // it likely means the user has a subscription but the app state is out of sync.
-    // Let's try to enable it. This can happen on first load.
-    if (notificationPermission === 'granted' && !pushEnabled) {
-       // We don't call onTogglePush directly to avoid an unsubscribe loop
-       // in case there's no active subscription. The main hook will sync the state.
-    }
-  }, [notificationPermission, pushEnabled, onTogglePush]);
 
   const handleClearHistory = () => {
     onClearHistory();
     onOpenChange(false);
   }
 
-  const isSwitchDisabled = !VAPID_KEY_CONFIGURED || notificationPermission === 'denied';
+  const isSwitchDisabled = !isVapidKeyConfigured || notificationPermission === 'denied';
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
@@ -97,7 +92,7 @@ export function SettingsSheet({
                   disabled={isSwitchDisabled}
                 />
             </div>
-             {!VAPID_KEY_CONFIGURED && (
+             {!isVapidKeyConfigured && (
                 <div className="flex items-center gap-2 text-xs text-destructive pt-2 border-t border-destructive/20 mt-2">
                     <AlertTriangle size={14}/>
                     <p>Fonctionnalité non disponible : configuration serveur manquante.</p>
@@ -140,3 +135,5 @@ export function SettingsSheet({
     </Sheet>
   );
 }
+
+    

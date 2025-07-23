@@ -4,26 +4,50 @@ import { firestore } from '@/lib/firebase-admin';
 import webpush from 'web-push';
 import { add, isBefore } from 'date-fns';
 import { DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
+import * as functions from 'firebase-functions/v2';
 
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+// Initialize firebase-functions
+functions.setGlobalOptions({ region: 'europe-west9' });
 
+const getVapidKeys = async () => {
+    try {
+        const vapidKeys = functions.params.defineString('VAPID_KEYS', {
+            description: 'VAPID public and private keys, separated by a pipe (|).',
+            input: {
+                text: {
+                    validationRegex: '.*\\|.*',
+                    validationErrorMessage: 'Keys must be separated by a pipe (|).',
+                },
+            },
+        });
+        
+        const keys = vapidKeys.value();
+        const [publicKey, privateKey] = keys.split('|');
 
-if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
-  console.error("VAPID keys are not defined. Push notifications will not work.");
-} else {
-  webpush.setVapidDetails(
-    'mailto:webmaster@example.com',
-    VAPID_PUBLIC_KEY,
-    VAPID_PRIVATE_KEY
-  );
-}
+        if (!publicKey || !privateKey) {
+            console.error("VAPID keys are not fully configured in Firebase Functions parameters.");
+            return null;
+        }
+        return { publicKey, privateKey };
+    } catch(e) {
+        console.error("Could not retrieve VAPID keys from function parameters. Please configure them in the Google Cloud Console for the function 'VAPID_KEYS'.", e);
+        return null;
+    }
+};
+
 
 // This function is triggered by a cron job (e.g., Google Cloud Scheduler)
 export async function GET() {
-  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+  const vapidKeys = await getVapidKeys();
+  if (!vapidKeys) {
       return NextResponse.json({ success: false, error: 'VAPID keys not configured on server' }, { status: 500 });
   }
+
+  webpush.setVapidDetails(
+    'mailto:webmaster@example.com',
+    vapidKeys.publicKey,
+    vapidKeys.privateKey
+  );
     
   try {
     const subscriptionsSnapshot = await firestore.collection('subscriptions').get();
@@ -108,3 +132,5 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });
     }
 }
+
+    
