@@ -24,7 +24,6 @@ export default function Home() {
     endSession,
     clearHistory,
     pushEnabled,
-    isInitializing,
     isPushLoading,
     requestNotificationPermission,
     unsubscribeFromNotifications,
@@ -143,3 +142,5 @@ export default function Home() {
     </div>
   );
 }
+
+    

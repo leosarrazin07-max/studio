@@ -2,8 +2,8 @@
 import { NextResponse } from 'next/server';
 import { firestore } from '@/lib/firebase-admin';
 import * as webpush from 'web-push';
-import { add, isBefore, isAfter } from 'date-fns';
-import { DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS, LAPSES_AFTER_HOURS } from '@/lib/constants';
+import { add, isAfter, isBefore } from 'date-fns';
+import { DOSE_REMINDER_WINDOW_START_HOURS, LAPSES_AFTER_HOURS } from '@/lib/constants';
 
 if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY || !process.env.VAPID_MAILTO) {
   console.warn('VAPID keys are not configured. Push notifications will not work.');
@@ -31,11 +31,11 @@ export async function GET() {
         const processingPromises: Promise<any>[] = [];
 
         subscriptionsSnapshot.forEach(doc => {
-            const subscription = doc.data();
-            const { state } = subscription; // The state is now stored with the subscription
+            const subscriptionData = doc.data();
+            const { push: subscription, state } = subscriptionData; // The state is now stored with the subscription
 
-            if (!state || !state.sessionActive) {
-                return; // Skip inactive sessions
+            if (!state || !state.sessionActive || !subscription) {
+                return; // Skip inactive sessions or malformed data
             }
             
             const allPrises = state.prises
@@ -60,8 +60,8 @@ export async function GET() {
                 });
                 
                 processingPromises.push(
-                    webpush.sendNotification(subscription.push, payload).catch(error => {
-                        console.error(`Error sending notification to ${subscription.push.endpoint}:`, error);
+                    webpush.sendNotification(subscription, payload).catch(error => {
+                        console.error(`Error sending notification to ${subscription.endpoint}:`, error);
                         // If subscription is expired or invalid, delete it
                         if (error.statusCode === 410 || error.statusCode === 404) {
                             return doc.ref.delete();
@@ -97,10 +97,11 @@ export async function POST(req: Request) {
         const endpointHash = Buffer.from(subscription.endpoint).toString('base64').replace(/=/g, '').replace(/\//g, '_');
         const subscriptionRef = firestore.collection('subscriptions').doc(endpointHash);
 
+        // We store the subscription object and the state together.
         await subscriptionRef.set({
             push: subscription,
             state: state,
-        }, { merge: true }); // Merge to avoid overwriting the push object if only state is sent
+        }, { merge: true });
 
         return NextResponse.json({ success: true, message: 'State synced.' });
 
@@ -112,3 +113,5 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: false, error: 'Unknown error' }, { status: 500 });
     }
 }
+
+    

@@ -7,6 +7,8 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
+import { getRemoteConfig, getString, fetchAndActivate } from "firebase/remote-config";
+import { app } from "@/lib/firebase-client";
 
 // --- MOCK DATA GENERATION FOR DEVELOPMENT ---
 const createMockData = (): PrepState => {
@@ -44,16 +46,27 @@ const createMockData = (): PrepState => {
 };
 // --- END MOCK DATA ---
 
-const getVapidKey = () => {
-    // VAPID key must be provided via environment variables for reliability.
-    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    if (!vapidKey) {
-        console.error("VAPID public key is not set in environment variables (NEXT_PUBLIC_VAPID_PUBLIC_KEY).");
-        return null;
+const getVapidKey = async () => {
+    if (typeof window === "undefined") return null;
+    try {
+        const remoteConfig = getRemoteConfig(app);
+        await fetchAndActivate(remoteConfig);
+        const vapidKey = getString(remoteConfig, "NEXT_PUBLIC_VAPID_PUBLIC_KEY");
+        if (vapidKey) {
+            return vapidKey;
+        }
+    } catch (error) {
+        console.error("Error fetching VAPID key from Remote Config:", error);
     }
-    return vapidKey;
+    
+    // Fallback to environment variable
+    if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+        return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    }
+    
+    console.error("VAPID public key is not set in environment variables or Remote Config.");
+    return null;
 };
-
 
 function urlBase64ToUint8Array(base64String: string) {
   if (typeof window === "undefined") return new Uint8Array(0);
@@ -89,7 +102,7 @@ const defaultState: PrepState = {
     sessionActive: false,
 };
 
-const getInitialState = (): PrepState => {
+const getInitialState = () => {
     if (typeof window === 'undefined') {
         return defaultState;
     }
@@ -104,10 +117,9 @@ const getInitialState = (): PrepState => {
 
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
-  const [isInitializing, setIsInitializing] = useState(true);
-  const [isPushLoading, setIsPushLoading] = useState(true); // Start with loading true
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
+  const [isPushLoading, setIsPushLoading] = useState(true);
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
 
@@ -161,7 +173,7 @@ export function usePrepState(): UsePrepStateReturn {
         return false;
     }
 
-    const vapidPublicKey = getVapidKey();
+    const vapidPublicKey = await getVapidKey();
     if (!vapidPublicKey) {
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
         setIsPushLoading(false);
@@ -217,7 +229,6 @@ export function usePrepState(): UsePrepStateReturn {
 
   useEffect(() => {
     const init = async () => {
-        setIsInitializing(true);
         setIsClient(true);
         if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
             const savedState = safelyParseJSON(localStorage.getItem('prepState'));
@@ -236,7 +247,6 @@ export function usePrepState(): UsePrepStateReturn {
             }
         }
         setIsPushLoading(false); // Push check is complete
-        setIsInitializing(false);
     };
 
     init();
@@ -299,11 +309,11 @@ export function usePrepState(): UsePrepStateReturn {
   if (isClient && lastDose && firstDoseInSession) {
     const protectionEndDateCalc = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     
-    const finalProtectionDate = allPrises.length < 3 
+    const finalProtectionDate = state.prises.length < 3
       ? new Date(Math.max(protectionEndDateCalc.getTime(), firstDoseInSession.time.getTime()))
       : protectionEndDateCalc;
 
-    const messagePrefix = allPrises.length < 3 
+    const messagePrefix = state.prises.length < 3 
       ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
       : "Vos rapports sont protégés jusqu'au";
       
@@ -354,13 +364,9 @@ export function usePrepState(): UsePrepStateReturn {
      status = 'inactive';
      statusColor = 'bg-gray-500';
      statusText = 'Session terminée';
-     if(protectionEndsAtText === '') {
-        const protectionEndDateCalc = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndDateCalc, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-     }
   }
 
-  if (!isClient || isInitializing) {
+  if (!isClient) {
     statusText = "Chargement...";
     statusColor = "bg-muted";
   }
@@ -370,9 +376,8 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
-    isInitializing,
-    isPushLoading,
     pushEnabled: !!subscription,
+    isPushLoading,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
@@ -390,3 +395,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
