@@ -51,7 +51,6 @@ const getVapidKey = async () => {
     if (typeof window === "undefined") return null;
     try {
         const remoteConfig = getRemoteConfig(app);
-        // This is crucial: we must fetch and activate to get the latest values.
         await fetchAndActivate(remoteConfig);
         const vapidKey = getString(remoteConfig, "NEXT_PUBLIC_VAPID_PUBLIC_KEY");
         if (vapidKey) {
@@ -189,8 +188,7 @@ export function usePrepState(): UsePrepStateReturn {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(sub)
         });
-        setSubscription(sub);
-        saveState({...state, pushEnabled: true});
+        setSubscription(sub); // This will trigger the useEffect below
         toast({ title: "Notifications activées!" });
         return true;
     } catch (error) {
@@ -198,7 +196,7 @@ export function usePrepState(): UsePrepStateReturn {
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
         return false;
     }
-  }, [toast, state, saveState]);
+  }, [toast]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
     if (subscription) {
@@ -209,15 +207,23 @@ export function usePrepState(): UsePrepStateReturn {
             body: JSON.stringify({ endpoint: subscription.endpoint })
         });
         await subscription.unsubscribe();
-        setSubscription(null);
-        saveState({...state, pushEnabled: false});
+        setSubscription(null); // This will trigger the useEffect below
         toast({ title: "Notifications désactivées." });
       } catch (error) {
          console.error("Error unsubscribing:", error);
          toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
       }
     }
-  }, [subscription, toast, state, saveState]);
+  }, [subscription, toast]);
+  
+  // This useEffect ensures saveState is called only after the subscription state has been updated.
+  useEffect(() => {
+    if (isClient) { // Only run after initial client-side mount
+        saveState({...state, pushEnabled: !!subscription });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subscription, isClient]);
+
 
   useEffect(() => {
     setIsClient(true);
@@ -233,7 +239,6 @@ export function usePrepState(): UsePrepStateReturn {
         .then(sub => {
             if (sub) {
                 setSubscription(sub);
-                setState(prevState => ({ ...prevState, pushEnabled: true }));
             }
         })
         .catch(error => console.error('Erreur Service Worker:', error));
@@ -366,3 +371,4 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
