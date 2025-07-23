@@ -56,12 +56,18 @@ export function PrepDashboard({
         return <p className="text-white/80">{protectionStartsIn}</p>;
       case 'effective':
         return (
-          <>
+          <div className="text-center">
             <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>
-          </>
+            {protectionEndsAtText && <p className="text-xs text-white/80 mt-1">{protectionEndsAtText}</p>}
+          </div>
         );
       case 'missed':
-        return <p className="text-white/90 font-medium">Prenez une prise dès que possible.</p>;
+        return (
+          <div className="text-center">
+            <p className="text-white/90 font-medium">Prenez une prise dès que possible.</p>
+            {protectionEndsAtText && <p className="text-xs text-white/80 mt-1">{protectionEndsAtText}</p>}
+          </div>
+        );
       case 'inactive':
          return <p className="text-sm text-white/90 font-medium">{protectionEndsAtText}</p>;
       default:
@@ -129,7 +135,7 @@ export function PrepDashboard({
         </CardContent>
       </Card>
       
-      {protectionEndsAtText && (
+      {sessionActive && (
         <div className="bg-blue-50 border-l-4 border-primary p-4 rounded-md">
             <div className="flex">
                 <div className="flex-shrink-0">
@@ -137,7 +143,7 @@ export function PrepDashboard({
                 </div>
                 <div className="ml-3">
                     <p className="text-sm text-primary/90">
-                       {protectionEndsAtText}
+                       Pour arrêter la PrEP, continuez de prendre un comprimé par jour pendant les 2 jours qui suivent votre dernier rapport.
                     </p>
                 </div>
             </div>
