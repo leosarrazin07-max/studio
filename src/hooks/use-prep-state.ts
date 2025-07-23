@@ -124,15 +124,12 @@ export function usePrepState(): UsePrepStateReturn {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<PrepState>(getInitialState);
 
-
   const saveState = useCallback((newState: PrepState) => {
-      // In development, just update the state without saving to localStorage to keep mock data consistent.
       if (process.env.NODE_ENV === 'development') {
           setState(newState);
           return;
       }
       
-      // Production logic
       setState(newState);
       if (typeof window !== 'undefined') {
         try {
@@ -229,7 +226,6 @@ export function usePrepState(): UsePrepStateReturn {
   useEffect(() => {
     const init = async () => {
         setIsClient(true);
-        // Reload state from localStorage on mount in production.
         if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
             const savedState = safelyParseJSON(localStorage.getItem('prepState'));
             if (savedState) setState(savedState);
@@ -237,7 +233,6 @@ export function usePrepState(): UsePrepStateReturn {
 
         if ('serviceWorker' in navigator) {
             try {
-                // We wait for the service worker to be ready before checking for a subscription.
                 const registration = await navigator.serviceWorker.ready;
                 const sub = await registration.pushManager.getSubscription();
                 if (sub) {
@@ -247,16 +242,14 @@ export function usePrepState(): UsePrepStateReturn {
                 console.error('Erreur Service Worker:', error);
             }
         }
-        // Mark initialization as complete
         setIsInitializing(false);
     };
 
     init();
     
-    // Set up a timer to update the 'now' state every 30 seconds to refresh relative times.
     const timer = setInterval(() => setNow(new Date()), 1000 * 30);
     return () => clearInterval(timer);
-  }, []); // Empty dependency array means this runs only once on mount.
+  }, []);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
@@ -305,11 +298,14 @@ export function usePrepState(): UsePrepStateReturn {
 
   if (isClient && lastDose && firstDoseInSession) {
     const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    // La date de protection effective est la plus tardive entre (dernière prise + 48h) et la première prise
     const effectiveProtectionEndDate = isAfter(protectionEndsAt, firstDoseInSession.time) ? protectionEndsAt : firstDoseInSession.time;
     
+    // N'affiche le message que si la protection est dans le futur
     if (isAfter(now, effectiveProtectionEndDate)) {
         protectionEndsAtText = "";
     } else {
+        // Le message change si moins de 3 prises ont été effectuées
         const messagePrefix = doseCount < 3
           ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
           : "Vos rapports sont protégés jusqu'au";
