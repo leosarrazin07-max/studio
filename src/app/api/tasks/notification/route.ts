@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import { firestore } from '@/lib/firebase-admin';
 import * as webpush from 'web-push';
-import { add, isAfter, isBefore } from 'date-fns';
+import { add, isAfter, isBefore, sub } from 'date-fns';
 import { DOSE_REMINDER_WINDOW_START_HOURS, LAPSES_AFTER_HOURS } from '@/lib/constants';
 
 if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY || !process.env.VAPID_MAILTO) {

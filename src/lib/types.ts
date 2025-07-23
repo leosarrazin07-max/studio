@@ -35,4 +35,12 @@ export interface UsePrepStateReturn extends PrepState {
   protectionEndsAtText: string;
 }
 
+export interface PrepCalculatorResult {
+  status: PrepStatus;
+  statusColor: string;
+  statusText: string;
+  nextDoseIn: string;
+  protectionStartsIn: string;
+  protectionEndsAtText: string;
+}
     
