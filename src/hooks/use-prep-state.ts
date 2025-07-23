@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -104,7 +103,7 @@ const defaultState: PrepState = {
     pushEnabled: false,
 };
 
-const getInitialState = () => {
+const getInitialState = (): PrepState => {
     if (typeof window === 'undefined') {
         return defaultState;
     }
@@ -123,39 +122,40 @@ export function usePrepState(): UsePrepStateReturn {
   const { toast } = useToast();
   const [state, setState] = useState<PrepState>(getInitialState);
 
-
-  const saveState = useCallback((newState: PrepState) => {
-      // In development, just update the state without saving to localStorage to keep mock data consistent.
-      if (process.env.NODE_ENV === 'development') {
-          setState(newState);
-          return;
-      }
-      
-      // Production logic
-      setState(newState);
-      if (typeof window !== 'undefined') {
-        try {
-            const stateToSave = {
-                ...newState,
-                prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
-            };
-            localStorage.setItem('prepState', JSON.stringify(stateToSave));
-            
-            if (newState.pushEnabled) {
-                 navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(sub => {
-                    if (sub) {
-                        fetch('/api/tasks/notification', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({ subscription: sub, state: stateToSave })
-                        }).catch(err => console.error("Failed to sync state to server:", err));
-                    }
-                 });
+  const saveState = useCallback((updater: (prevState: PrepState) => PrepState) => {
+      setState(prevState => {
+          const newState = updater(prevState);
+          // In development, just update the state without saving to localStorage to keep mock data consistent.
+          if (process.env.NODE_ENV === 'development') {
+              return newState;
+          }
+          
+          // Production logic
+          if (typeof window !== 'undefined') {
+            try {
+                const stateToSave = {
+                    ...newState,
+                    prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
+                };
+                localStorage.setItem('prepState', JSON.stringify(stateToSave));
+                
+                if (newState.pushEnabled) {
+                     navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(sub => {
+                        if (sub) {
+                            fetch('/api/tasks/notification', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ subscription: sub, state: stateToSave })
+                            }).catch(err => console.error("Failed to sync state to server:", err));
+                        }
+                     });
+                }
+            } catch (e) {
+                console.error("Could not save state", e);
             }
-        } catch (e) {
-            console.error("Could not save state", e);
-        }
-      }
+          }
+          return newState;
+      });
   }, []);
   
   const requestNotificationPermission = useCallback(async () => {
@@ -190,36 +190,36 @@ export function usePrepState(): UsePrepStateReturn {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(sub)
         });
-        saveState({...state, pushEnabled: true});
+        saveState(prevState => ({...prevState, pushEnabled: true}));
         toast({ title: "Notifications activées!" });
         return true;
     } catch (error) {
         console.error("Error subscribing:", error);
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
-        saveState({...state, pushEnabled: false});
+        saveState(prevState => ({...prevState, pushEnabled: false}));
         return false;
     }
-  }, [state, saveState, toast]);
+  }, [toast, saveState]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        const sub = await registration.pushManager.getSubscription();
-        if (sub) {
-            await fetch('/api/subscription', {
-                method: 'DELETE',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ endpoint: sub.endpoint })
-            });
-            await sub.unsubscribe();
-        }
-        saveState({...state, pushEnabled: false});
-        toast({ title: "Notifications désactivées." });
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const sub = await registration.pushManager.getSubscription();
+      if (sub) {
+          await fetch('/api/subscription', {
+              method: 'DELETE',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ endpoint: sub.endpoint })
+          });
+          await sub.unsubscribe();
+      }
+      saveState(prevState => ({...prevState, pushEnabled: false}));
+      toast({ title: "Notifications désactivées." });
     } catch (error) {
-        console.error("Error unsubscribing:", error);
-        toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
+      console.error("Error unsubscribing:", error);
+      toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
     }
-  }, [state, saveState, toast]);
+  }, [saveState, toast]);
 
   useEffect(() => {
     setIsClient(true);
@@ -248,22 +248,25 @@ export function usePrepState(): UsePrepStateReturn {
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
-    const newPrises = [newDose];
-    saveState({ ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled });
-  }, [saveState, state.pushEnabled]);
+    saveState(prevState => ({ ...defaultState, prises: [newDose], sessionActive: true, pushEnabled: prevState.pushEnabled }));
+  }, [saveState]);
 
   const addDose = useCallback((prise: { time: Date; pills: number }) => {
     const newDose = { ...prise, type: 'dose' as const, id: new Date().toISOString() };
-    const newPrises = [...state.prises, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
-    saveState({ ...state, prises: newPrises });
-  }, [state, saveState]);
+    saveState(prevState => {
+        const newPrises = [...prevState.prises, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
+        return { ...prevState, prises: newPrises };
+    });
+  }, [saveState]);
 
   const endSession = useCallback(() => {
     const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
-    const updatedDoses = [...state.prises, stopEvent];
-    saveState({ ...state, sessionActive: false, prises: updatedDoses });
+    saveState(prevState => {
+        const updatedDoses = [...prevState.prises, stopEvent];
+        return { ...prevState, sessionActive: false, prises: updatedDoses };
+    });
     toast({ title: "Session terminée", description: "Les rappels de notification sont maintenant arrêtés." });
-  }, [state, saveState, toast]);
+  }, [saveState, toast]);
 
   const clearHistory = useCallback(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -272,13 +275,9 @@ export function usePrepState(): UsePrepStateReturn {
         return;
     }
     
-    if (typeof window !== 'undefined') {
-        localStorage.removeItem('prepState');
-    }
-    // We keep the pushEnabled state as it's tied to browser permission, not user data
-    saveState({ ...defaultState, prises: [], sessionActive: false, pushEnabled: state.pushEnabled });
+    saveState(prevState => ({ ...defaultState, prises: [], sessionActive: false, pushEnabled: prevState.pushEnabled }));
     toast({ title: "Données effacées", description: "Votre historique de prises a été supprimé." });
-  }, [state.pushEnabled, saveState, toast]);
+  }, [saveState, toast]);
 
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
   const lastDose = allPrises[0] ?? null;
