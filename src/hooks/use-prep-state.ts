@@ -125,37 +125,35 @@ export function usePrepState(): UsePrepStateReturn {
   const [state, setState] = useState<PrepState>(getInitialState);
   const [isPushLoading, setIsPushLoading] = useState(false);
 
-
   const saveState = useCallback((updater: (prevState: PrepState) => PrepState) => {
-      setState(prevState => {
-          const newState = updater(prevState);
-          
-          if (process.env.NODE_ENV === 'development') {
-              return newState;
+    setState(prevState => {
+        const newState = updater(prevState);
+        
+        if (process.env.NODE_ENV === 'development') {
+            return newState;
+        }
+        
+        if (typeof window !== 'undefined') {
+          try {
+              const stateToSave = {
+                  ...newState,
+                  prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
+              };
+              localStorage.setItem('prepState', JSON.stringify(stateToSave));
+              
+              if (newState.pushEnabled && subscription) {
+                   fetch('/api/tasks/notification', {
+                      method: 'POST',
+                      headers: {'Content-Type': 'application/json'},
+                      body: JSON.stringify({ subscription: subscription, state: stateToSave })
+                  }).catch(err => console.error("Failed to sync state to server:", err));
+              }
+          } catch (e) {
+              console.error("Could not save state", e);
           }
-          
-          if (typeof window !== 'undefined') {
-            try {
-                const stateToSave = {
-                    ...newState,
-                    prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
-                };
-                localStorage.setItem('prepState', JSON.stringify(stateToSave));
-                
-                // Use the subscription object from the component's state directly
-                if (newState.pushEnabled && subscription) {
-                     fetch('/api/tasks/notification', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ subscription: subscription, state: stateToSave })
-                    }).catch(err => console.error("Failed to sync state to server:", err));
-                }
-            } catch (e) {
-                console.error("Could not save state", e);
-            }
-          }
-          return newState;
-      });
+        }
+        return newState;
+    });
   }, [subscription]);
   
   const requestNotificationPermission = useCallback(async () => {
@@ -198,7 +196,6 @@ export function usePrepState(): UsePrepStateReturn {
     } catch (error) {
         console.error("Error subscribing:", error);
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
-        // Restore previous state in case of error
         saveState(prevState => ({...prevState, pushEnabled: false}));
     } finally {
         setIsPushLoading(false);
@@ -238,9 +235,10 @@ export function usePrepState(): UsePrepStateReturn {
         navigator.serviceWorker.ready
         .then(registration => registration.pushManager.getSubscription())
         .then(sub => {
-            setSubscription(sub);
-            // Sync state with subscription status on load
-            saveState(prevState => ({ ...prevState, pushEnabled: !!sub }));
+            if (sub) {
+                setSubscription(sub);
+                saveState(prevState => ({ ...prevState, pushEnabled: !!sub }));
+            }
         })
         .catch(error => console.error('Erreur Service Worker:', error));
     }
@@ -296,7 +294,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
