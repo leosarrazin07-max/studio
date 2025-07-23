@@ -53,7 +53,7 @@ export function SettingsSheet({
           <div className="flex flex-col gap-3 p-4 rounded-lg border">
               <div className="flex items-start gap-3 text-sm text-muted-foreground">
                   <BellOff className="h-5 w-5 mt-0.5 shrink-0"/>
-                  <p>Si vous avez refusé les notifications et souhaitez les réactiver, vous devez vider le cache et les données de ce site dans les paramètres de votre navigateur, puis recharger l'application.</p>
+                  <p>Si vous avez activé les notifications en vous connectant à l'app la première fois alors celles-ci sont actives. Si vous les avez refusées et souhaitez les réactiver, vous devez vider le cache et les données de ce site dans les paramètres de votre navigateur, puis recharger l'application.</p>
               </div>
           </div>
         </div>
