@@ -160,21 +160,21 @@ export function usePrepState(): UsePrepStateReturn {
     if (!('Notification' in window) || !navigator.serviceWorker) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
         setIsPushLoading(false);
-        return;
+        return false;
     }
 
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
         toast({ title: "Notifications refusées", variant: "destructive" });
         setIsPushLoading(false);
-        return;
+        return false;
     }
 
     const vapidPublicKey = await getVapidKey();
     if (!vapidPublicKey) {
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
         setIsPushLoading(false);
-        return;
+        return false;
     }
 
     try {
@@ -193,11 +193,13 @@ export function usePrepState(): UsePrepStateReturn {
         });
         setSubscription(sub);
         toast({ title: "Notifications activées!" });
+        setIsPushLoading(false);
+        return true;
     } catch (error) {
         console.error("Error subscribing:", error);
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
-    } finally {
         setIsPushLoading(false);
+        return false;
     }
   }, [toast]);
 
@@ -242,6 +244,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   useEffect(() => {
     const init = async () => {
+        setIsInitializing(true);
         setIsClient(true);
         if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
             const savedState = safelyParseJSON(localStorage.getItem('prepState'));
@@ -303,7 +306,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
   const lastDose = allPrises[0] ?? null;
-  const doseCount = allPrises.reduce((acc, prise) => acc + prise.pills, 0);
+  const doseCount = allPrises.length;
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
   let status: PrepStatus = 'inactive';
@@ -314,12 +317,12 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose && firstDoseInSession) {
-    const protectionDateCalc = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    
-    // Si moins de 3 comprimés pris, la date de protection ne peut pas être antérieure à la première prise.
-    const finalProtectionDate = doseCount < 3 
-      ? new Date(Math.max(protectionDateCalc.getTime(), firstDoseInSession.time.getTime()))
-      : protectionDateCalc;
+    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+
+    // Si moins de 3 prises, la date de protection ne peut pas être antérieure à la première prise.
+    const finalProtectionDate = doseCount < 3
+      ? new Date(Math.max(protectionEndsAt.getTime(), firstDoseInSession.time.getTime()))
+      : protectionEndsAt;
 
     const messagePrefix = doseCount < 3
       ? "Si vous continuez les prises, vos rapports seront protégés jusqu'au"
@@ -403,5 +406,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
