@@ -7,7 +7,17 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, LAPSES_AFTER_HOURS, MAX_HISTORY_DAYS, DOSE_INTERVAL_HOURS, FINAL_PROTECTION_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { getVapidKey } from '@/lib/firebase-client';
+
+const getVapidKey = async () => {
+    if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+        return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    }
+    // In a real app, you might fetch this from a secure endpoint or use Remote Config.
+    // For this example, we assume it's in env vars.
+    console.error("VAPID public key is not set in environment variables.");
+    return null; 
+};
+
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -42,6 +52,45 @@ const defaultState: PrepState = {
     pushEnabled: false,
 };
 
+// --- MOCK DATA GENERATION FOR DEVELOPMENT ---
+const createMockData = (): PrepState => {
+    const mockPrises: Prise[] = [];
+    const now = new Date();
+    let lastDoseTime = sub(now, { days: 10, hours: 12 }); // Start 10.5 days ago
+
+    // Initial dose
+    mockPrises.push({
+        time: lastDoseTime,
+        pills: 2,
+        type: 'start',
+        id: `mock_${mockPrises.length}`
+    });
+
+    // Subsequent 9 doses
+    for (let i = 0; i < 9; i++) {
+        // Add between 23 and 25 hours to the last dose
+        const hoursToAdd = 23 + Math.random() * 2;
+        const minutesToAdd = Math.random() * 60;
+        const nextDoseTime = add(lastDoseTime, { hours: Math.floor(hoursToAdd), minutes: Math.floor(minutesToAdd) });
+        
+        mockPrises.push({
+            time: nextDoseTime,
+            pills: 1,
+            type: 'dose',
+            id: `mock_${mockPrises.length}`
+        });
+        lastDoseTime = nextDoseTime;
+    }
+
+    return {
+        prises: mockPrises,
+        sessionActive: true,
+        pushEnabled: false,
+    };
+};
+// --- END MOCK DATA ---
+
+
 export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
@@ -50,6 +99,11 @@ export function usePrepState(): UsePrepStateReturn {
   const [state, setState] = useState<PrepState>(defaultState);
 
   const saveState = useCallback((newState: PrepState) => {
+      // Don't save mock data to localStorage
+      if (process.env.NODE_ENV === 'development' && newState.prises.some(p => p.id.startsWith('mock_'))) {
+          setState(newState);
+          return;
+      }
       setState(newState);
       if (typeof window !== 'undefined') {
         try {
@@ -59,7 +113,6 @@ export function usePrepState(): UsePrepStateReturn {
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
             
-            // Also sync to server if push is enabled
             const currentSub = subscription;
             if (newState.pushEnabled && currentSub) {
                  fetch('/api/tasks/notification', {
@@ -79,7 +132,6 @@ export function usePrepState(): UsePrepStateReturn {
 
     const vapidPublicKey = await getVapidKey();
     if (!vapidPublicKey) {
-        console.error("VAPID public key not found.");
         toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
         return false;
     }
@@ -141,9 +193,14 @@ export function usePrepState(): UsePrepStateReturn {
     
     if (typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-        if (savedState) {
+        
+        // --- INJECT MOCK DATA IN DEV MODE ---
+        if (process.env.NODE_ENV === 'development' && (!savedState || savedState.prises.length === 0)) {
+            setState(createMockData());
+        } else if (savedState) {
             setState(savedState);
         }
+        // --- END INJECTION ---
     
         if ('serviceWorker' in navigator) {
           navigator.serviceWorker.register('/service-worker.js')
@@ -151,14 +208,15 @@ export function usePrepState(): UsePrepStateReturn {
             .then(sub => {
                 if (sub) {
                     setSubscription(sub);
-                    setState(currentState => ({...currentState, pushEnabled: true}));
+                    // Update state without overwriting the entire state
+                    setState(currentState => ({...currentState, pushEnabled: !!sub}));
                 }
             })
             .catch(error => console.error('Erreur Service Worker:', error));
         }
     }
     
-    const timer = setInterval(() => setNow(new Date()), 1000 * 30); // Update "now" every 30s for minutes
+    const timer = setInterval(() => setNow(new Date()), 1000 * 30);
     return () => clearInterval(timer);
   }, []);
 
@@ -215,14 +273,19 @@ export function usePrepState(): UsePrepStateReturn {
       statusColor = 'bg-accent';
       statusText = 'Protection active';
       
-      const duration = intervalToDuration({ start: now, end: nextDoseDueTime });
-      const totalHours = Math.floor((nextDoseDueTime.getTime() - now.getTime()) / (1000 * 60 * 60));
-      const totalMinutes = Math.floor(((nextDoseDueTime.getTime() - now.getTime()) / (1000 * 60)) % 60);
+      const milliseconds = nextDoseDueTime.getTime() - now.getTime();
+      const totalHours = Math.floor(milliseconds / (1000 * 60 * 60));
+      const totalMinutes = Math.floor((milliseconds / (1000 * 60)) % 60);
 
       let timeParts = [];
       if (totalHours > 0) timeParts.push(`${totalHours}h`);
       if (totalMinutes > 0) timeParts.push(`${totalMinutes}min`);
-      nextDoseIn = `Prochaine prise dans ${timeParts.join(' ')}`;
+      
+      if (timeParts.length > 0) {
+        nextDoseIn = `Prochaine prise dans ${timeParts.join(' ')}`;
+      } else {
+        nextDoseIn = `Prochaine prise imminente`;
+      }
       
       const protectionEndsAt = add(lastDoseTime, { hours: FINAL_PROTECTION_HOURS });
       protectionEndsAtText = `Protection assurée jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
@@ -271,5 +334,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
