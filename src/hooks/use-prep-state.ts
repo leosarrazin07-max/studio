@@ -281,8 +281,8 @@ export function usePrepState(): UsePrepStateReturn {
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
   }, [subscription, toast]);
 
-  const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
-  const lastDose = allPrises[0] ?? null;
+  const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => a.time.getTime() - b.time.getTime());
+  const lastDose = allPrises.length > 0 ? allPrises[allPrises.length - 1] : null;
   
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
