@@ -140,7 +140,7 @@ export function usePrepState(): UsePrepStateReturn {
         const messaging = getMessaging(app);
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
         if (!vapidKey) {
-            console.error("VAPID public key not found in environment variables.");
+            console.error("VAPID public key not found in environment variables. Make sure it's set in .env.local");
             toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
             setIsPushLoading(false);
             return false;
