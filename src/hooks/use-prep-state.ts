@@ -251,7 +251,7 @@ export function usePrepState(): UsePrepStateReturn {
 
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [state.fcmToken]);
   
   useEffect(() => {
     // This effect runs only once on the client to load the state from localStorage
