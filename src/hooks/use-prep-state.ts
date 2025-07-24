@@ -146,9 +146,8 @@ export function usePrepState(): UsePrepStateReturn {
             setIsPushLoading(false);
             return false;
         }
-        
-        const serviceWorkerRegistration = await navigator.serviceWorker.ready;
-        const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration });
+
+        const fcmToken = await getToken(messaging, { vapidKey });
 
         if (fcmToken) {
             saveState({...state, pushEnabled: true, fcmToken });
@@ -205,8 +204,7 @@ export function usePrepState(): UsePrepStateReturn {
               if (!state.fcmToken) {
                 const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
                 if (vapidKey) {
-                  const serviceWorkerRegistration = await navigator.serviceWorker.ready;
-                  const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration });
+                  const fcmToken = await getToken(messaging, { vapidKey });
                   if (fcmToken) {
                     // Update state without triggering a full save, just set token
                     setState(prevState => ({ ...prevState, fcmToken, pushEnabled: true })); 
@@ -395,3 +393,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
