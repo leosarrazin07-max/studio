@@ -186,6 +186,10 @@ export function usePrepState(): UsePrepStateReturn {
     setIsClient(true);
     // On mount, check notification status and set token if already granted
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+            setIsPushLoading(false);
+            return;
+        }
         const messaging = getMessaging(app);
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
         if(vapidKey) {
@@ -203,14 +207,18 @@ export function usePrepState(): UsePrepStateReturn {
     
     // Listen for incoming messages when the app is in the foreground
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-      const messaging = getMessaging(app);
-      onMessage(messaging, (payload) => {
-        console.log("Message received. ", payload);
-        toast({
-          title: payload.notification?.title,
-          description: payload.notification?.body,
+      try {
+        const messaging = getMessaging(app);
+        onMessage(messaging, (payload) => {
+          console.log("Message received. ", payload);
+          toast({
+            title: payload.notification?.title,
+            description: payload.notification?.body,
+          });
         });
-      });
+      } catch (err) {
+        console.error("Error getting messaging instance:", err)
+      }
     }
 
     const timer = setInterval(() => setNow(new Date()), 1000);
