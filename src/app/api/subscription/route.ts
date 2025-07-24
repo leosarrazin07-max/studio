@@ -1,6 +1,7 @@
 
 import { NextResponse } from 'next/server';
 import { firestore } from '@/lib/firebase-admin';
+import * as admin from 'firebase-admin';
 
 // Saves or updates a session document with the FCM token and state
 export async function POST(request: Request) {
@@ -14,15 +15,21 @@ export async function POST(request: Request) {
 
     const sessionRef = firestore.collection('prepSessions').doc(token);
     
+    // Make sure we have a valid state object
+    if (!state || !Array.isArray(state.prises)) {
+        return NextResponse.json({ error: 'Valid state object is required.' }, { status: 400 });
+    }
+
     const dataToSave = {
         fcmToken: token,
         sessionActive: state.sessionActive,
         // Convert date strings back to Firestore Timestamps
-        prises: state.prises.map((p: any) => ({ ...p, time: new Date(p.time) })),
-        // This will be set by the cloud function
+        prises: state.prises.map((p: any) => ({ ...p, time: admin.firestore.Timestamp.fromDate(new Date(p.time)) })),
+        // This will be set by the cloud function when a notification is sent
         lastNotifiedAt: null 
     };
 
+    // Use set with merge to create or update the document
     await sessionRef.set(dataToSave, { merge: true });
 
     return NextResponse.json({ success: true });
