@@ -12,6 +12,7 @@ admin.initializeApp();
 const db = admin.firestore();
 const messaging = admin.messaging();
 const LOCATION = "europe-west9";
+// IMPORTANT: The function name must match the exported name in this file.
 const queue = getFunctions().taskQueue("sendReminder", LOCATION);
 
 
@@ -38,12 +39,6 @@ export const onDoseLogged = functions.region(LOCATION).firestore
     const session = change.after.data() as PrepStateDocument;
     const { sessionId } = context.params;
 
-    // First, let's cancel any previously scheduled notifications for this session
-    // to avoid duplicate reminders. The Task Queue API doesn't have a simple
-    // "cancel by tag" feature, so we rely on naming tasks predictively.
-    // For this app, we assume one reminder per session is enough.
-    // A more complex app might store task names in Firestore.
-
     if (!session.sessionActive || !session.fcmToken || session.prises.length === 0) {
         functions.logger.log(`Session ${sessionId} is inactive or has no token/doses. No reminder will be scheduled.`);
         return null;
@@ -69,9 +64,9 @@ export const onDoseLogged = functions.region(LOCATION).firestore
             { fcmToken: session.fcmToken },
             {
                 scheduleDelaySeconds,
-                // Use a stable name to effectively "cancel" and replace any pending task for this session.
-                // If a task with this name already exists, it will be replaced.
-                uri: `https://us-central1-prepy-33a65.cloudfunctions.net/sendReminder`, // TODO: Get this dynamically
+                // The URI should point to the sendReminder function in the correct region.
+                // It's constructed dynamically from environment variables provided by Firebase.
+                uri: `https://${LOCATION}-${process.env.GCLOUD_PROJECT}.cloudfunctions.net/sendReminder`,
             }
         );
         functions.logger.log(`Reminder scheduled for token ${session.fcmToken} in ${scheduleDelaySeconds} seconds.`);
@@ -114,19 +109,27 @@ export const sendReminder = functions.region(LOCATION).https.onRequest(async (re
     try {
         await messaging.send(payload);
         functions.logger.log("Successfully sent reminder to", fcmToken);
-        // Update the user's document to prevent re-notification within the same window
-        await db.collection("prepSessions").doc(fcmToken).update({
+        
+        // Find the document by FCM token and update it.
+        const sessionRef = db.collection("prepSessions").doc(fcmToken);
+        // We only update lastNotifiedAt here, as sending a notification shouldn't alter the core session state.
+        await sessionRef.update({
             lastNotifiedAt: admin.firestore.Timestamp.now()
         });
+        
         res.status(200).send("Reminder sent.");
     } catch (error) {
         functions.logger.error("Error sending reminder to", fcmToken, error);
-        // If the token is invalid, delete the session document
+        
         const firebaseError = error as functions.https.HttpsError;
+        // Check for a specific error code that indicates an invalid or unregistered token
         if (firebaseError.code === "messaging/registration-token-not-registered") {
+            // The token is no longer valid, probably because the user uninstalled the app or cleared data.
+            // We should delete the session document to clean up.
             await db.collection("prepSessions").doc(fcmToken).delete();
-            functions.logger.log("Deleted invalid token:", fcmToken);
+            functions.logger.log("Deleted document for invalid token:", fcmToken);
         }
+        
         res.status(500).send("Error sending notification.");
     }
 });
