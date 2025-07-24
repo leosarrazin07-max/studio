@@ -21,18 +21,28 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Trash2, BellOff } from "lucide-react";
+import { Trash2, Bell, BellOff, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 interface SettingsSheetProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onClearHistory: () => void;
+  pushEnabled: boolean;
+  isPushLoading: boolean;
+  requestNotificationPermission: () => void;
+  unsubscribeFromNotifications: () => void;
 }
 
 export function SettingsSheet({
   isOpen,
   onOpenChange,
   onClearHistory,
+  pushEnabled,
+  isPushLoading,
+  requestNotificationPermission,
+  unsubscribeFromNotifications
 }: SettingsSheetProps) {
 
   const handleClearHistory = () => {
@@ -40,21 +50,41 @@ export function SettingsSheet({
     onOpenChange(false);
   }
 
+  const handleNotificationsToggle = () => {
+    if (pushEnabled) {
+      unsubscribeFromNotifications();
+    } else {
+      requestNotificationPermission();
+    }
+  };
+
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
       <SheetContent>
         <SheetHeader>
           <SheetTitle>Paramètres</SheetTitle>
           <SheetDescription>
-            Gérez vos données personnelles.
+            Gérez vos données et préférences.
           </SheetDescription>
         </SheetHeader>
         <div className="grid gap-6 py-8">
           <div className="flex flex-col gap-3 p-4 rounded-lg border">
-              <div className="flex items-start gap-3 text-sm text-muted-foreground">
-                  <BellOff className="h-5 w-5 mt-0.5 shrink-0"/>
-                  <p>Si vous avez activé les notifications en vous connectant à l'app la première fois alors celles-ci sont actives. Si vous les avez refusées et souhaitez les réactiver, vous devez vider le cache et les données de ce site dans les paramètres de votre navigateur, puis recharger l'application.</p>
+              <h3 className="font-semibold text-lg">Notifications</h3>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="notifications-switch"
+                  checked={pushEnabled}
+                  onCheckedChange={handleNotificationsToggle}
+                  disabled={isPushLoading}
+                />
+                <Label htmlFor="notifications-switch" className="flex items-center">
+                  {isPushLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (pushEnabled ? <Bell className="mr-2 h-4 w-4" /> : <BellOff className="mr-2 h-4 w-4" />)}
+                  {isPushLoading ? 'Chargement...' : (pushEnabled ? 'Notifications activées' : 'Notifications désactivées')}
+                </Label>
               </div>
+              <p className="text-sm text-muted-foreground">
+                Si vous avez refusé les notifications, vous devrez peut-être les autoriser manuellement dans les paramètres de votre navigateur pour ce site.
+              </p>
           </div>
         </div>
         <SheetFooter className="absolute bottom-4 right-4 left-4">
@@ -78,7 +108,7 @@ export function SettingsSheet({
                     <AlertDialogAction onClick={handleClearHistory} className="bg-destructive hover:bg-destructive/90">
                       Oui, supprimer mes données
                     </AlertDialogAction>
-                  </AlertDialogFooter>
+                  </Footer>
                 </AlertDialogContent>
               </AlertDialog>
         </SheetFooter>
@@ -86,3 +116,5 @@ export function SettingsSheet({
     </Sheet>
   );
 }
+
+    

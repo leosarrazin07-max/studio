@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -7,8 +6,10 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { getRemoteConfig, getString, fetchAndActivate } from "firebase/remote-config";
+import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import { app } from "@/lib/firebase-client";
+import { getRemoteConfig, getString, fetchAndActivate } from "firebase/remote-config";
+
 
 // --- MOCK DATA GENERATION FOR DEVELOPMENT ---
 const createMockData = (): PrepState => {
@@ -16,7 +17,7 @@ const createMockData = (): PrepState => {
     const now = new Date();
 
     // To be in the 4-hour window, the last dose must be between 22 and 26 hours ago.
-    // Let's set the last dose to be 24 hours ago.
+    // Let's set it to be 24 hours ago, so there are ~2 hours left.
     const lastDoseTime = sub(now, { hours: 24 });
     
     // We need to calculate when the first dose (start) was, assuming daily doses.
@@ -49,40 +50,6 @@ const createMockData = (): PrepState => {
     };
 };
 // --- END MOCK DATA ---
-
-const getVapidKey = async () => {
-    if (typeof window === "undefined") return null;
-    try {
-        const remoteConfig = getRemoteConfig(app);
-        await fetchAndActivate(remoteConfig);
-        const vapidKey = getString(remoteConfig, "NEXT_PUBLIC_VAPID_PUBLIC_KEY");
-        if (vapidKey) {
-            return vapidKey;
-        }
-    } catch (error) {
-        console.error("Error fetching VAPID key from Remote Config:", error);
-    }
-    
-    // Fallback to environment variable
-    if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
-        return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    }
-    
-    console.error("VAPID public key is not set in environment variables or Remote Config.");
-    return null;
-};
-
-function urlBase64ToUint8Array(base64String: string) {
-  if (typeof window === "undefined") return new Uint8Array(0);
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
 
 const safelyParseJSON = (jsonString: string | null) => {
   if (!jsonString) return null;
@@ -124,6 +91,8 @@ export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
+  const [pushToken, setPushToken] = useState<string | null>(null);
+  const [isPushLoading, setIsPushLoading] = useState(false);
   const [state, setState] = useState<PrepState>(getInitialState);
 
 
@@ -143,11 +112,106 @@ export function usePrepState(): UsePrepStateReturn {
                 prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
+            
+            if (pushToken) {
+                 fetch('/api/tasks/notification', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ token: pushToken, state: stateToSave })
+                }).catch(err => console.error("Failed to sync state to server:", err));
+            }
         } catch (e) {
             console.error("Could not save state", e);
         }
       }
+  }, [pushToken]);
+  
+  const getVapidKey = useCallback(async () => {
+    if (typeof window === "undefined") return null;
+    try {
+        const remoteConfig = getRemoteConfig(app);
+        await fetchAndActivate(remoteConfig);
+        const vapidKey = getString(remoteConfig, "NEXT_PUBLIC_VAPID_PUBLIC_KEY");
+        if (vapidKey) {
+            return vapidKey;
+        }
+    } catch (error) {
+        console.error("Error fetching VAPID key from Remote Config:", error);
+    }
+    
+    // Fallback to environment variable
+    if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+        return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    }
+    
+    console.error("VAPID public key is not set in environment variables or Remote Config.");
+    return null;
   }, []);
+  
+  const requestNotificationPermission = useCallback(async () => {
+    if (!('Notification' in window)) {
+        toast({ title: "Navigateur non compatible", variant: "destructive" });
+        return;
+    }
+    setIsPushLoading(true);
+    try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            toast({ title: "Notifications refusées", description: "Vous pouvez les réactiver dans les paramètres de votre navigateur.", variant: "destructive" });
+            setIsPushLoading(false);
+            return;
+        }
+
+        const messaging = getMessaging(app);
+        const vapidKey = await getVapidKey();
+        if (!vapidKey) {
+            toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
+            setIsPushLoading(false);
+            return;
+        }
+        
+        const token = await getToken(messaging, { vapidKey });
+
+        if (token) {
+            await fetch('/api/subscription', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token }),
+            });
+            setPushToken(token);
+            saveState({ ...state, pushEnabled: true });
+            toast({ title: "Notifications activées!" });
+        } else {
+            toast({ title: "Erreur d'enregistrement", description: "Impossible d'obtenir le token de notification.", variant: "destructive" });
+        }
+    } catch (error) {
+        console.error("Error subscribing:", error);
+        toast({ title: "Erreur d'abonnement", variant: "destructive" });
+    } finally {
+        setIsPushLoading(false);
+    }
+  }, [toast, state, saveState, getVapidKey]);
+
+  const unsubscribeFromNotifications = useCallback(async () => {
+    if (pushToken) {
+      setIsPushLoading(true);
+      try {
+        await fetch('/api/subscription', {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ token: pushToken })
+        });
+        setPushToken(null);
+        saveState({...state, pushEnabled: false});
+        toast({ title: "Notifications désactivées." });
+      } catch (error) {
+         console.error("Error unsubscribing:", error);
+         toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
+      } finally {
+        setIsPushLoading(false);
+      }
+    }
+  }, [pushToken, toast, state, saveState]);
 
   useEffect(() => {
     setIsClient(true);
@@ -156,10 +220,28 @@ export function usePrepState(): UsePrepStateReturn {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) setState(savedState);
     }
+
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      const messaging = getMessaging(app);
+      onMessage(messaging, (payload) => {
+        console.log("Message received. ", payload);
+        toast({
+          title: payload.notification?.title,
+          description: payload.notification?.body,
+        });
+      });
+    }
     
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [toast]);
+
+  useEffect(() => {
+    if (state.pushEnabled && pushToken) {
+      saveState(state);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pushToken, state.sessionActive]);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
@@ -190,9 +272,9 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    setState({ ...defaultState });
+    setState({ ...defaultState, pushEnabled: !!pushToken });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [toast]);
+  }, [pushToken, toast]);
   
   const formatCountdown = (endDate: Date) => {
     const milliseconds = differenceInMilliseconds(endDate, now);
@@ -206,7 +288,7 @@ export function usePrepState(): UsePrepStateReturn {
     if (hours > 0) parts.push(`${hours}h`);
     if (minutes > 0) parts.push(`${minutes}m`);
     // Only show seconds if less than an hour remaining
-    if (hours === 0) {
+    if (hours === 0 && minutes < 30) {
         parts.push(`${seconds}s`);
     }
 
@@ -226,10 +308,8 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-    if (isAfter(protectionEndsAt, new Date())) {
-        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-    }
+    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
@@ -279,6 +359,8 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
+    pushEnabled: !!pushToken,
+    isPushLoading,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,
@@ -290,7 +372,11 @@ export function usePrepState(): UsePrepStateReturn {
     startSession,
     endSession,
     clearHistory,
+    requestNotificationPermission,
+    unsubscribeFromNotifications,
     welcomeScreenVisible,
     dashboardVisible,
   };
 }
+
+    

@@ -22,6 +22,10 @@ export default function Home() {
     startSession,
     endSession,
     clearHistory,
+    requestNotificationPermission,
+    unsubscribeFromNotifications,
+    pushEnabled,
+    isPushLoading,
     welcomeScreenVisible,
     dashboardVisible,
     status,
@@ -45,6 +49,7 @@ export default function Home() {
   const handleWelcomeConfirm = () => {
     localStorage.setItem('hasSeenWelcomePopup', 'true');
     setIsWelcomeOpen(false);
+    requestNotificationPermission();
   };
 
   const WelcomeScreen = () => (
@@ -120,7 +125,13 @@ export default function Home() {
         isOpen={isSettingsOpen}
         onOpenChange={setIsSettingsOpen}
         onClearHistory={clearHistory}
+        pushEnabled={pushEnabled}
+        isPushLoading={isPushLoading}
+        requestNotificationPermission={requestNotificationPermission}
+        unsubscribeFromNotifications={unsubscribeFromNotifications}
       />
     </div>
   );
 }
+
+    

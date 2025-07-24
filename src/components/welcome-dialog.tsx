@@ -30,9 +30,11 @@ export function WelcomeDialog({ isOpen, onConfirm }: WelcomeDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="mt-4">
-          <Button onClick={onConfirm} className="w-full">J'ai compris</Button>
+          <Button onClick={onConfirm} className="w-full">J'ai compris, activer les notifications</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
+    

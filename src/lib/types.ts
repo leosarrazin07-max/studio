@@ -12,14 +12,18 @@ export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed';
 export interface PrepState {
   prises: Prise[];
   sessionActive: boolean;
+  pushEnabled: boolean;
 }
 
 // The return type of the main state management hook
 export interface UsePrepStateReturn extends PrepState {
+  isPushLoading: boolean;
   addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
+  requestNotificationPermission: () => Promise<void>;
+  unsubscribeFromNotifications: () => Promise<void>;
   welcomeScreenVisible: boolean;
   dashboardVisible: boolean;
   status: PrepStatus;
@@ -38,3 +42,5 @@ export interface PrepCalculatorResult {
   protectionStartsIn: string;
   protectionEndsAtText: string;
 }
+
+    
