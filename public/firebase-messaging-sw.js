@@ -1,10 +1,11 @@
 
-// This file must be in the public directory.
+// This file needs to be in the public directory.
 
-importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
-importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js");
+import { initializeApp } from "firebase/app";
+import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
 
 // Your web app's Firebase configuration
+// This is NOT sensitive data and is required for the service worker to know which project to connect to.
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -14,23 +15,20 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-if (!firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
-}
+const app = initializeApp(firebaseConfig);
+const messaging = getMessaging(app);
 
-const messaging = firebase.messaging();
-
-// Optional: If you want to handle background messages.
-messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message ', payload);
+onBackgroundMessage(messaging, (payload) => {
+  console.log(
+    "[firebase-messaging-sw.js] Received background message ",
+    payload
+  );
   // Customize notification here
   const notificationTitle = payload.notification.title;
   const notificationOptions = {
     body: payload.notification.body,
-    icon: '/icons/icon-192x192.png'
+    icon: "/icons/icon-192x192.png",
   };
 
-  self.registration.showNotification(notificationTitle,
-    notificationOptions);
+  self.registration.showNotification(notificationTitle, notificationOptions);
 });

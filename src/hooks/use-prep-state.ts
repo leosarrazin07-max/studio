@@ -139,6 +139,7 @@ export function usePrepState(): UsePrepStateReturn {
 
         const messaging = getMessaging(app);
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
         if (!vapidKey) {
             console.error("VAPID public key not found in environment variables. Make sure it's set in .env.local");
             toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
@@ -146,7 +147,7 @@ export function usePrepState(): UsePrepStateReturn {
             return false;
         }
 
-        const fcmToken = await getToken(messaging, { vapidKey });
+        const fcmToken = await getToken(messaging, { serviceWorkerRegistration: await navigator.serviceWorker.ready, vapidKey });
 
         if (fcmToken) {
             saveState({...state, pushEnabled: true, fcmToken });
