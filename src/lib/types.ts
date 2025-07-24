@@ -14,6 +14,7 @@ export interface PrepState {
   prises: Prise[];
   sessionActive: boolean;
   pushEnabled: boolean;
+  fcmToken: string | null;
 }
 
 // The return type of the main state management hook

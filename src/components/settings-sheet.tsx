@@ -84,9 +84,7 @@ export function SettingsSheet({
                 </Label>
               </div>
               <p className="text-sm text-muted-foreground">
-                Si vous avez activé les notifications en vous connectant à l'app la première fois, alors celles-ci sont actives.
-                <br/><br/>
-                Si vous avez refusé les notifications, vous devrez peut-être les autoriser manuellement en vidant le cache et les données du site dans les paramètres de votre navigateur pour que PrEPy vous redemande l'autorisation.
+                Activez pour recevoir des rappels pour vos prises. Si vous avez refusé l'autorisation, vous devrez peut-être l'autoriser dans les paramètres de votre navigateur pour ce site.
               </p>
           </div>
         </div>
@@ -110,7 +108,7 @@ export function SettingsSheet({
                     <AlertDialogCancel>Annuler</AlertDialogCancel>
                     <AlertDialogAction onClick={handleClearHistory} className="bg-destructive hover:bg-destructive/90">
                       Oui, supprimer mes données
-                    </ActionDialogAction>
+                    </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
