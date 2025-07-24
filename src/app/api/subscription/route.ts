@@ -1,41 +1,12 @@
 
 import { NextResponse } from 'next/server';
-import { firestore } from '@/lib/firebase-admin';
 
+// This endpoint is no longer used for FCM and can be left empty or removed.
+// For safety, we'll just make it return an error so it's not used accidentally.
 export async function POST(request: Request) {
-  try {
-    const { token } = await request.json();
-    if (!token) {
-      return NextResponse.json({ error: 'Token is required' }, { status: 400 });
-    }
-
-    // The document ID is the token itself for easy lookup and to prevent duplicates.
-    const docRef = firestore.collection('fcmTokens').doc(token);
-    await docRef.set({
-      createdAt: new Date(),
-      // We can add more user-specific data here if needed in the future
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error saving token:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
+  return NextResponse.json({ error: 'This endpoint is deprecated.' }, { status: 410 });
 }
 
 export async function DELETE(request: Request) {
-  try {
-    const { token } = await request.json();
-     if (!token) {
-      return NextResponse.json({ error: 'Token is required' }, { status: 400 });
-    }
-
-    const docRef = firestore.collection('fcmTokens').doc(token);
-    await docRef.delete();
-    
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting token:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
+  return NextResponse.json({ error: 'This endpoint is deprecated.' }, { status: 410 });
 }

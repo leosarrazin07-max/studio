@@ -110,7 +110,7 @@ export function SettingsSheet({
                     <AlertDialogCancel>Annuler</AlertDialogCancel>
                     <AlertDialogAction onClick={handleClearHistory} className="bg-destructive hover:bg-destructive/90">
                       Oui, supprimer mes données
-                    </AlertDialogAction>
+                    </ActionDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>

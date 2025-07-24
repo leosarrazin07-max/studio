@@ -23,7 +23,7 @@ export interface UsePrepStateReturn extends PrepState {
   startSession: (time: Date) => void;
   endSession: () => void;
   clearHistory: () => void;
-  requestNotificationPermission: () => Promise<void>;
+  requestNotificationPermission: () => Promise<boolean>;
   unsubscribeFromNotifications: () => Promise<void>;
   welcomeScreenVisible: boolean;
   dashboardVisible: boolean;

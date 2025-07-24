@@ -7,41 +7,36 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { getToken, onMessage } from "firebase/messaging";
-import { app, messaging } from "@/lib/firebase-client";
 import { getRemoteConfig, getString, fetchAndActivate } from "firebase/remote-config";
-
+import { app } from "@/lib/firebase-client";
 
 // --- MOCK DATA GENERATION FOR DEVELOPMENT ---
 const createMockData = (): PrepState => {
     const mockPrises: Prise[] = [];
     const now = new Date();
-
-    // To be in the 4-hour window, the last dose must be between 22 and 26 hours ago.
-    // Let's set it to be 24 hours ago, so there are ~2 hours left.
-    const lastDoseTime = sub(now, { hours: 24 });
-    
-    // We need to calculate when the first dose (start) was, assuming daily doses.
-    // Let's say we have 10 doses total. The first dose was 9 days before the last dose.
-    const firstDoseTime = sub(lastDoseTime, { days: 9 });
+    // Start the session 10 days ago at a fixed time (e.g., 09:00) for consistency
+    let lastDoseTime = set(sub(now, { days: 10 }), { hours: 9, minutes: 0, seconds: 0, milliseconds: 0 });
 
     // Initial dose (2 pills)
     mockPrises.push({
-        time: firstDoseTime,
+        time: lastDoseTime,
         pills: 2,
         type: 'start',
         id: `mock_0`
     });
 
-    // Subsequent 9 daily doses (1 pill each)
-    for (let i = 1; i <= 9; i++) {
-        const doseTime = add(firstDoseTime, { days: i });
+    // Subsequent 9 daily doses (1 pill each), always at the same time
+    for (let i = 1; i < 10; i++) {
+        // Add exactly 24 hours to maintain the same time of day
+        const nextDoseTime = add(lastDoseTime, { hours: 24 });
+        
         mockPrises.push({
-            time: doseTime,
+            time: nextDoseTime,
             pills: 1,
             type: 'dose',
             id: `mock_${i}`
         });
+        lastDoseTime = nextDoseTime;
     }
 
     return {
@@ -51,6 +46,40 @@ const createMockData = (): PrepState => {
     };
 };
 // --- END MOCK DATA ---
+
+const getVapidKey = async () => {
+    if (typeof window === "undefined") return null;
+    try {
+        const remoteConfig = getRemoteConfig(app);
+        await fetchAndActivate(remoteConfig);
+        const vapidKey = getString(remoteConfig, "NEXT_PUBLIC_VAPID_PUBLIC_KEY");
+        if (vapidKey) {
+            return vapidKey;
+        }
+    } catch (error) {
+        console.error("Error fetching VAPID key from Remote Config:", error);
+    }
+    
+    // Fallback to environment variable
+    if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+        return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    }
+    
+    console.error("VAPID public key is not set in environment variables or Remote Config.");
+    return null;
+};
+
+function urlBase64ToUint8Array(base64String: string) {
+  if (typeof window === "undefined") return new Uint8Array(0);
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 const safelyParseJSON = (jsonString: string | null) => {
   if (!jsonString) return null;
@@ -92,7 +121,7 @@ export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
-  const [pushToken, setPushToken] = useState<string | null>(null);
+  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [isPushLoading, setIsPushLoading] = useState(false);
   const [state, setState] = useState<PrepState>(getInitialState);
 
@@ -113,114 +142,63 @@ export function usePrepState(): UsePrepStateReturn {
                 prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
-            
-            // This now sends the whole state to the server whenever it changes.
-            // The server will decide if a notification needs to be scheduled.
-            if (pushToken && newState.sessionActive) {
-                 fetch('/api/tasks/notification', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ token: pushToken, state: stateToSave })
-                }).catch(err => console.error("Failed to sync state to server:", err));
-            }
         } catch (e) {
             console.error("Could not save state", e);
         }
       }
-  }, [pushToken]);
-  
-  const getVapidKey = useCallback(async () => {
-    if (typeof window === "undefined") return null;
-    try {
-        const remoteConfig = getRemoteConfig(app);
-        // It's better to ensure config is fetched and activated once, early in the app lifecycle.
-        // But for this hook, we'll do it here.
-        await fetchAndActivate(remoteConfig);
-        const vapidKey = getString(remoteConfig, "NEXT_PUBLIC_VAPID_PUBLIC_KEY");
-        if (vapidKey) {
-            return vapidKey;
-        } else {
-             console.error("VAPID key not found in Remote Config.");
-        }
-    } catch (error) {
-        console.error("Error fetching VAPID key from Remote Config:", error);
-    }
-    
-    // Fallback to environment variable
-    const localVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    if (localVapidKey) {
-        return localVapidKey;
-    }
-    
-    console.error("VAPID public key is not set in environment variables or Remote Config.");
-    return null;
   }, []);
   
   const requestNotificationPermission = useCallback(async () => {
-    if (!('Notification' in window)) {
+    if (!('Notification' in window) || !navigator.serviceWorker) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
-        return;
-    }
-    if (!messaging) {
-        toast({ title: "Erreur de configuration", description: "Le service de messagerie n'est pas disponible.", variant: "destructive" });
-        return;
+        return false;
     }
     setIsPushLoading(true);
+
     try {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-            toast({ title: "Notifications refusées", description: "Vous pouvez les réactiver dans les paramètres de votre navigateur.", variant: "destructive" });
-            saveState({ ...state, pushEnabled: false });
+            toast({ title: "Notifications refusées", variant: "destructive" });
+            saveState({...state, pushEnabled: false});
             setIsPushLoading(false);
-            return;
+            return false;
         }
 
-        const vapidKey = await getVapidKey();
-        if (!vapidKey) {
+        const vapidPublicKey = await getVapidKey();
+        if (!vapidPublicKey) {
             toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
             setIsPushLoading(false);
-            return;
+            return false;
         }
-        
-        const token = await getToken(messaging, { vapidKey });
 
-        if (token) {
-            await fetch('/api/subscription', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token }),
+        const registration = await navigator.serviceWorker.ready;
+        let sub = await registration.pushManager.getSubscription();
+        if (!sub) {
+            sub = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
             });
-            setPushToken(token);
-            saveState({ ...state, pushEnabled: true });
-            toast({ title: "Notifications activées!" });
-        } else {
-            saveState({ ...state, pushEnabled: false });
-            toast({ title: "Erreur d'enregistrement", description: "Impossible d'obtenir le token de notification.", variant: "destructive" });
         }
+        setSubscription(sub);
+        saveState({...state, pushEnabled: true});
+        toast({ title: "Notifications activées!" });
+        setIsPushLoading(false);
+        return true;
     } catch (error) {
         console.error("Error subscribing:", error);
-        saveState({ ...state, pushEnabled: false });
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
-    } finally {
+        saveState({...state, pushEnabled: false});
         setIsPushLoading(false);
+        return false;
     }
-  }, [toast, state, saveState, getVapidKey]);
+  }, [toast, state, saveState]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
-    if (pushToken) {
+    if (subscription) {
       setIsPushLoading(true);
       try {
-        // Here you would also want to invalidate the token on the server
-        await fetch('/api/subscription', {
-            method: 'DELETE',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ token: pushToken })
-        });
-        
-        // No need to call deleteToken() from 'firebase/messaging' as it's complex and often not needed.
-        // Simply removing it from your server's database is the main goal.
-        
-        setPushToken(null);
+        await subscription.unsubscribe();
+        setSubscription(null);
         saveState({...state, pushEnabled: false});
         toast({ title: "Notifications désactivées." });
       } catch (error) {
@@ -230,41 +208,37 @@ export function usePrepState(): UsePrepStateReturn {
         setIsPushLoading(false);
       }
     }
-  }, [pushToken, toast, state, saveState]);
+  }, [subscription, toast, state, saveState]);
 
   useEffect(() => {
     setIsClient(true);
     // Reload state from localStorage on mount in production.
     if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-        if (savedState) {
-            setState(savedState);
-            if (savedState.pushEnabled) {
-                // If the state thinks push is enabled, we should try to get the token again
-                // This is a bit complex, so for now we just reflect the stored state
-            }
-        }
+        if (savedState) setState(savedState);
     }
 
-    if (messaging) {
-      onMessage(messaging, (payload) => {
-        console.log("Message received. ", payload);
-        toast({
-          title: payload.notification?.title,
-          description: payload.notification?.body,
-        });
-      });
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready
+        .then(registration => registration.pushManager.getSubscription())
+        .then(sub => {
+            if (sub) {
+                setSubscription(sub);
+                // We set pushEnabled to true in the local component state, but read it from localStorage initially
+                setState(prevState => ({ ...prevState, pushEnabled: true }));
+            }
+        })
+        .catch(error => console.error('Erreur Service Worker:', error));
     }
     
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
-  }, [toast]);
+  }, []);
 
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
     const newPrises = [newDose];
-    // We get the pushEnabled status from the *current* state, not a default.
     saveState({ ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled });
   }, [saveState, state.pushEnabled]);
 
@@ -291,14 +265,11 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    // When clearing history, we should also clear the push token state.
-    // The user will be prompted again on next session start.
-    setPushToken(null);
-    setState({ ...defaultState, pushEnabled: false });
+    setState({ ...defaultState, pushEnabled: !!subscription });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [toast]);
-  
-  const formatCountdown = (endDate: Date) => {
+  }, [subscription, toast]);
+
+    const formatCountdown = (endDate: Date) => {
     const milliseconds = differenceInMilliseconds(endDate, now);
     if (milliseconds <= 0) return "0s";
     
@@ -316,7 +287,7 @@ export function usePrepState(): UsePrepStateReturn {
 
     return parts.join(' ');
   };
-
+  
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
   const lastDose = allPrises[0] ?? null;
   
@@ -330,7 +301,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
@@ -381,7 +352,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
-    pushEnabled: state.pushEnabled && !!pushToken,
+    pushEnabled: !!subscription,
     isPushLoading,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
