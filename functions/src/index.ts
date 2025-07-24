@@ -1,6 +1,6 @@
 
 import * as functions from "firebase-functions";
-import *dmin from "firebase-admin";
+import * as admin from "firebase-admin";
 import { getFunctions } from "firebase-admin/functions";
 import {add} from "date-fns";
 import {

@@ -1,13 +1,11 @@
-
 {
-  "theme_color": "#039BE5",
-  "background_color": "#F5F5F5",
-  "display": "standalone",
-  "scope": "/",
-  "start_url": "/",
   "name": "PrEPy",
   "short_name": "PrEPy",
-  "description": "Votre compagnon intelligent pour la PrEP \u00e0 la demande.",
+  "description": "Votre compagnon intelligent pour la PrEP à la demande.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F5F5F5",
+  "theme_color": "#039BE5",
   "icons": [
     {
       "src": "/icons/icon-192x192.png",
