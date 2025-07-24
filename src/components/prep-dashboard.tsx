@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -144,7 +143,7 @@ export function PrepDashboard({
                 </div>
                 <div className="ml-3">
                     <p className="text-sm text-primary/90">
-                       Pour arrêter la PrEP, continuez de prendre un comprimé par jour pendant les 2 jours qui suivent votre dernier rapport.
+                       Pour arrêter la PrEP, continuez de prendre 1 comprimé par jour pendant les 2 jours qui suivent votre dernier rapport.
                     </p>
                 </div>
             </div>
