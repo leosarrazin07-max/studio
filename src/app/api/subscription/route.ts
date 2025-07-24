@@ -26,7 +26,7 @@ export async function POST(request: Request) {
         // Convert date strings back to Firestore Timestamps
         prises: state.prises.map((p: any) => ({ ...p, time: admin.firestore.Timestamp.fromDate(new Date(p.time)) })),
         // This will be set by the cloud function when a notification is sent
-        lastNotifiedAt: null // Set to null initially
+        lastNotifiedAt: admin.firestore.FieldValue.serverTimestamp() // Use server timestamp on create/update
     };
 
     // Use set with merge to create or update the document
@@ -59,3 +59,5 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'Failed to delete subscription.' }, { status: 500 });
   }
 }
+
+    

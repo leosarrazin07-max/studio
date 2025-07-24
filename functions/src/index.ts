@@ -114,7 +114,7 @@ export const sendReminder = functions.region(LOCATION).https.onRequest(async (re
         const sessionRef = db.collection("prepSessions").doc(fcmToken);
         // We only update lastNotifiedAt here, as sending a notification shouldn't alter the core session state.
         await sessionRef.update({
-            lastNotifiedAt: admin.firestore.Timestamp.now()
+            lastNotifiedAt: admin.firestore.FieldValue.serverTimestamp()
         });
         
         res.status(200).send("Reminder sent.");
@@ -133,3 +133,5 @@ export const sendReminder = functions.region(LOCATION).https.onRequest(async (re
         res.status(500).send("Error sending notification.");
     }
 });
+
+    
