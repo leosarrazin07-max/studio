@@ -1,11 +1,10 @@
-
 // This file needs to be in the public directory.
 
+// Import the Firebase app and messaging libraries
 import { initializeApp } from "firebase/app";
-import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
+import { getMessaging } from "firebase/messaging/sw";
 
 // Your web app's Firebase configuration
-// This is NOT sensitive data and is required for the service worker to know which project to connect to.
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -15,20 +14,14 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
+
+// Get the messaging instance
 const messaging = getMessaging(app);
 
-onBackgroundMessage(messaging, (payload) => {
-  console.log(
-    "[firebase-messaging-sw.js] Received background message ",
-    payload
-  );
-  // Customize notification here
-  const notificationTitle = payload.notification.title;
-  const notificationOptions = {
-    body: payload.notification.body,
-    icon: "/icons/icon-192x192.png",
-  };
-
-  self.registration.showNotification(notificationTitle, notificationOptions);
-});
+// We don't need to do anything with the background messages here,
+// as our Cloud Function will handle sending the notifications.
+// This file's purpose is simply to initialize Firebase Messaging
+// in the service worker context so that the browser can receive push messages.
