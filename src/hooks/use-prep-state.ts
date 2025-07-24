@@ -7,8 +7,8 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { getMessaging, getToken, onMessage } from "firebase/messaging";
-import { app } from "@/lib/firebase-client";
+import { getToken, onMessage } from "firebase/messaging";
+import { app, messaging } from "@/lib/firebase-client";
 import { getRemoteConfig, getString, fetchAndActivate } from "firebase/remote-config";
 
 
@@ -161,6 +161,10 @@ export function usePrepState(): UsePrepStateReturn {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
         return;
     }
+    if (!messaging) {
+        toast({ title: "Erreur de configuration", description: "Le service de messagerie n'est pas disponible.", variant: "destructive" });
+        return;
+    }
     setIsPushLoading(true);
     try {
         const permission = await Notification.requestPermission();
@@ -171,7 +175,6 @@ export function usePrepState(): UsePrepStateReturn {
             return;
         }
 
-        const messaging = getMessaging(app);
         const vapidKey = await getVapidKey();
         if (!vapidKey) {
             toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
@@ -243,8 +246,7 @@ export function usePrepState(): UsePrepStateReturn {
         }
     }
 
-    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-      const messaging = getMessaging(app);
+    if (messaging) {
       onMessage(messaging, (payload) => {
         console.log("Message received. ", payload);
         toast({
@@ -328,7 +330,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
