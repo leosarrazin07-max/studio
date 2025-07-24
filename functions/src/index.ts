@@ -106,7 +106,7 @@ export const sendReminder = functions.region(LOCATION).https.onRequest(async (re
         notification: {
             title: "Rappel PrEPy",
             body: "Il est temps de prendre votre comprimé pour rester protégé.",
-            icon: "/icons/icon-192x192.png",
+            icon: "/icons/icon-192x192.svg",
         },
         token: fcmToken,
     };
@@ -122,7 +122,8 @@ export const sendReminder = functions.region(LOCATION).https.onRequest(async (re
     } catch (error) {
         functions.logger.error("Error sending reminder to", fcmToken, error);
         // If the token is invalid, delete the session document
-        if (error.code === "messaging/registration-token-not-registered") {
+        const firebaseError = error as functions.https.HttpsError;
+        if (firebaseError.code === "messaging/registration-token-not-registered") {
             await db.collection("prepSessions").doc(fcmToken).delete();
             functions.logger.log("Deleted invalid token:", fcmToken);
         }
