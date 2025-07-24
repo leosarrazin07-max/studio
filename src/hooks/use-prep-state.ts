@@ -180,7 +180,7 @@ export function usePrepState(): UsePrepStateReturn {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ token: state.fcmToken })
         });
-        saveState({...state, pushEnabled: false});
+        saveState({...state, pushEnabled: false, fcmToken: null});
         toast({ title: "Notifications désactivées." });
       } catch (error) {
          console.error("Error unsubscribing:", error);
@@ -189,7 +189,7 @@ export function usePrepState(): UsePrepStateReturn {
         setIsPushLoading(false);
       }
     } else {
-        saveState({...state, pushEnabled: false});
+        saveState({...state, pushEnabled: false, fcmToken: null });
     }
   }, [state, saveState, toast]);
 
@@ -212,15 +212,17 @@ export function usePrepState(): UsePrepStateReturn {
                   const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
                   if (fcmToken) {
                     // Update state without triggering a full save, just set token
-                    setState(prevState => ({ ...prevState, fcmToken, pushEnabled: true })); 
+                    saveState({ ...state, fcmToken, pushEnabled: true });
                   } else {
-                    setState(prevState => ({ ...prevState, pushEnabled: false, fcmToken: null }));
+                    saveState({ ...state, pushEnabled: false, fcmToken: null });
                   }
                 }
+              } else {
+                 saveState({ ...state, pushEnabled: true });
               }
             } catch (err) {
               console.error("Error initializing messaging on mount", err);
-              setState(prevState => ({ ...prevState, pushEnabled: false, fcmToken: null }));
+              saveState({ ...state, pushEnabled: false, fcmToken: null });
             } finally {
                setIsPushLoading(false);
             }
@@ -251,7 +253,7 @@ export function usePrepState(): UsePrepStateReturn {
 
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
-  }, [state.fcmToken]);
+  }, []);
   
   useEffect(() => {
     // This effect runs only once on the client to load the state from localStorage
@@ -398,5 +400,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
