@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -21,7 +20,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Trash2, Bell, BellOff, Loader2 } from "lucide-react";
+import { Trash2, Bell, BellOff, Loader2, AlertTriangle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 
@@ -31,6 +30,7 @@ interface SettingsSheetProps {
   onClearHistory: () => void;
   pushEnabled: boolean;
   isPushLoading: boolean;
+  pushPermissionStatus: NotificationPermission | undefined;
   requestNotificationPermission: () => void;
   unsubscribeFromNotifications: () => void;
 }
@@ -41,6 +41,7 @@ export function SettingsSheet({
   onClearHistory,
   pushEnabled,
   isPushLoading,
+  pushPermissionStatus,
   requestNotificationPermission,
   unsubscribeFromNotifications
 }: SettingsSheetProps) {
@@ -57,6 +58,29 @@ export function SettingsSheet({
       requestNotificationPermission();
     }
   };
+
+  const renderNotificationHelpText = () => {
+    if (pushPermissionStatus === 'denied') {
+      return (
+        <p className="text-sm text-destructive/90">
+          Vous avez bloqué les notifications. Pour les réactiver, vous devez autoriser les notifications pour ce site dans les paramètres de votre navigateur, puis recharger la page.
+        </p>
+      )
+    }
+    if (!pushEnabled && pushPermissionStatus === 'granted') {
+        return (
+            <p className="text-sm text-amber-600">
+                <AlertTriangle className="inline-block h-4 w-4 mr-1" />
+                Les rappels de prise sont désactivés. Vous ne recevrez aucune notification, ce qui peut entraîner des oublis.
+            </p>
+        )
+    }
+    return (
+        <p className="text-sm text-muted-foreground">
+            Recevez un rappel pour chaque prise afin de garantir votre protection.
+        </p>
+    )
+  }
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
@@ -75,7 +99,7 @@ export function SettingsSheet({
                   id="notifications-switch"
                   checked={pushEnabled}
                   onCheckedChange={handleNotificationsToggle}
-                  disabled={isPushLoading}
+                  disabled={isPushLoading || pushPermissionStatus === 'denied'}
                   aria-readonly
                 />
                 <Label htmlFor="notifications-switch" className="flex items-center">
@@ -83,9 +107,7 @@ export function SettingsSheet({
                   {isPushLoading ? 'Chargement...' : (pushEnabled ? 'Notifications activées' : 'Notifications désactivées')}
                 </Label>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Activez pour recevoir des rappels pour vos prises. Si vous avez refusé l'autorisation, vous devrez peut-être l'autoriser dans les paramètres de votre navigateur pour ce site.
-              </p>
+              {renderNotificationHelpText()}
           </div>
         </div>
         <SheetFooter className="absolute bottom-4 right-4 left-4">

@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -7,8 +6,9 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { app } from "@/lib/firebase-client";
+import { app, firebaseConfig } from "@/lib/firebase-client";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
+import { initializeApp } from 'firebase/app';
 
 // --- MOCK DATA GENERATION FOR DEVELOPMENT ---
 const createMockData = (): PrepState => {
@@ -83,10 +83,12 @@ export function usePrepState(): UsePrepStateReturn {
   const [isClient, setIsClient] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
-  const [isPushLoading, setIsPushLoading] = useState(true); // Start as true
+  const [isPushLoading, setIsPushLoading] = useState(true);
   const [state, setState] = useState<PrepState>(getInitialState);
+  const [pushPermissionStatus, setPushPermissionStatus] = useState<NotificationPermission>();
 
   const saveState = useCallback((newState: PrepState) => {
+      // Don't persist mock data in dev unless we have a token (for testing notifications)
       if (process.env.NODE_ENV === 'development' && newState.fcmToken === null) {
           setState(newState);
           return;
@@ -95,13 +97,14 @@ export function usePrepState(): UsePrepStateReturn {
       setState(newState);
       if (typeof window !== 'undefined') {
         try {
+            // Ensure we are saving a valid fcmToken state
             const stateToSave = {
                 ...newState,
                 prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
             
-            // Sync state with Firestore if push is enabled
+            // Sync state with Firestore if push is enabled, and we have a token
             if (newState.pushEnabled && newState.fcmToken) {
                  fetch('/api/subscription', {
                     method: 'POST',
@@ -124,8 +127,10 @@ export function usePrepState(): UsePrepStateReturn {
 
     try {
         const permission = await Notification.requestPermission();
+        setPushPermissionStatus(permission);
+
         if (permission !== 'granted') {
-            toast({ title: "Notifications refusées", variant: "destructive" });
+            toast({ title: "Notifications refusées", description: "Vous pouvez les réactiver dans les paramètres de votre navigateur.", variant: "destructive" });
             saveState({...state, pushEnabled: false, fcmToken: null});
             setIsPushLoading(false);
             return false;
@@ -165,13 +170,14 @@ export function usePrepState(): UsePrepStateReturn {
     if (state.fcmToken) {
       setIsPushLoading(true);
       try {
-        // We don't need to delete the token from FCM, just from our DB.
         await fetch('/api/subscription', {
             method: 'DELETE',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ token: state.fcmToken })
         });
-        saveState({...state, pushEnabled: false, fcmToken: null});
+        // We only change pushEnabled to false, but keep the fcmToken
+        // so we can easily re-enable it without asking for permission again.
+        saveState({...state, pushEnabled: false});
         toast({ title: "Notifications désactivées." });
       } catch (error) {
          console.error("Error unsubscribing:", error);
@@ -179,33 +185,50 @@ export function usePrepState(): UsePrepStateReturn {
       } finally {
         setIsPushLoading(false);
       }
+    } else {
+        // If there's no token, just update the state
+        saveState({...state, pushEnabled: false});
     }
   }, [state, saveState, toast]);
 
   useEffect(() => {
     setIsClient(true);
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setPushPermissionStatus(Notification.permission);
+    }
+    
     // On mount, check notification status and set token if already granted
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+        if (!vapidKey) {
+            console.error("VAPID key missing for FCM token retrieval on mount");
             setIsPushLoading(false);
             return;
         }
-        const messaging = getMessaging(app);
-        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-        if(vapidKey) {
+        
+        try {
+            const messaging = getMessaging(app);
             getToken(messaging, { vapidKey }).then(fcmToken => {
-                if(fcmToken) {
-                     setState(prevState => ({ ...prevState, pushEnabled: true, fcmToken }));
+                if (fcmToken) {
+                    setState(prevState => ({ ...prevState, fcmToken }));
+                } else {
+                    setState(prevState => ({ ...prevState, pushEnabled: false, fcmToken: null }));
                 }
-            }).finally(() => setIsPushLoading(false));
-        } else {
-             setIsPushLoading(false);
+            }).catch(err => {
+                console.error("Error getting token on mount", err);
+                setState(prevState => ({...prevState, pushEnabled: false, fcmToken: null}));
+            }).finally(() => {
+                setIsPushLoading(false)
+            });
+        } catch (err) {
+            console.error("Error initializing messaging on mount", err);
+            setIsPushLoading(false);
         }
+        
     } else {
         setIsPushLoading(false);
     }
     
-    // Listen for incoming messages when the app is in the foreground
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       try {
         const messaging = getMessaging(app);
@@ -223,10 +246,9 @@ export function usePrepState(): UsePrepStateReturn {
 
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
-  }, [toast]);
+  }, [toast, app]);
   
   useEffect(() => {
-    // Reload state from localStorage on mount in production.
     if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) setState(savedState);
@@ -277,7 +299,7 @@ export function usePrepState(): UsePrepStateReturn {
     const parts: string[] = [];
     if (hours > 0) parts.push(`${hours}h`);
     if (minutes > 0) parts.push(`${minutes}m`);
-    if (hours === 0) { // Only show seconds if less than an hour remaining
+    if (hours === 0) { 
         parts.push(`${seconds}s`);
     }
 
@@ -350,6 +372,7 @@ export function usePrepState(): UsePrepStateReturn {
     ...state,
     pushEnabled: state.pushEnabled,
     isPushLoading,
+    pushPermissionStatus,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
     statusColor,

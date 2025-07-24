@@ -26,6 +26,7 @@ export default function Home() {
     unsubscribeFromNotifications,
     pushEnabled,
     isPushLoading,
+    pushPermissionStatus,
     welcomeScreenVisible,
     dashboardVisible,
     status,
@@ -127,11 +128,10 @@ export default function Home() {
         onClearHistory={clearHistory}
         pushEnabled={pushEnabled}
         isPushLoading={isPushLoading}
+        pushPermissionStatus={pushPermissionStatus}
         requestNotificationPermission={requestNotificationPermission}
         unsubscribeFromNotifications={unsubscribeFromNotifications}
       />
     </div>
   );
 }
-
-    

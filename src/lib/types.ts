@@ -1,4 +1,3 @@
-
 export type PriseType = 'start' | 'dose' | 'stop';
 
 export interface Prise {
@@ -20,6 +19,7 @@ export interface PrepState {
 // The return type of the main state management hook
 export interface UsePrepStateReturn extends PrepState {
   isPushLoading: boolean;
+  pushPermissionStatus: NotificationPermission | undefined;
   addDose: (dose: { time: Date; pills: number }) => void;
   startSession: (time: Date) => void;
   endSession: () => void;
