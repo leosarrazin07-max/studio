@@ -137,6 +137,9 @@ export function usePrepState(): UsePrepStateReturn {
             return false;
         }
 
+        // Wait for the service worker to be ready
+        const registration = await navigator.serviceWorker.ready;
+
         const messaging = getMessaging(app);
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
@@ -147,7 +150,7 @@ export function usePrepState(): UsePrepStateReturn {
             return false;
         }
 
-        const fcmToken = await getToken(messaging, { vapidKey });
+        const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
 
         if (fcmToken) {
             saveState({...state, pushEnabled: true, fcmToken });
@@ -199,12 +202,14 @@ export function usePrepState(): UsePrepStateReturn {
       const initializeMessaging = async () => {
          if (currentPermission === 'granted') {
             try {
+              // Wait for the service worker to be ready
+              const registration = await navigator.serviceWorker.ready;
               const messaging = getMessaging(app);
               // Check if we have a token in state first
               if (!state.fcmToken) {
                 const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
                 if (vapidKey) {
-                  const fcmToken = await getToken(messaging, { vapidKey });
+                  const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
                   if (fcmToken) {
                     // Update state without triggering a full save, just set token
                     setState(prevState => ({ ...prevState, fcmToken, pushEnabled: true })); 
@@ -246,7 +251,7 @@ export function usePrepState(): UsePrepStateReturn {
 
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [state.fcmToken]);
   
   useEffect(() => {
     // This effect runs only once on the client to load the state from localStorage
