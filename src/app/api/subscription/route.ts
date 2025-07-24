@@ -9,9 +9,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Token is required' }, { status: 400 });
     }
 
+    // The document ID is the token itself for easy lookup and to prevent duplicates.
     const docRef = firestore.collection('fcmTokens').doc(token);
     await docRef.set({
       createdAt: new Date(),
+      // We can add more user-specific data here if needed in the future
     });
 
     return NextResponse.json({ success: true });
@@ -37,5 +39,3 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
-
-    

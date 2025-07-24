@@ -1,3 +1,4 @@
+
 export type PriseType = 'start' | 'dose' | 'stop';
 
 export interface Prise {
@@ -42,5 +43,3 @@ export interface PrepCalculatorResult {
   protectionStartsIn: string;
   protectionEndsAtText: string;
 }
-
-    

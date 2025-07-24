@@ -68,7 +68,7 @@ export function SettingsSheet({
           </SheetDescription>
         </SheetHeader>
         <div className="grid gap-6 py-8">
-          <div className="flex flex-col gap-3 p-4 rounded-lg border">
+           <div className="flex flex-col gap-3 p-4 rounded-lg border">
               <h3 className="font-semibold text-lg">Notifications</h3>
               <div className="flex items-center space-x-2">
                 <Switch
@@ -76,6 +76,7 @@ export function SettingsSheet({
                   checked={pushEnabled}
                   onCheckedChange={handleNotificationsToggle}
                   disabled={isPushLoading}
+                  aria-readonly
                 />
                 <Label htmlFor="notifications-switch" className="flex items-center">
                   {isPushLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (pushEnabled ? <Bell className="mr-2 h-4 w-4" /> : <BellOff className="mr-2 h-4 w-4" />)}
@@ -83,7 +84,9 @@ export function SettingsSheet({
                 </Label>
               </div>
               <p className="text-sm text-muted-foreground">
-                Si vous avez refusé les notifications, vous devrez peut-être les autoriser manuellement dans les paramètres de votre navigateur pour ce site.
+                Si vous avez activé les notifications en vous connectant à l'app la première fois, alors celles-ci sont actives.
+                <br/><br/>
+                Si vous avez refusé les notifications, vous devrez peut-être les autoriser manuellement en vidant le cache et les données du site dans les paramètres de votre navigateur pour que PrEPy vous redemande l'autorisation.
               </p>
           </div>
         </div>
@@ -108,7 +111,7 @@ export function SettingsSheet({
                     <AlertDialogAction onClick={handleClearHistory} className="bg-destructive hover:bg-destructive/90">
                       Oui, supprimer mes données
                     </AlertDialogAction>
-                  </Footer>
+                  </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
         </SheetFooter>
@@ -116,5 +119,3 @@ export function SettingsSheet({
     </Sheet>
   );
 }
-
-    

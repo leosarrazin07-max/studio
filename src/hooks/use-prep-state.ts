@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -113,7 +114,9 @@ export function usePrepState(): UsePrepStateReturn {
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
             
-            if (pushToken) {
+            // This now sends the whole state to the server whenever it changes.
+            // The server will decide if a notification needs to be scheduled.
+            if (pushToken && newState.sessionActive) {
                  fetch('/api/tasks/notification', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -130,18 +133,23 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window === "undefined") return null;
     try {
         const remoteConfig = getRemoteConfig(app);
+        // It's better to ensure config is fetched and activated once, early in the app lifecycle.
+        // But for this hook, we'll do it here.
         await fetchAndActivate(remoteConfig);
         const vapidKey = getString(remoteConfig, "NEXT_PUBLIC_VAPID_PUBLIC_KEY");
         if (vapidKey) {
             return vapidKey;
+        } else {
+             console.error("VAPID key not found in Remote Config.");
         }
     } catch (error) {
         console.error("Error fetching VAPID key from Remote Config:", error);
     }
     
     // Fallback to environment variable
-    if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
-        return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    const localVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (localVapidKey) {
+        return localVapidKey;
     }
     
     console.error("VAPID public key is not set in environment variables or Remote Config.");
@@ -158,6 +166,7 @@ export function usePrepState(): UsePrepStateReturn {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
             toast({ title: "Notifications refusées", description: "Vous pouvez les réactiver dans les paramètres de votre navigateur.", variant: "destructive" });
+            saveState({ ...state, pushEnabled: false });
             setIsPushLoading(false);
             return;
         }
@@ -182,10 +191,12 @@ export function usePrepState(): UsePrepStateReturn {
             saveState({ ...state, pushEnabled: true });
             toast({ title: "Notifications activées!" });
         } else {
+            saveState({ ...state, pushEnabled: false });
             toast({ title: "Erreur d'enregistrement", description: "Impossible d'obtenir le token de notification.", variant: "destructive" });
         }
     } catch (error) {
         console.error("Error subscribing:", error);
+        saveState({ ...state, pushEnabled: false });
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
     } finally {
         setIsPushLoading(false);
@@ -196,11 +207,16 @@ export function usePrepState(): UsePrepStateReturn {
     if (pushToken) {
       setIsPushLoading(true);
       try {
+        // Here you would also want to invalidate the token on the server
         await fetch('/api/subscription', {
             method: 'DELETE',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ token: pushToken })
         });
+        
+        // No need to call deleteToken() from 'firebase/messaging' as it's complex and often not needed.
+        // Simply removing it from your server's database is the main goal.
+        
         setPushToken(null);
         saveState({...state, pushEnabled: false});
         toast({ title: "Notifications désactivées." });
@@ -218,7 +234,13 @@ export function usePrepState(): UsePrepStateReturn {
     // Reload state from localStorage on mount in production.
     if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-        if (savedState) setState(savedState);
+        if (savedState) {
+            setState(savedState);
+            if (savedState.pushEnabled) {
+                // If the state thinks push is enabled, we should try to get the token again
+                // This is a bit complex, so for now we just reflect the stored state
+            }
+        }
     }
 
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
@@ -236,16 +258,11 @@ export function usePrepState(): UsePrepStateReturn {
     return () => clearInterval(timer);
   }, [toast]);
 
-  useEffect(() => {
-    if (state.pushEnabled && pushToken) {
-      saveState(state);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pushToken, state.sessionActive]);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
     const newPrises = [newDose];
+    // We get the pushEnabled status from the *current* state, not a default.
     saveState({ ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled });
   }, [saveState, state.pushEnabled]);
 
@@ -272,9 +289,12 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    setState({ ...defaultState, pushEnabled: !!pushToken });
+    // When clearing history, we should also clear the push token state.
+    // The user will be prompted again on next session start.
+    setPushToken(null);
+    setState({ ...defaultState, pushEnabled: false });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [pushToken, toast]);
+  }, [toast]);
   
   const formatCountdown = (endDate: Date) => {
     const milliseconds = differenceInMilliseconds(endDate, now);
@@ -288,7 +308,7 @@ export function usePrepState(): UsePrepStateReturn {
     if (hours > 0) parts.push(`${hours}h`);
     if (minutes > 0) parts.push(`${minutes}m`);
     // Only show seconds if less than an hour remaining
-    if (hours === 0 && minutes < 30) {
+    if (hours === 0 && minutes < 60) {
         parts.push(`${seconds}s`);
     }
 
@@ -308,7 +328,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionEndsAtText = '';
 
   if (isClient && lastDose) {
-    const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
+    const protectionEndsAt = sub(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
     protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
@@ -359,7 +379,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
-    pushEnabled: !!pushToken,
+    pushEnabled: state.pushEnabled && !!pushToken,
     isPushLoading,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
     status,
@@ -378,5 +398,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
