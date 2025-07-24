@@ -15,7 +15,6 @@ const messaging = admin.messaging();
 const LOCATION = "europe-west9";
 const queue = getFunctions().taskQueue("sendReminder", LOCATION);
 
-
 interface PrepStateDocument {
     fcmToken: string;
     sessionActive: boolean;
@@ -88,6 +87,15 @@ export const sendReminder = onTaskDispatched({
     rateLimits: {
         maxConcurrentDispatches: 6,
     },
+    taskQueueOptions: {
+      retryConfig: {
+        maxAttempts: 5,
+        minBackoffSeconds: 60
+      },
+      rateLimits: {
+        maxConcurrentDispatches: 1000
+      }
+    }
 }, async (task) => {
     const { fcmToken } = task.data;
 

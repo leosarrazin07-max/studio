@@ -138,7 +138,7 @@ export function usePrepState(): UsePrepStateReturn {
         }
 
         // Wait for the service worker to be ready
-        const registration = await navigator.serviceWorker.ready;
+        await navigator.serviceWorker.ready;
 
         const messaging = getMessaging(app);
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -150,7 +150,7 @@ export function usePrepState(): UsePrepStateReturn {
             return false;
         }
 
-        const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
+        const fcmToken = await getToken(messaging, { vapidKey });
 
         if (fcmToken) {
             saveState({...state, pushEnabled: true, fcmToken });
@@ -203,13 +203,13 @@ export function usePrepState(): UsePrepStateReturn {
          if (currentPermission === 'granted') {
             try {
               // Wait for the service worker to be ready
-              const registration = await navigator.serviceWorker.ready;
+              await navigator.serviceWorker.ready;
               const messaging = getMessaging(app);
               // Check if we have a token in state first
               if (!state.fcmToken) {
                 const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
                 if (vapidKey) {
-                  const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
+                  const fcmToken = await getToken(messaging, { vapidKey });
                   if (fcmToken) {
                     // Update state without triggering a full save, just set token
                     saveState({ ...state, fcmToken, pushEnabled: true });
@@ -263,7 +263,7 @@ export function usePrepState(): UsePrepStateReturn {
             setState(savedState);
         }
     }
-  }, [isClient]);
+  }, [isClient, saveState]);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
