@@ -6,13 +6,13 @@ import {add} from "date-fns";
 import {
   DOSE_REMINDER_WINDOW_START_HOURS,
 } from "./constants";
+import { onTaskDispatched } from "firebase-functions/v2/tasks";
 
 admin.initializeApp();
 
 const db = admin.firestore();
 const messaging = admin.messaging();
 const LOCATION = "europe-west9";
-// Use the task queue by its name and location. The SDK will construct the correct URI.
 const queue = getFunctions().taskQueue("sendReminder", LOCATION);
 
 
@@ -76,15 +76,25 @@ export const onDoseLogged = functions.region(LOCATION).firestore
 
 
 /**
- * This function is an HTTP endpoint designed to be called by Cloud Tasks.
+ * This function is a V2 Task Queue function.
  * It sends a single push notification to the specified FCM token.
  */
-export const sendReminder = functions.region(LOCATION).tasks.onEnqueue(async (task) => {
+export const sendReminder = onTaskDispatched({
+    region: LOCATION,
+    retryConfig: {
+        maxAttempts: 3,
+        minBackoffSeconds: 5,
+    },
+    rateLimits: {
+        maxConcurrentDispatches: 6,
+    },
+}, async (task) => {
     const { fcmToken } = task.data;
 
     if (!fcmToken) {
         functions.logger.warn("Request to sendReminder missing fcmToken.");
-        throw new functions.https.HttpsError("invalid-argument", "fcmToken is required.");
+        // This won't retry because it's a permanent error.
+        return;
     }
 
     const payload = {
@@ -100,9 +110,7 @@ export const sendReminder = functions.region(LOCATION).tasks.onEnqueue(async (ta
         await messaging.send(payload);
         functions.logger.log("Successfully sent reminder to", fcmToken);
         
-        // Find the document by FCM token and update it.
         const sessionRef = db.collection("prepSessions").doc(fcmToken);
-        // We only update lastNotifiedAt here, as sending a notification shouldn't alter the core session state.
         await sessionRef.update({
             lastNotifiedAt: admin.firestore.FieldValue.serverTimestamp()
         });
@@ -110,15 +118,14 @@ export const sendReminder = functions.region(LOCATION).tasks.onEnqueue(async (ta
     } catch (error) {
         functions.logger.error("Error sending reminder to", fcmToken, error);
         
-        // Check for a specific error code that indicates an invalid or unregistered token
         if ((error as any).code === 'messaging/registration-token-not-registered') {
-            // The token is no longer valid, probably because the user uninstalled the app or cleared data.
-            // We should delete the session document to clean up.
             await db.collection("prepSessions").doc(fcmToken).delete();
             functions.logger.log("Deleted document for invalid token:", fcmToken);
+            // No need to retry
+            return;
         }
         
-        // Throwing an error will cause Cloud Tasks to retry the task if configured to do so.
-        throw new functions.https.HttpsError("internal", "Error sending notification.");
+        // Throwing an error will cause Cloud Tasks to retry the task based on retryConfig.
+        throw new functions.https.HttpsError("internal", "Error sending notification, will retry.");
     }
 });
