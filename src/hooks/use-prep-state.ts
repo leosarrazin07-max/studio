@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -6,9 +7,8 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { app, firebaseConfig } from "@/lib/firebase-client";
+import { app } from "@/lib/firebase-client";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
-import { initializeApp } from 'firebase/app';
 
 // --- MOCK DATA GENERATION FOR DEVELOPMENT ---
 const createMockData = (): PrepState => {
@@ -44,6 +44,7 @@ const createMockData = (): PrepState => {
     };
 };
 // --- END MOCK DATA ---
+
 
 const safelyParseJSON = (jsonString: string | null) => {
   if (!jsonString) return null;
@@ -139,8 +140,8 @@ export function usePrepState(): UsePrepStateReturn {
         const messaging = getMessaging(app);
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
         if (!vapidKey) {
-            console.error("VAPID key is missing.");
-            toast({ title: "Erreur de configuration", variant: "destructive" });
+            console.error("VAPID public key not found in environment variables.");
+            toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
             setIsPushLoading(false);
             return false;
         }
@@ -175,8 +176,6 @@ export function usePrepState(): UsePrepStateReturn {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ token: state.fcmToken })
         });
-        // We only change pushEnabled to false, but keep the fcmToken
-        // so we can easily re-enable it without asking for permission again.
         saveState({...state, pushEnabled: false});
         toast({ title: "Notifications désactivées." });
       } catch (error) {
@@ -186,7 +185,6 @@ export function usePrepState(): UsePrepStateReturn {
         setIsPushLoading(false);
       }
     } else {
-        // If there's no token, just update the state
         saveState({...state, pushEnabled: false});
     }
   }, [state, saveState, toast]);
@@ -194,37 +192,38 @@ export function usePrepState(): UsePrepStateReturn {
   useEffect(() => {
     setIsClient(true);
     if (typeof window !== 'undefined' && 'Notification' in window) {
-      setPushPermissionStatus(Notification.permission);
-    }
-    
-    // On mount, check notification status and set token if already granted
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-        if (!vapidKey) {
-            console.error("VAPID key missing for FCM token retrieval on mount");
-            setIsPushLoading(false);
-            return;
-        }
-        
-        try {
-            const messaging = getMessaging(app);
-            getToken(messaging, { vapidKey }).then(fcmToken => {
-                if (fcmToken) {
-                    setState(prevState => ({ ...prevState, fcmToken }));
-                } else {
+      const currentPermission = Notification.permission;
+      setPushPermissionStatus(currentPermission);
+      
+      const initializeMessaging = async () => {
+         if (currentPermission === 'granted') {
+            try {
+              const messaging = getMessaging(app);
+              // Check if we have a token in state first
+              if (!state.fcmToken) {
+                const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+                if (vapidKey) {
+                  const fcmToken = await getToken(messaging, { vapidKey });
+                  if (fcmToken) {
+                    // Update state without triggering a full save, just set token
+                    setState(prevState => ({ ...prevState, fcmToken, pushEnabled: true })); 
+                  } else {
                     setState(prevState => ({ ...prevState, pushEnabled: false, fcmToken: null }));
+                  }
                 }
-            }).catch(err => {
-                console.error("Error getting token on mount", err);
-                setState(prevState => ({...prevState, pushEnabled: false, fcmToken: null}));
-            }).finally(() => {
-                setIsPushLoading(false)
-            });
-        } catch (err) {
-            console.error("Error initializing messaging on mount", err);
+              }
+            } catch (err) {
+              console.error("Error initializing messaging on mount", err);
+              setState(prevState => ({ ...prevState, pushEnabled: false, fcmToken: null }));
+            } finally {
+               setIsPushLoading(false);
+            }
+        } else {
             setIsPushLoading(false);
         }
-        
+      };
+
+      initializeMessaging();
     } else {
         setIsPushLoading(false);
     }
@@ -246,14 +245,17 @@ export function usePrepState(): UsePrepStateReturn {
 
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
-  }, [toast, app]);
+  }, []);
   
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'development' && typeof window !== 'undefined') {
+    // This effect runs only once on the client to load the state from localStorage
+    if(isClient && process.env.NODE_ENV !== 'development') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-        if (savedState) setState(savedState);
+        if (savedState) {
+            setState(savedState);
+        }
     }
-  }, []);
+  }, [isClient]);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
