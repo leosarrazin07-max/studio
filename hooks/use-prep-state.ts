@@ -7,7 +7,6 @@ import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { getRemoteConfig, getString, fetchAndActivate } from "firebase/remote-config";
 import { app } from "@/lib/firebase-client";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
@@ -45,33 +44,6 @@ const createMockData = (): PrepState => {
     };
 };
 // --- END MOCK DATA ---
-
-const getVapidKey = async () => {
-    if (typeof window === "undefined") return null;
-    try {
-        const remoteConfig = getRemoteConfig(app);
-        // Set a minimum fetch interval to avoid throttling
-        remoteConfig.settings.minimumFetchIntervalMillis = 3600000;
-        await fetchAndActivate(remoteConfig);
-        const vapidKey = getString(remoteConfig, "NEXT_PUBLIC_VAPID_PUBLIC_KEY");
-        if (vapidKey) {
-            return vapidKey;
-        } else {
-             console.error("VAPID key is empty in Remote Config.");
-             return null;
-        }
-    } catch (error) {
-        console.error("Error fetching VAPID key from Remote Config:", error);
-    }
-    
-    // Fallback to environment variable if Remote Config fails
-    if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
-        return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    }
-    
-    console.error("VAPID public key is not set in environment variables or Remote Config.");
-    return null;
-};
 
 
 const safelyParseJSON = (jsonString: string | null) => {
@@ -166,8 +138,10 @@ export function usePrepState(): UsePrepStateReturn {
         }
 
         const messaging = getMessaging(app);
-        const vapidKey = await getVapidKey();
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
         if (!vapidKey) {
+            console.error("VAPID public key not found in environment variables.");
             toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
             setIsPushLoading(false);
             return false;
@@ -228,7 +202,7 @@ export function usePrepState(): UsePrepStateReturn {
               const messaging = getMessaging(app);
               // Check if we have a token in state first
               if (!state.fcmToken) {
-                const vapidKey = await getVapidKey();
+                const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
                 if (vapidKey) {
                   const fcmToken = await getToken(messaging, { vapidKey });
                   if (fcmToken) {

@@ -6,6 +6,7 @@ const withPWA = require('@ducanh2912/next-pwa').default({
   reloadOnOnline: true,
   swcMinify: true,
   disable: process.env.NODE_ENV === 'development',
+  sw: 'firebase-messaging-sw.js', // Point to the Firebase service worker
 });
 
 
