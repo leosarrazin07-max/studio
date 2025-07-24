@@ -48,14 +48,5 @@
       "sizes": "512x512",
       "type": "image/png"
     }
-  ],
-  "shortcuts": [
-    {
-      "name": "Log a Dose",
-      "short_name": "Log Dose",
-      "description": "Log a new dose of PrEP",
-      "url": "/",
-      "icons": [{ "src": "/icons/icon-96x96.png", "sizes": "96x96" }]
-    }
   ]
 }
