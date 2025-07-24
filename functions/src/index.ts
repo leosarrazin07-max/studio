@@ -98,5 +98,4 @@ export const checkDoseReminders = functions.pubsub
     console.log("Dose reminder check complete.");
     return null;
   });
-
     
