@@ -10,6 +10,7 @@ admin.initializeApp();
 const db = admin.firestore();
 const messaging = admin.messaging();
 const LOCATION = "europe-west9";
+// Renamed the task queue to avoid a naming conflict with the function itself.
 const taskQueue = getFunctions().taskQueue("reminderTasks", LOCATION);
 
 interface PrepStateDocument {
