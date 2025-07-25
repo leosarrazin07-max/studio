@@ -89,7 +89,6 @@ export function usePrepState(): UsePrepStateReturn {
   const [pushPermissionStatus, setPushPermissionStatus] = useState<NotificationPermission>();
 
   const saveState = useCallback((newState: PrepState) => {
-      // Don't persist mock data in dev unless we have a token (for testing notifications)
       if (process.env.NODE_ENV === 'development' && newState.fcmToken === null) {
           setState(newState);
           return;
@@ -98,14 +97,12 @@ export function usePrepState(): UsePrepStateReturn {
       setState(newState);
       if (typeof window !== 'undefined') {
         try {
-            // Ensure we are saving a valid fcmToken state
             const stateToSave = {
                 ...newState,
                 prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
             
-            // Sync state with Firestore if push is enabled, and we have a token
             if (newState.pushEnabled && newState.fcmToken) {
                  fetch('/api/subscription', {
                     method: 'POST',
@@ -137,12 +134,9 @@ export function usePrepState(): UsePrepStateReturn {
             return false;
         }
 
-        // Wait for the service worker to be ready
         const registration = await navigator.serviceWorker.ready;
-
         const messaging = getMessaging(app);
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-
         if (!vapidKey) {
             console.error("VAPID public key not found in environment variables.");
             toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
@@ -195,70 +189,40 @@ export function usePrepState(): UsePrepStateReturn {
 
   useEffect(() => {
     setIsClient(true);
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      const currentPermission = Notification.permission;
-      setPushPermissionStatus(currentPermission);
-      
-      const initializeMessaging = async () => {
-         if (currentPermission === 'granted') {
-            setIsPushLoading(true);
-            try {
-              const registration = await navigator.serviceWorker.ready;
-              const messaging = getMessaging(app);
-              const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-              if (vapidKey) {
-                const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
-                if (fcmToken) {
-                    if (fcmToken !== state.fcmToken || !state.pushEnabled) {
-                        saveState({ ...state, fcmToken, pushEnabled: true });
-                    }
-                } else {
-                  saveState({ ...state, pushEnabled: false, fcmToken: null });
-                }
-              }
-            } catch (err) {
-              console.error("Error initializing messaging on mount", err);
-              saveState({ ...state, pushEnabled: false, fcmToken: null });
-            } finally {
-               setIsPushLoading(false);
-            }
-        } else {
-            setIsPushLoading(false);
-        }
-      };
-
-      initializeMessaging();
-    } else {
-        setIsPushLoading(false);
-    }
     
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setPushPermissionStatus(Notification.permission);
+      setIsPushLoading(false);
+    } else {
+      setIsPushLoading(false);
+    }
+
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       try {
         const messaging = getMessaging(app);
-        onMessage(messaging, (payload) => {
+        const unsubscribe = onMessage(messaging, (payload) => {
           console.log("Message received. ", payload);
           toast({
             title: payload.notification?.title,
             description: payload.notification?.body,
           });
         });
+        return () => unsubscribe();
       } catch (err) {
-        console.error("Error getting messaging instance:", err)
+        console.error("Error setting up onMessage listener:", err)
       }
     }
-
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  }, [toast]);
   
   useEffect(() => {
-    // This effect runs only once on the client to load the state from localStorage
-    if(isClient && process.env.NODE_ENV !== 'development') {
+    if (isClient && process.env.NODE_ENV !== 'development') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) {
             setState(savedState);
         }
     }
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
   }, [isClient]);
 
   const startSession = useCallback((time: Date) => {
