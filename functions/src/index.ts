@@ -3,17 +3,15 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { getFunctions } from "firebase-admin/functions";
 import {add} from "date-fns";
-import {
-    DOSE_REMINDER_WINDOW_START_HOURS,
-} from "./constants";
 import { onTaskDispatched } from "firebase-functions/v2/tasks";
+import { DOSE_REMINDER_WINDOW_START_HOURS } from "./constants";
 
 admin.initializeApp();
 
 const db = admin.firestore();
 const messaging = admin.messaging();
 const LOCATION = "europe-west9";
-const queue = getFunctions().taskQueue("reminderTasks", LOCATION);
+const taskQueue = getFunctions().taskQueue("reminderTasks", LOCATION);
 
 interface PrepStateDocument {
     fcmToken: string;
@@ -29,7 +27,6 @@ interface PrepStateDocument {
 export const onDoseLogged = functions.region(LOCATION).firestore
   .document("prepSessions/{sessionId}")
   .onWrite(async (change, context) => {
-    // We don't need to do anything if the document is deleted.
     if (!change.after.exists) {
         functions.logger.log("Document deleted. No action taken.");
         return null;
@@ -49,7 +46,6 @@ export const onDoseLogged = functions.region(LOCATION).firestore
         return null;
     }
 
-    // Schedule the new reminder
     const reminderTime = add(lastDose.time.toDate(), { hours: DOSE_REMINDER_WINDOW_START_HOURS });
     const scheduleDelaySeconds = Math.floor((reminderTime.getTime() - Date.now()) / 1000);
 
@@ -59,11 +55,9 @@ export const onDoseLogged = functions.region(LOCATION).firestore
     }
 
     try {
-        await queue.enqueue(
-            { fcmToken: session.fcmToken },
-            {
-                scheduleDelaySeconds,
-            }
+        await taskQueue.enqueue(
+            { fcmToken: session.fcmToken, sessionId: sessionId },
+            { scheduleDelaySeconds }
         );
         functions.logger.log(`Reminder scheduled for token ${session.fcmToken} in ${scheduleDelaySeconds} seconds.`);
     } catch (error) {
@@ -78,58 +72,56 @@ export const onDoseLogged = functions.region(LOCATION).firestore
  * This function is a V2 Task Queue function.
  * It sends a single push notification to the specified FCM token.
  */
-export const sendReminder = onTaskDispatched({
-    region: LOCATION,
-    taskQueueOptions: {
-      retryConfig: {
-        maxAttempts: 5,
-        minBackoffSeconds: 60
-      },
-      rateLimits: {
-        maxConcurrentDispatches: 1000
-      },
-      name: "reminderTasks"
-    }
-}, async (task) => {
-    const { fcmToken } = task.data;
-
-    if (!fcmToken) {
-        functions.logger.warn("Request to sendReminder missing fcmToken.");
-        // This won't retry because it's a permanent error.
-        return;
-    }
-
-    const payload = {
-        notification: {
-            title: "Rappel PrEPy",
-            body: "Il est temps de prendre votre comprimé pour rester protégé.",
-            icon: "/icons/icon-192x192.svg",
+export const sendReminder = onTaskDispatched<{"fcmToken": string, "sessionId": string}>(
+    {
+        region: LOCATION,
+        taskQueueOptions: {
+            name: "reminderTasks",
+            retryConfig: {
+                maxAttempts: 5,
+                minBackoffSeconds: 60,
+            },
+            rateLimits: {
+                maxConcurrentDispatches: 1000,
+            },
         },
-        token: fcmToken,
-    };
+    },
+    async (task) => {
+        const { fcmToken, sessionId } = task.data;
 
-    try {
-        await messaging.send(payload);
-        functions.logger.log("Successfully sent reminder to", fcmToken);
-        
-        const sessionRef = db.collection("prepSessions").doc(fcmToken);
-        await sessionRef.update({
-            lastNotifiedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-        
-    } catch (error) {
-        functions.logger.error("Error sending reminder to", fcmToken, error);
-        
-        if ((error as any).code === 'messaging/registration-token-not-registered') {
-            await db.collection("prepSessions").doc(fcmToken).delete();
-            functions.logger.log("Deleted document for invalid token:", fcmToken);
-            // No need to retry
+        if (!fcmToken) {
+            functions.logger.warn("Request to sendReminder missing fcmToken.");
             return;
         }
-        
-        // Throwing an error will cause Cloud Tasks to retry the task based on retryConfig.
-        throw new functions.https.HttpsError("internal", "Error sending notification, will retry.");
-    }
-});
 
-    
+        const payload = {
+            notification: {
+                title: "Rappel PrEPy",
+                body: "Il est temps de prendre votre comprimé pour rester protégé.",
+                icon: "/icons/icon-192x192.svg",
+            },
+            token: fcmToken,
+        };
+
+        try {
+            await messaging.send(payload);
+            functions.logger.log("Successfully sent reminder to", fcmToken);
+
+            const sessionRef = db.collection("prepSessions").doc(sessionId);
+            await sessionRef.update({
+                lastNotifiedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+        } catch (error) {
+            functions.logger.error("Error sending reminder to", fcmToken, error);
+
+            if ((error as any).code === 'messaging/registration-token-not-registered') {
+                await db.collection("prepSessions").doc(sessionId).delete();
+                functions.logger.log("Deleted document for invalid token:", fcmToken);
+                return;
+            }
+
+            throw new functions.https.HttpsError("internal", "Error sending notification, will retry.");
+        }
+    }
+);
