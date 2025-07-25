@@ -73,15 +73,8 @@ export const onDoseLogged = functions.region(LOCATION).firestore
  * It sends a single push notification to the specified FCM token.
  */
 export const sendReminder = functions.region(LOCATION).tasks
-    .taskQueue({
-        retryConfig: {
-            maxAttempts: 5,
-            minBackoffSeconds: 60,
-        },
-        rateLimits: {
-            maxConcurrentDispatches: 1000,
-        },
-    }).onDispatch(async (data) => {
+    .taskQueue("reminderTasks")
+    .onDispatch(async (data) => {
         const { fcmToken, sessionId } = data as { fcmToken: string; sessionId: string };
 
         if (!fcmToken) {
