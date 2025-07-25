@@ -315,7 +315,6 @@ export function usePrepState(): UsePrepStateReturn {
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
   const lastDose = allPrises[0] ?? null;
   const secondToLastDose = allPrises[1] ?? null;
-  const thirdToLastDose = allPrises[2] ?? null;
   
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
@@ -326,18 +325,16 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
-  if (isClient && state.sessionActive) {
-      if (allPrises.length < 3) {
-          if (secondToLastDose) {
-              protectionEndsAtText = `Si vous continuez les prises jusqu'au ${format(secondToLastDose.time, 'eeee dd MMMM HH:mm', { locale: fr })}, vos rapports seront protégés.`;
-          } else {
-              protectionEndsAtText = "Continuez vos prises quotidiennes pour être protégé.";
-          }
-      } else if (thirdToLastDose) { // Now this relies on the third dose from the end
-          protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(secondToLastDose.time, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-      }
+ if (isClient && state.sessionActive) {
+    if (allPrises.length >= 3 && secondToLastDose) {
+      protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(secondToLastDose.time, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+    } else if (allPrises.length === 2 && secondToLastDose) {
+      protectionEndsAtText = `Si vous continuez les prises vos rapports avant le ${format(secondToLastDose.time, 'eeee dd MMMM HH:mm', { locale: fr })} seront protégés`;
+    } else if (allPrises.length === 1) {
+      protectionEndsAtText = "Vos rapports seront protégés par la PrEP si vous continuez les prises pendant 2 jours après ce début de session";
+    }
   } else if (isClient && !state.sessionActive && lastDose && secondToLastDose) {
-      protectionEndsAtText = `Protection résiduelle jusqu'au ${format(secondToLastDose.time, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+      protectionEndsAtText = `Protection résiduelle jusqu'au ${format(add(lastDose.time, { hours: FINAL_PROTECTION_HOURS }), 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
 
