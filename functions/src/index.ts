@@ -1,7 +1,7 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
-import {add} from "date-fns";
+import { add } from "date-fns";
 import { DOSE_REMINDER_WINDOW_START_HOURS } from "./constants";
 
 admin.initializeApp();
@@ -14,7 +14,6 @@ interface PrepStateDocument {
     fcmToken: string;
     sessionActive: boolean;
     prises: { time: admin.firestore.Timestamp, pills: number }[];
-    lastNotifiedAt: admin.firestore.Timestamp | null;
 }
 
 /**
@@ -37,6 +36,7 @@ export const onDoseLogged = functions.region(LOCATION).firestore
         return null;
     }
 
+    // Get the most recent dose
     const lastDose = session.prises.sort((a, b) => b.time.toMillis() - a.time.toMillis())[0];
     if (!lastDose) {
          functions.logger.log(`Session ${sessionId} has no doses. No reminder will be scheduled.`);
@@ -44,14 +44,13 @@ export const onDoseLogged = functions.region(LOCATION).firestore
     }
 
     const reminderTime = add(lastDose.time.toDate(), { hours: DOSE_REMINDER_WINDOW_START_HOURS });
-    const scheduleDelaySeconds = Math.floor((reminderTime.getTime() - Date.now()) / 1000);
+    const scheduleDelaySeconds = Math.max(0, Math.floor((reminderTime.getTime() - Date.now()) / 1000));
 
     if (scheduleDelaySeconds <= 0) {
         functions.logger.log(`Reminder time for session ${sessionId} is in the past. No reminder will be scheduled.`);
         return null;
     }
 
-    // V1 Task Queue enqueue method
     const queue = functions.tasks.taskQueue("reminderTasks", LOCATION);
 
     try {
@@ -105,11 +104,15 @@ export const sendReminder = functions.region(LOCATION).tasks
 
             if ((error as any).code === 'messaging/registration-token-not-registered') {
                 const sessionRef = db.collection("prepSessions").doc(sessionId);
-                await sessionRef.delete();
-                functions.logger.log("Deleted document for invalid token:", fcmToken);
+                try {
+                  await sessionRef.delete();
+                  functions.logger.log("Deleted document for invalid token:", fcmToken);
+                } catch (deleteError) {
+                  functions.logger.error("Failed to delete document for invalid token:", fcmToken, deleteError);
+                }
                 return;
             }
-
+            
             throw new functions.https.HttpsError("internal", "Error sending notification, will retry.");
         }
     });
