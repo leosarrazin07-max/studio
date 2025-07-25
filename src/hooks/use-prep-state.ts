@@ -167,7 +167,7 @@ export function usePrepState(): UsePrepStateReturn {
         setIsPushLoading(false);
         return false;
     }
-}, [state, saveState, toast]);
+  }, [state, saveState, toast]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
     if (state.fcmToken) {
@@ -315,6 +315,7 @@ export function usePrepState(): UsePrepStateReturn {
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
   const lastDose = allPrises[0] ?? null;
   const secondToLastDose = allPrises[1] ?? null;
+  const thirdToLastDose = allPrises[2] ?? null;
   
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
@@ -327,16 +328,16 @@ export function usePrepState(): UsePrepStateReturn {
 
   if (isClient && state.sessionActive) {
       if (allPrises.length < 3) {
-          if(secondToLastDose) {
-            const fullProtectionDate = add(secondToLastDose.time, { hours: FINAL_PROTECTION_HOURS });
-            protectionEndsAtText = `Si vous continuez les prises jusqu'au ${format(fullProtectionDate, 'eeee dd MMMM', { locale: fr })}, vos rapports seront protégés.`;
+          if (secondToLastDose) {
+              protectionEndsAtText = `Si vous continuez les prises jusqu'au ${format(secondToLastDose.time, 'eeee dd MMMM HH:mm', { locale: fr })}, vos rapports seront protégés.`;
           } else {
-            protectionEndsAtText = "Continuez vos prises quotidiennes pour être protégé.";
+              protectionEndsAtText = "Continuez vos prises quotidiennes pour être protégé.";
           }
-      } else if (lastDose) {
-        const protectionEndDate = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+      } else if (thirdToLastDose) { // Now this relies on the third dose from the end
+          protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(secondToLastDose.time, 'eeee dd MMMM HH:mm', { locale: fr })}`;
       }
+  } else if (isClient && !state.sessionActive && lastDose && secondToLastDose) {
+      protectionEndsAtText = `Protection résiduelle jusqu'au ${format(secondToLastDose.time, 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
 
@@ -375,10 +376,6 @@ export function usePrepState(): UsePrepStateReturn {
      status = 'missed';
      statusColor = 'bg-destructive';
      statusText = 'Session terminée';
-     if (lastDose) {
-         const protectionEndsAt = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
-         protectionEndsAtText = `Protection résiduelle jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-     }
   }
 
   if (!isClient) {
@@ -411,3 +408,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
