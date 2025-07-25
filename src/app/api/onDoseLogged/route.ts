@@ -1,31 +1,33 @@
 
 import { NextResponse } from 'next/server';
 import { firestore, admin } from '@/lib/firebase-admin';
-import { add, sub } from 'date-fns';
-import { DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_INTERVAL_MINUTES } from '@/lib/constants';
+import { add } from 'date-fns';
+import { DOSE_REMINDER_WINDOW_START_HOURS } from '@/lib/constants';
 
 // This is a webhook that should be configured to be called by a Firestore trigger.
 // For App Hosting, this would typically be done via an Eventarc trigger calling this endpoint.
 export async function POST(request: Request) {
   try {
+    // Note: The body format from Eventarc for a Firestore trigger is different
+    // from a direct client call. We're assuming a client-like POST for now.
     const body = await request.json();
-    const { sessionId, data } = body;
+    const { token, state } = body;
 
-    if (!sessionId || !data) {
-      return NextResponse.json({ error: 'Session ID and data are required.' }, { status: 400 });
+    if (!token || !state) {
+      return NextResponse.json({ error: 'Token and state are required.' }, { status: 400 });
     }
 
-    const { fcmToken, prises, sessionActive } = data;
+    const { prises, sessionActive, fcmToken } = state;
 
     if (!sessionActive || !fcmToken || !prises || prises.length === 0) {
-      console.log(`[${sessionId}] Session not active, no token, or no doses. No notification scheduled.`);
-      // We can also delete any existing scheduled tasks for this session here if needed.
+      console.log(`[${fcmToken}] Session not active, no token, or no doses. No notification scheduled.`);
+      // Here you could add logic to delete scheduled tasks if any.
       return NextResponse.json({ success: true, message: 'No notification scheduled.' });
     }
-
-    // The `prises` from the client have been converted to Firestore Timestamps string on the server
-    // We need to convert them back to Date objects
-     const doses = prises.map((p: any) => ({
+    
+    // The `prises` from the client have been converted to ISO strings.
+    // We need to convert them back to Date objects for date-fns.
+    const doses = prises.map((p: any) => ({
       ...p,
       time: new Date(p.time),
     })).sort((a: any, b: any) => a.time.getTime() - b.time.getTime());
@@ -36,45 +38,44 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, message: 'No last dose found, no notification scheduled.' });
     }
 
-    // Calculate the next notification time
+    // THIS IS A SIMPLIFIED LOGIC FOR DEMONSTRATION.
+    // In a real-world scenario, you would use a task queue service like Cloud Tasks
+    // to schedule the notification to be sent at the correct time.
+    // App Hosting does not have a built-in scheduler, so this endpoint would
+    // ideally create a task in Cloud Tasks.
+    
     const nextDoseTime = add(lastDose.time, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
-    const reminderTime = sub(nextDoseTime, { minutes: DOSE_REMINDER_INTERVAL_MINUTES });
 
     const message = {
       notification: {
         title: 'Rappel de prise PrEPy !',
-        body: `Il est bientôt temps de prendre votre prochain comprimé.`,
+        body: `Il est temps de prendre votre comprimé. Prochaine prise prévue autour de ${nextDoseTime.toLocaleTimeString('fr-FR')}.`,
       },
       token: fcmToken,
     };
     
-    // As there's no native scheduler in App Hosting, sending a message with a delay
-    // is complex. A common pattern is to use a service like Cloud Tasks or a CRON job
-    // that calls another endpoint at the right time.
-    // For now, we will log the intent to send a notification.
+    console.log(`[${fcmToken}] Intent to send notification for dose taken at ${lastDose.time}.`);
+    console.log(`[${fcmToken}] A reminder would be sent for ${nextDoseTime.toISOString()}`);
     
-    console.log(`[${sessionId}] Intent to send notification for dose at ${lastDose.time}.`);
-    console.log(`[${sessionId}] Reminder would be scheduled around: ${reminderTime.toISOString()}`);
-    console.log(`[${sessionId}] Message to be sent:`, message);
-
-    // In a full implementation, you would use Cloud Tasks here:
-    // 1. Create a Cloud Task to call a "/api/sendReminder" endpoint.
-    // 2. Set the task's `scheduleTime` to `reminderTime`.
-    // 3. The task's payload would be the `message` object.
-    
-    // For demonstration, we'll try to send a message immediately.
-    // NOTE: This is NOT a scheduled notification.
+    // For this example, we'll send a message immediately to confirm the function is triggered.
+    // This is NOT a scheduled notification.
     try {
-        await admin.messaging().send(message);
-        console.log(`[${sessionId}] Test notification sent successfully.`);
-    } catch(e) {
-        console.error(`[${sessionId}] Failed to send test notification`, e)
+        const response = await admin.messaging().send(message);
+        console.log(`[${fcmToken}] Test notification sent successfully:`, response);
+    } catch(error) {
+        console.error(`[${fcmToken}] Failed to send test notification:`, error);
+        // If the token is invalid, we might want to remove it from the database.
+        if (error.code === 'messaging/registration-token-not-registered') {
+            await firestore.collection('prepSessions').doc(fcmToken).delete();
+            console.log(`[${fcmToken}] Removed invalid token from Firestore.`);
+        }
     }
-
 
     return NextResponse.json({ success: true, message: 'Notification logic processed.' });
   } catch (error) {
     console.error('Error in onDoseLogged function:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    // It's important to cast the error to access its properties safely.
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: 'Internal Server Error', details: errorMessage }, { status: 500 });
   }
 }

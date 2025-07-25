@@ -2,10 +2,10 @@
 import { NextResponse } from 'next/server';
 import { firestore } from '@/lib/firebase-admin';
 import * as admin from 'firebase-admin';
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { app as clientApp } from '@/lib/firebase-client';
 
-// Saves or updates a session document with the FCM token and state
+// This endpoint now simply saves the state to Firestore.
+// The logic to send notifications should be triggered by this Firestore write,
+// ideally via an Eventarc trigger pointing to the /api/onDoseLogged endpoint.
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -22,30 +22,24 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Valid state object is required.' }, { status: 400 });
     }
 
+    // Convert date strings back to Firestore Timestamps for storage
     const dataToSave = {
         fcmToken: token,
         sessionActive: state.sessionActive,
         prises: state.prises.map((p: any) => ({ ...p, time: admin.firestore.Timestamp.fromDate(new Date(p.time)) })),
-        lastNotifiedAt: admin.firestore.FieldValue.serverTimestamp()
+        updatedAt: admin.firestore.FieldValue.serverTimestamp() // Use a consistent field name
     };
     
     await sessionRef.set(dataToSave, { merge: true });
 
-    // Since onDocumentWritten is not supported in App Hosting, we manually trigger a function.
-    // This is a workaround to schedule notifications.
-    try {
-        const functions = getFunctions(clientApp, 'europe-west9');
-        const scheduleFunction = httpsCallable(functions, 'onDoseLogged');
-        await scheduleFunction({ sessionId: token, data: dataToSave });
-    } catch (e) {
-        console.error("Error calling onDoseLogged function", e);
-    }
+    // The onDoseLogged function should be triggered by this 'set' operation via Eventarc.
+    // We no longer call it directly from here.
 
-
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, message: 'State saved. Notification process will be triggered by Firestore.' });
   } catch (error) {
     console.error('Error saving subscription:', error);
-    return NextResponse.json({ error: 'Failed to save subscription.' }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: 'Failed to save subscription.', details: errorMessage }, { status: 500 });
   }
 }
 
@@ -62,13 +56,13 @@ export async function DELETE(request: Request) {
 
     const sessionRef = firestore.collection('prepSessions').doc(token);
     await sessionRef.delete();
-
-    // Also need to cancel any scheduled tasks if possible, though that's more complex
-    // and might require another cloud function call. For now, we just delete the data.
+    
+    console.log(`[${token}] Subscription deleted successfully.`);
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting subscription:', error);
-    return NextResponse.json({ error: 'Failed to delete subscription.' }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: 'Failed to delete subscription.', details: errorMessage }, { status: 500 });
   }
 }
