@@ -1,6 +1,6 @@
 
 import * as functions from "firebase-functions";
-import * as admin from "firebase-admin";
+import *admin from "firebase-admin";
 import { getFunctions } from "firebase-admin/functions";
 import {add} from "date-fns";
 import { DOSE_REMINDER_WINDOW_START_HOURS } from "./constants";
