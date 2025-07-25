@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info, PowerOff } from 'lucide-react';
+import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info, PowerOff, ShieldQuestion } from 'lucide-react';
 import type { UsePrepStateReturn, PrepCalculatorResult } from '@/lib/types';
 import { LogDoseDialog } from './log-dose-dialog';
 import { DoseHistory } from './dose-history';
@@ -52,27 +52,13 @@ export function PrepDashboard({
   };
 
   const StatusDetails = () => {
-    switch (status) {
-      case 'loading':
-        return <p className="text-white/80">{protectionStartsIn}</p>;
-      case 'effective':
-        return (
-          <div className="text-center">
-            <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>
-          </div>
-        );
-      case 'missed':
-        return (
-          <div className="text-center">
-            <p className="text-white/90 font-medium">Prenez une prise dès que possible.</p>
-            {protectionEndsAtText && <p className="text-xs text-white/80 mt-1">{protectionEndsAtText}</p>}
-          </div>
-        );
-      case 'inactive':
-         return <p className="text-sm text-white/90 font-medium">{protectionEndsAtText}</p>;
-      default:
-        return null;
-    }
+    return (
+      <div className="text-center h-12 mt-2 flex flex-col justify-center">
+        {status === 'loading' && <p className="text-white/80">{protectionStartsIn}</p>}
+        {status === 'effective' && <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>}
+        {status === 'missed' && <p className="text-white/90 font-medium">Prenez une prise dès que possible.</p>}
+      </div>
+    );
   };
 
   return (
@@ -87,7 +73,13 @@ export function PrepDashboard({
             <StatusDetails />
           </div>
           
-            <div className="p-6 bg-card">
+           {protectionEndsAtText && (
+             <div className="bg-card border-t p-4 text-center">
+                <p className="text-sm text-muted-foreground font-medium">{protectionEndsAtText}</p>
+             </div>
+           )}
+
+            <div className="p-6 bg-card border-t">
                { sessionActive ? (
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Button
