@@ -302,7 +302,6 @@ export function usePrepState(): UsePrepStateReturn {
   
   const allPrises = state.prises.filter(d => d.type !== 'stop').sort((a, b) => b.time.getTime() - a.time.getTime());
   const lastDose = allPrises[0] ?? null;
-  const secondToLastDose = allPrises[1] ?? null;
   
   const firstDoseInSession = state.prises.find(d => d.type === 'start');
 
@@ -313,9 +312,25 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
-  if (isClient && allPrises.length >= 3 && secondToLastDose) {
-      protectionEndsAtText = `Protection assurée depuis le ${format(secondToLastDose.time, 'eeee dd MMMM \'à\' HH:mm', { locale: fr })}`;
+  if (isClient) {
+    const sortedPrises = state.prises
+      .filter(d => d.type !== 'stop')
+      .sort((a, b) => a.time.getTime() - b.time.getTime());
+    
+    const priseCount = sortedPrises.length;
+
+    if (priseCount === 1) {
+        protectionEndsAtText = "Si vous continuez les prises pendant 2 jours vos rapports seront protégés";
+    } else if (priseCount === 2) {
+        const secondDose = sortedPrises[1];
+        protectionEndsAtText = `Si vous continuez les prises vos rapports avant le ${format(secondDose.time, "eeee dd MMMM 'à' HH:mm", { locale: fr })} seront protégés`;
+    } else if (priseCount >= 3) {
+        // Get the second to last dose
+        const secondToLastDose = sortedPrises[priseCount - 2];
+        protectionEndsAtText = `Vos rapports sont protégés depuis le ${format(secondToLastDose.time, "eeee dd MMMM 'à' HH:mm", { locale: fr })}`;
+    }
   }
+
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
     const lastDoseTime = lastDose.time;
@@ -383,6 +398,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
 
     
