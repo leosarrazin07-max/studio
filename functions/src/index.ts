@@ -4,7 +4,7 @@ import * as admin from "firebase-admin";
 import { getFunctions } from "firebase-admin/functions";
 import {add} from "date-fns";
 import {
-  DOSE_REMINDER_WINDOW_START_HOURS,
+    DOSE_REMINDER_WINDOW_START_HOURS,
 } from "./constants";
 import { onTaskDispatched } from "firebase-functions/v2/tasks";
 
@@ -138,3 +138,5 @@ export const sendReminder = onTaskDispatched({
         throw new functions.https.HttpsError("internal", "Error sending notification, will retry.");
     }
 });
+
+    

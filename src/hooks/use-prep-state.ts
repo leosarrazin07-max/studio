@@ -138,7 +138,7 @@ export function usePrepState(): UsePrepStateReturn {
         }
 
         // Wait for the service worker to be ready
-        await navigator.serviceWorker.ready;
+        const registration = await navigator.serviceWorker.ready;
 
         const messaging = getMessaging(app);
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -150,7 +150,7 @@ export function usePrepState(): UsePrepStateReturn {
             return false;
         }
 
-        const fcmToken = await getToken(messaging, { vapidKey });
+        const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
 
         if (fcmToken) {
             saveState({...state, pushEnabled: true, fcmToken });
@@ -189,7 +189,7 @@ export function usePrepState(): UsePrepStateReturn {
         setIsPushLoading(false);
       }
     } else {
-        saveState({...state, pushEnabled: false, fcmToken: null });
+        saveState({...state, pushEnabled: false, fcmToken: null});
     }
   }, [state, saveState, toast]);
 
@@ -203,21 +203,22 @@ export function usePrepState(): UsePrepStateReturn {
          if (currentPermission === 'granted') {
             try {
               // Wait for the service worker to be ready
-              await navigator.serviceWorker.ready;
+              const registration = await navigator.serviceWorker.ready;
               const messaging = getMessaging(app);
               // Check if we have a token in state first
               if (!state.fcmToken) {
                 const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
                 if (vapidKey) {
-                  const fcmToken = await getToken(messaging, { vapidKey });
+                  const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
                   if (fcmToken) {
-                    // Update state without triggering a full save, just set token
+                    // Update state with the new token
                     saveState({ ...state, fcmToken, pushEnabled: true });
                   } else {
                     saveState({ ...state, pushEnabled: false, fcmToken: null });
                   }
                 }
-              } else {
+              } else if (!state.pushEnabled) {
+                 // If token exists but push is disabled in state, re-enable it.
                  saveState({ ...state, pushEnabled: true });
               }
             } catch (err) {
@@ -263,7 +264,7 @@ export function usePrepState(): UsePrepStateReturn {
             setState(savedState);
         }
     }
-  }, [isClient, saveState]);
+  }, [isClient]);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
@@ -400,3 +401,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
