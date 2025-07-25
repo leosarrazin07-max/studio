@@ -122,6 +122,7 @@ export function usePrepState(): UsePrepStateReturn {
   const requestNotificationPermission = useCallback(async () => {
     if (typeof window === 'undefined' || !('Notification' in window) || !navigator.serviceWorker) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
+        setIsPushLoading(false);
         return false;
     }
     setIsPushLoading(true);
@@ -132,19 +133,16 @@ export function usePrepState(): UsePrepStateReturn {
 
         if (permission !== 'granted') {
             toast({ title: "Notifications refusées", description: "Vous pouvez les réactiver dans les paramètres de votre navigateur.", variant: "destructive" });
-            // Save the "disabled" preference but keep the current state otherwise
             setState(prevState => {
                 const newState = {...prevState, pushEnabled: false };
-                saveState(newState); // Save the fact that user disabled it
+                saveState(newState); 
                 return newState;
             });
             setIsPushLoading(false);
             return false;
         }
 
-        // Wait for the service worker to be ready
         const registration = await navigator.serviceWorker.ready;
-
         const messaging = getMessaging(app);
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
@@ -160,7 +158,7 @@ export function usePrepState(): UsePrepStateReturn {
         if (fcmToken) {
             setState(prevState => {
                 const newState = {...prevState, pushEnabled: true, fcmToken };
-                saveState(newState); // Immediately save the new state with the token
+                saveState(newState);
                 return newState;
             });
             toast({ title: "Notifications activées!" });
@@ -190,42 +188,33 @@ export function usePrepState(): UsePrepStateReturn {
 
   const unsubscribeFromNotifications = useCallback(async () => {
     const fcmToken = state.fcmToken;
+    setIsPushLoading(true);
     if (fcmToken) {
-      setIsPushLoading(true);
       try {
         await fetch('/api/subscription', {
             method: 'DELETE',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ token: fcmToken })
         });
-        
-        setState(prevState => {
-            const newState = {...prevState, pushEnabled: false, fcmToken: null};
-            saveState(newState);
-            return newState;
-        });
-        toast({ title: "Notifications désactivées." });
-
       } catch (error) {
          console.error("Error unsubscribing:", error);
          toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
-      } finally {
-        setIsPushLoading(false);
       }
-    } else {
-        // If there's no token, just update the state preference
-        setState(prevState => {
-            const newState = {...prevState, pushEnabled: false};
-            saveState(newState);
-            return newState;
-        });
     }
+    
+    // Always update local state to reflect user's choice
+    setState(prevState => {
+        const newState = {...prevState, pushEnabled: false, fcmToken: null};
+        saveState(newState);
+        return newState;
+    });
+    toast({ title: "Notifications désactivées." });
+    setIsPushLoading(false);
+
   }, [state.fcmToken, saveState, toast]);
 
-  // This useEffect only runs once on the client to initialize state and listeners.
   useEffect(() => {
     setIsClient(true);
-
     // Load state from localStorage on initial client render
     if (process.env.NODE_ENV !== 'development') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
@@ -234,7 +223,6 @@ export function usePrepState(): UsePrepStateReturn {
         }
     }
     
-    // Set initial permission status from the browser & set up listener
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setPushPermissionStatus(Notification.permission);
       try {
@@ -251,16 +239,28 @@ export function usePrepState(): UsePrepStateReturn {
         console.error("Error setting up onMessage listener:", err)
       }
     }
-
-    setIsPushLoading(false);
-
   }, [toast]);
   
-  // This useEffect only runs a timer to update the 'now' state
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+
+  useEffect(() => {
+    if (!isClient) return;
+    
+    // Set loading to false only after initial state is loaded and permissions checked
+    const permission = Notification.permission;
+    if (permission === 'denied' || permission === 'default') {
+        if(state.pushEnabled) {
+            // User manually disabled notifs in browser, sync state
+            setState(s => ({...s, pushEnabled: false, fcmToken: null}));
+        }
+    }
+    setIsPushLoading(false);
+  }, [isClient, state.pushEnabled]);
+
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
@@ -344,18 +344,9 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
- if (isClient && state.sessionActive && lastDose) {
-    if (allPrises.length >= 3 && secondToLastDose) {
-      protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(add(lastDose.time, { hours: FINAL_PROTECTION_HOURS }), 'eeee dd MMMM HH:mm', { locale: fr })}`;
-    } else if (allPrises.length === 2 && firstDoseInSession) {
-      protectionEndsAtText = `Si vous continuez les prises vos rapports avant le ${format(firstDoseInSession.time, 'eeee dd MMMM HH:mm', { locale: fr })} seront protégés`;
-    } else if (allPrises.length === 1) {
-      protectionEndsAtText = "Vos rapports seront protégés par la PrEP si vous continuez les prises pendant 2 jours après ce début de session";
-    }
-  } else if (isClient && !state.sessionActive && lastDose) {
-      protectionEndsAtText = `Protection résiduelle jusqu'au ${format(add(lastDose.time, { hours: FINAL_PROTECTION_HOURS }), 'eeee dd MMMM HH:mm', { locale: fr })}`;
+  if (isClient && secondToLastDose) {
+      protectionEndsAtText = `Protection assurée depuis le ${format(secondToLastDose.time, 'eeee dd MMMM \'à\' HH:mm', { locale: fr })}`;
   }
-
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
     const lastDoseTime = lastDose.time;
