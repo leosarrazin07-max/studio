@@ -200,26 +200,19 @@ export function usePrepState(): UsePrepStateReturn {
       setPushPermissionStatus(currentPermission);
       
       const initializeMessaging = async () => {
-         if (currentPermission === 'granted') {
+         if (currentPermission === 'granted' && !state.fcmToken) {
+            setIsPushLoading(true);
             try {
-              // Wait for the service worker to be ready
               const registration = await navigator.serviceWorker.ready;
               const messaging = getMessaging(app);
-              // Check if we have a token in state first
-              if (!state.fcmToken) {
-                const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-                if (vapidKey) {
-                  const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
-                  if (fcmToken) {
-                    // Update state with the new token
-                    saveState({ ...state, fcmToken, pushEnabled: true });
-                  } else {
-                    saveState({ ...state, pushEnabled: false, fcmToken: null });
-                  }
+              const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+              if (vapidKey) {
+                const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
+                if (fcmToken) {
+                  saveState({ ...state, fcmToken, pushEnabled: true });
+                } else {
+                  saveState({ ...state, pushEnabled: false, fcmToken: null });
                 }
-              } else if (!state.pushEnabled) {
-                 // If token exists but push is disabled in state, re-enable it.
-                 saveState({ ...state, pushEnabled: true });
               }
             } catch (err) {
               console.error("Error initializing messaging on mount", err);
@@ -227,6 +220,9 @@ export function usePrepState(): UsePrepStateReturn {
             } finally {
                setIsPushLoading(false);
             }
+        } else if(currentPermission === 'granted' && state.fcmToken && !state.pushEnabled){
+            saveState({ ...state, pushEnabled: true });
+            setIsPushLoading(false);
         } else {
             setIsPushLoading(false);
         }
@@ -254,7 +250,7 @@ export function usePrepState(): UsePrepStateReturn {
 
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [isClient]);
   
   useEffect(() => {
     // This effect runs only once on the client to load the state from localStorage

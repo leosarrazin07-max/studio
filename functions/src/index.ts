@@ -80,22 +80,15 @@ export const onDoseLogged = functions.region(LOCATION).firestore
  */
 export const sendReminder = onTaskDispatched({
     region: LOCATION,
-    retryConfig: {
-        maxAttempts: 3,
-        minBackoffSeconds: 5,
-    },
-    rateLimits: {
-        maxConcurrentDispatches: 6,
-    },
     taskQueueOptions: {
-      name: "reminderTasks",
       retryConfig: {
         maxAttempts: 5,
         minBackoffSeconds: 60
       },
       rateLimits: {
         maxConcurrentDispatches: 1000
-      }
+      },
+      name: "reminderTasks"
     }
 }, async (task) => {
     const { fcmToken } = task.data;
