@@ -13,7 +13,7 @@ admin.initializeApp();
 const db = admin.firestore();
 const messaging = admin.messaging();
 const LOCATION = "europe-west9";
-const queue = getFunctions().taskQueue("sendReminder", LOCATION);
+const queue = getFunctions().taskQueue("reminderTasks", LOCATION);
 
 interface PrepStateDocument {
     fcmToken: string;
@@ -88,6 +88,7 @@ export const sendReminder = onTaskDispatched({
         maxConcurrentDispatches: 6,
     },
     taskQueueOptions: {
+      name: "reminderTasks",
       retryConfig: {
         maxAttempts: 5,
         minBackoffSeconds: 60
