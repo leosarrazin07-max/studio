@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { add, sub, formatDistanceToNowStrict, isAfter, isBefore, format, set, differenceInMilliseconds } from 'date-fns';
+import { add, sub, format, isAfter, isBefore, differenceInMilliseconds } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
@@ -137,7 +137,9 @@ export function usePrepState(): UsePrepStateReturn {
             return false;
         }
 
+        // Wait for the service worker to be ready
         const registration = await navigator.serviceWorker.ready;
+
         const messaging = getMessaging(app);
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
@@ -203,18 +205,16 @@ export function usePrepState(): UsePrepStateReturn {
             try {
               const registration = await navigator.serviceWorker.ready;
               const messaging = getMessaging(app);
-              if (!state.fcmToken) {
-                const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-                if (vapidKey) {
-                  const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
-                  if (fcmToken) {
-                    saveState({ ...state, fcmToken, pushEnabled: true });
-                  } else {
-                    saveState({ ...state, pushEnabled: false, fcmToken: null });
-                  }
+              const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+              if (vapidKey) {
+                const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
+                if (fcmToken) {
+                    if (fcmToken !== state.fcmToken || !state.pushEnabled) {
+                        saveState({ ...state, fcmToken, pushEnabled: true });
+                    }
+                } else {
+                  saveState({ ...state, pushEnabled: false, fcmToken: null });
                 }
-              } else if (!state.pushEnabled) {
-                 saveState({ ...state, pushEnabled: true });
               }
             } catch (err) {
               console.error("Error initializing messaging on mount", err);
@@ -333,7 +333,7 @@ export function usePrepState(): UsePrepStateReturn {
     } else if (allPrises.length === 1) {
       protectionEndsAtText = "Vos rapports seront protégés par la PrEP si vous continuez les prises pendant 2 jours après ce début de session";
     }
-  } else if (isClient && !state.sessionActive && lastDose && secondToLastDose) {
+  } else if (isClient && !state.sessionActive && lastDose) {
       protectionEndsAtText = `Protection résiduelle jusqu'au ${format(add(lastDose.time, { hours: FINAL_PROTECTION_HOURS }), 'eeee dd MMMM HH:mm', { locale: fr })}`;
   }
 
