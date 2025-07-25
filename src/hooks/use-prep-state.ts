@@ -119,7 +119,7 @@ export function usePrepState(): UsePrepStateReturn {
       }
   }, []);
   
-  const requestNotificationPermission = useCallback(async () => {
+ const requestNotificationPermission = useCallback(async () => {
     if (typeof window === 'undefined' || !('Notification' in window) || !navigator.serviceWorker) {
         toast({ title: "Navigateur non compatible", variant: "destructive" });
         setIsPushLoading(false);
@@ -133,11 +133,8 @@ export function usePrepState(): UsePrepStateReturn {
 
         if (permission !== 'granted') {
             toast({ title: "Notifications refusées", description: "Vous pouvez les réactiver dans les paramètres de votre navigateur.", variant: "destructive" });
-            setState(prevState => {
-                const newState = {...prevState, pushEnabled: false };
-                saveState(newState); 
-                return newState;
-            });
+            const newState = {...state, pushEnabled: false, fcmToken: null};
+            saveState(newState);
             setIsPushLoading(false);
             return false;
         }
@@ -154,21 +151,15 @@ export function usePrepState(): UsePrepStateReturn {
         }
 
         const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
-
+        
         if (fcmToken) {
-            setState(prevState => {
-                const newState = {...prevState, pushEnabled: true, fcmToken };
-                saveState(newState);
-                return newState;
-            });
-            toast({ title: "Notifications activées!" });
+             const newState = {...state, pushEnabled: true, fcmToken };
+             saveState(newState);
+             toast({ title: "Notifications activées!" });
         } else {
-            toast({ title: "Impossible de récupérer le token", variant: "destructive" });
-            setState(prevState => {
-                const newState = {...prevState, pushEnabled: false, fcmToken: null };
-                saveState(newState);
-                return newState;
-            });
+             const newState = {...state, pushEnabled: false, fcmToken: null };
+             saveState(newState);
+             toast({ title: "Impossible de récupérer le token", variant: "destructive" });
         }
 
         setIsPushLoading(false);
@@ -176,25 +167,21 @@ export function usePrepState(): UsePrepStateReturn {
     } catch (error) {
         console.error("Error getting FCM token:", error);
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
-        setState(prevState => {
-             const newState = {...prevState, pushEnabled: false, fcmToken: null };
-             saveState(newState);
-             return newState;
-        });
+        const newState = {...state, pushEnabled: false, fcmToken: null };
+        saveState(newState);
         setIsPushLoading(false);
         return false;
     }
-  }, [saveState, toast]);
+  }, [state, saveState, toast]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
-    const fcmToken = state.fcmToken;
     setIsPushLoading(true);
-    if (fcmToken) {
+    if (state.fcmToken) {
       try {
         await fetch('/api/subscription', {
             method: 'DELETE',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ token: fcmToken })
+            body: JSON.stringify({ token: state.fcmToken })
         });
       } catch (error) {
          console.error("Error unsubscribing:", error);
@@ -203,20 +190,16 @@ export function usePrepState(): UsePrepStateReturn {
     }
     
     // Always update local state to reflect user's choice
-    setState(prevState => {
-        const newState = {...prevState, pushEnabled: false, fcmToken: null};
-        saveState(newState);
-        return newState;
-    });
+    const newState = {...state, pushEnabled: false, fcmToken: null};
+    saveState(newState);
     toast({ title: "Notifications désactivées." });
     setIsPushLoading(false);
 
-  }, [state.fcmToken, saveState, toast]);
+  }, [state, saveState, toast]);
 
   useEffect(() => {
     setIsClient(true);
-    // Load state from localStorage on initial client render
-    if (process.env.NODE_ENV !== 'development') {
+    if (typeof window !== 'undefined') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) {
             setState(savedState);
@@ -250,49 +233,38 @@ export function usePrepState(): UsePrepStateReturn {
   useEffect(() => {
     if (!isClient) return;
     
-    // Set loading to false only after initial state is loaded and permissions checked
     const permission = Notification.permission;
     if (permission === 'denied' || permission === 'default') {
         if(state.pushEnabled) {
-            // User manually disabled notifs in browser, sync state
-            setState(s => ({...s, pushEnabled: false, fcmToken: null}));
+            // User manually disabled notifs in browser, sync state by turning it off
+            const newState = {...state, pushEnabled: false, fcmToken: null};
+            saveState(newState);
         }
     }
     setIsPushLoading(false);
-  }, [isClient, state.pushEnabled]);
+  }, [isClient, state.pushEnabled, saveState]);
 
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
     const newPrises = [newDose];
     // Preserve notification settings on new session
-    setState(prevState => {
-        const newState = { ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: prevState.pushEnabled, fcmToken: prevState.fcmToken };
-        saveState(newState);
-        return newState;
-    });
-  }, [saveState]);
+    const newState = { ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled, fcmToken: state.fcmToken };
+    saveState(newState);
+  }, [saveState, state.pushEnabled, state.fcmToken]);
 
   const addDose = useCallback((prise: { time: Date; pills: number }) => {
     const newDose = { ...prise, type: 'dose' as const, id: new Date().toISOString() };
-    setState(prevState => {
-        const newPrises = [...prevState.prises, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
-        const newState = { ...prevState, prises: newPrises };
-        saveState(newState);
-        return newState;
-    });
-  }, [saveState]);
+    const newPrises = [...state.prises, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
+    saveState({ ...state, prises: newPrises });
+  }, [state, saveState]);
 
   const endSession = useCallback(() => {
     const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
-    setState(prevState => {
-        const updatedDoses = [...prevState.prises, stopEvent];
-        const newState = { ...prevState, sessionActive: false, prises: updatedDoses };
-        saveState(newState);
-        return newState;
-    });
+    const updatedDoses = [...state.prises, stopEvent];
+    saveState({ ...state, sessionActive: false, prises: updatedDoses });
     toast({ title: "Session terminée", description: "Les rappels de notification sont maintenant arrêtés." });
-  }, [saveState, toast]);
+  }, [state, saveState, toast]);
 
   const clearHistory = useCallback(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -305,13 +277,10 @@ export function usePrepState(): UsePrepStateReturn {
         localStorage.removeItem('prepState');
     }
     // Preserve notification settings on clear
-    setState(prevState => {
-        const newState = { ...defaultState, pushEnabled: prevState.pushEnabled, fcmToken: prevState.fcmToken };
-        saveState(newState);
-        return newState;
-    });
+    const newState = { ...defaultState, pushEnabled: state.pushEnabled, fcmToken: state.fcmToken };
+    saveState(newState);
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [saveState, toast]);
+  }, [state.pushEnabled, state.fcmToken, toast, saveState]);
 
     const formatCountdown = (endDate: Date) => {
     const milliseconds = differenceInMilliseconds(endDate, now);
@@ -344,7 +313,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
-  if (isClient && secondToLastDose) {
+  if (isClient && allPrises.length >= 3 && secondToLastDose) {
       protectionEndsAtText = `Protection assurée depuis le ${format(secondToLastDose.time, 'eeee dd MMMM \'à\' HH:mm', { locale: fr })}`;
   }
 
@@ -414,5 +383,6 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
 
     
