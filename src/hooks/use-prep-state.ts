@@ -89,8 +89,8 @@ export function usePrepState(): UsePrepStateReturn {
   const [pushPermissionStatus, setPushPermissionStatus] = useState<NotificationPermission>();
 
   const saveState = useCallback((newState: PrepState) => {
-      // Don't persist mock data in dev
-      if (process.env.NODE_ENV === 'development') {
+      // Don't persist mock data in dev unless we have a token (for testing notifications)
+      if (process.env.NODE_ENV === 'development' && newState.fcmToken === null) {
           setState(newState);
           return;
       }
@@ -98,14 +98,14 @@ export function usePrepState(): UsePrepStateReturn {
       setState(newState);
       if (typeof window !== 'undefined') {
         try {
+            // Ensure we are saving a valid fcmToken state
             const stateToSave = {
                 ...newState,
                 prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
             
-            // Sync state with Firestore only if we have a token.
-            // The pushEnabled flag is now just a client-side preference.
+            // Sync state with Firestore if we have a token.
             if (newState.fcmToken) {
                  fetch('/api/subscription', {
                     method: 'POST',
@@ -132,8 +132,12 @@ export function usePrepState(): UsePrepStateReturn {
 
         if (permission !== 'granted') {
             toast({ title: "Notifications refusées", description: "Vous pouvez les réactiver dans les paramètres de votre navigateur.", variant: "destructive" });
-            // Save the "disabled" preference
-            saveState({...state, pushEnabled: false, fcmToken: null});
+            // Save the "disabled" preference but keep the current state otherwise
+            setState(prevState => {
+                const newState = {...prevState, pushEnabled: false };
+                saveState(newState); // Save the fact that user disabled it
+                return newState;
+            });
             setIsPushLoading(false);
             return false;
         }
@@ -154,16 +158,19 @@ export function usePrepState(): UsePrepStateReturn {
         const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
 
         if (fcmToken) {
-            // Important: use a functional update to get the latest state
             setState(prevState => {
                 const newState = {...prevState, pushEnabled: true, fcmToken };
-                saveState(newState);
+                saveState(newState); // Immediately save the new state with the token
                 return newState;
             });
             toast({ title: "Notifications activées!" });
         } else {
             toast({ title: "Impossible de récupérer le token", variant: "destructive" });
-            saveState({...state, pushEnabled: false, fcmToken: null });
+            setState(prevState => {
+                const newState = {...prevState, pushEnabled: false, fcmToken: null };
+                saveState(newState);
+                return newState;
+            });
         }
 
         setIsPushLoading(false);
@@ -171,11 +178,15 @@ export function usePrepState(): UsePrepStateReturn {
     } catch (error) {
         console.error("Error getting FCM token:", error);
         toast({ title: "Erreur d'abonnement", variant: "destructive" });
-        saveState({...state, pushEnabled: false, fcmToken: null });
+        setState(prevState => {
+             const newState = {...prevState, pushEnabled: false, fcmToken: null };
+             saveState(newState);
+             return newState;
+        });
         setIsPushLoading(false);
         return false;
     }
-  }, [state, saveState, toast]);
+  }, [saveState, toast]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
     const fcmToken = state.fcmToken;
@@ -202,7 +213,7 @@ export function usePrepState(): UsePrepStateReturn {
         setIsPushLoading(false);
       }
     } else {
-        // If there's no token, just update the state
+        // If there's no token, just update the state preference
         setState(prevState => {
             const newState = {...prevState, pushEnabled: false};
             saveState(newState);
@@ -216,21 +227,16 @@ export function usePrepState(): UsePrepStateReturn {
     setIsClient(true);
 
     // Load state from localStorage on initial client render
-    if(process.env.NODE_ENV !== 'development') {
+    if (process.env.NODE_ENV !== 'development') {
         const savedState = safelyParseJSON(localStorage.getItem('prepState'));
         if (savedState) {
             setState(savedState);
         }
     }
-
-    // Set initial permission status from the browser
+    
+    // Set initial permission status from the browser & set up listener
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setPushPermissionStatus(Notification.permission);
-    }
-    setIsPushLoading(false);
-
-    // Setup message listener
-    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       try {
         const messaging = getMessaging(app);
         const unsubscribe = onMessage(messaging, (payload) => {
@@ -245,6 +251,9 @@ export function usePrepState(): UsePrepStateReturn {
         console.error("Error setting up onMessage listener:", err)
       }
     }
+
+    setIsPushLoading(false);
+
   }, [toast]);
   
   // This useEffect only runs a timer to update the 'now' state
@@ -257,21 +266,33 @@ export function usePrepState(): UsePrepStateReturn {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
     const newPrises = [newDose];
     // Preserve notification settings on new session
-    saveState({ ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled, fcmToken: state.fcmToken });
-  }, [saveState, state.pushEnabled, state.fcmToken]);
+    setState(prevState => {
+        const newState = { ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: prevState.pushEnabled, fcmToken: prevState.fcmToken };
+        saveState(newState);
+        return newState;
+    });
+  }, [saveState]);
 
   const addDose = useCallback((prise: { time: Date; pills: number }) => {
     const newDose = { ...prise, type: 'dose' as const, id: new Date().toISOString() };
-    const newPrises = [...state.prises, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
-    saveState({ ...state, prises: newPrises });
-  }, [state, saveState]);
+    setState(prevState => {
+        const newPrises = [...prevState.prises, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
+        const newState = { ...prevState, prises: newPrises };
+        saveState(newState);
+        return newState;
+    });
+  }, [saveState]);
 
   const endSession = useCallback(() => {
     const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
-    const updatedDoses = [...state.prises, stopEvent];
-    saveState({ ...state, sessionActive: false, prises: updatedDoses });
+    setState(prevState => {
+        const updatedDoses = [...prevState.prises, stopEvent];
+        const newState = { ...prevState, sessionActive: false, prises: updatedDoses };
+        saveState(newState);
+        return newState;
+    });
     toast({ title: "Session terminée", description: "Les rappels de notification sont maintenant arrêtés." });
-  }, [state, saveState, toast]);
+  }, [saveState, toast]);
 
   const clearHistory = useCallback(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -284,9 +305,13 @@ export function usePrepState(): UsePrepStateReturn {
         localStorage.removeItem('prepState');
     }
     // Preserve notification settings on clear
-    saveState({ ...defaultState, pushEnabled: state.pushEnabled, fcmToken: state.fcmToken });
+    setState(prevState => {
+        const newState = { ...defaultState, pushEnabled: prevState.pushEnabled, fcmToken: prevState.fcmToken };
+        saveState(newState);
+        return newState;
+    });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [saveState, state.pushEnabled, state.fcmToken, toast]);
+  }, [saveState, toast]);
 
     const formatCountdown = (endDate: Date) => {
     const milliseconds = differenceInMilliseconds(endDate, now);
@@ -379,7 +404,6 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
-    pushEnabled: state.pushEnabled,
     isPushLoading,
     pushPermissionStatus,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
