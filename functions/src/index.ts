@@ -3,7 +3,6 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { getFunctions } from "firebase-admin/functions";
 import {add} from "date-fns";
-import { onTaskDispatched } from "firebase-functions/v2/tasks";
 import { DOSE_REMINDER_WINDOW_START_HOURS } from "./constants";
 
 admin.initializeApp();
@@ -69,25 +68,20 @@ export const onDoseLogged = functions.region(LOCATION).firestore
 
 
 /**
- * This function is a V2 Task Queue function.
+ * This function is a V1 Task Queue function.
  * It sends a single push notification to the specified FCM token.
  */
-export const sendReminder = onTaskDispatched<{"fcmToken": string, "sessionId": string}>(
-    {
-        region: LOCATION,
-        taskQueueOptions: {
-            name: "reminderTasks",
-            retryConfig: {
-                maxAttempts: 5,
-                minBackoffSeconds: 60,
-            },
-            rateLimits: {
-                maxConcurrentDispatches: 1000,
-            },
+export const sendReminder = functions.region(LOCATION).tasks
+    .taskQueue({
+        retryConfig: {
+            maxAttempts: 5,
+            minBackoffSeconds: 60,
         },
-    },
-    async (task) => {
-        const { fcmToken, sessionId } = task.data;
+        rateLimits: {
+            maxConcurrentDispatches: 1000,
+        },
+    }).onDispatch(async (data) => {
+        const { fcmToken, sessionId } = data as { fcmToken: string; sessionId: string };
 
         if (!fcmToken) {
             functions.logger.warn("Request to sendReminder missing fcmToken.");
@@ -116,12 +110,12 @@ export const sendReminder = onTaskDispatched<{"fcmToken": string, "sessionId": s
             functions.logger.error("Error sending reminder to", fcmToken, error);
 
             if ((error as any).code === 'messaging/registration-token-not-registered') {
-                await db.collection("prepSessions").doc(sessionId).delete();
+                const sessionRef = db.collection("prepSessions").doc(sessionId);
+                await sessionRef.delete();
                 functions.logger.log("Deleted document for invalid token:", fcmToken);
                 return;
             }
 
             throw new functions.https.HttpsError("internal", "Error sending notification, will retry.");
         }
-    }
-);
+    });
