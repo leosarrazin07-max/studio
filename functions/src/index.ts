@@ -1,7 +1,6 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
-import { getFunctions } from "firebase-admin/functions";
 import {add} from "date-fns";
 import { DOSE_REMINDER_WINDOW_START_HOURS } from "./constants";
 
@@ -10,7 +9,6 @@ admin.initializeApp();
 const db = admin.firestore();
 const messaging = admin.messaging();
 const LOCATION = "europe-west9";
-const taskQueue = getFunctions().taskQueue("reminderTasks", LOCATION);
 
 interface PrepStateDocument {
     fcmToken: string;
@@ -53,8 +51,11 @@ export const onDoseLogged = functions.region(LOCATION).firestore
         return null;
     }
 
+    // V1 Task Queue enqueue method
+    const queue = functions.tasks.taskQueue("reminderTasks", LOCATION);
+
     try {
-        await taskQueue.enqueue(
+        await queue.enqueue(
             { fcmToken: session.fcmToken, sessionId: sessionId },
             { scheduleDelaySeconds }
         );
