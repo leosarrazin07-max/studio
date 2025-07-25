@@ -198,19 +198,23 @@ export function usePrepState(): UsePrepStateReturn {
       setPushPermissionStatus(currentPermission);
       
       const initializeMessaging = async () => {
-         if (currentPermission === 'granted' && !state.fcmToken) {
+         if (currentPermission === 'granted') {
             setIsPushLoading(true);
             try {
               const registration = await navigator.serviceWorker.ready;
               const messaging = getMessaging(app);
-              const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-              if (vapidKey) {
-                const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
-                if (fcmToken) {
-                  saveState({ ...state, fcmToken, pushEnabled: true });
-                } else {
-                  saveState({ ...state, pushEnabled: false, fcmToken: null });
+              if (!state.fcmToken) {
+                const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+                if (vapidKey) {
+                  const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
+                  if (fcmToken) {
+                    saveState({ ...state, fcmToken, pushEnabled: true });
+                  } else {
+                    saveState({ ...state, pushEnabled: false, fcmToken: null });
+                  }
                 }
+              } else if (!state.pushEnabled) {
+                 saveState({ ...state, pushEnabled: true });
               }
             } catch (err) {
               console.error("Error initializing messaging on mount", err);
@@ -218,9 +222,6 @@ export function usePrepState(): UsePrepStateReturn {
             } finally {
                setIsPushLoading(false);
             }
-        } else if(currentPermission === 'granted' && state.fcmToken && !state.pushEnabled){
-            saveState({ ...state, pushEnabled: true });
-            setIsPushLoading(false);
         } else {
             setIsPushLoading(false);
         }
@@ -332,8 +333,8 @@ export function usePrepState(): UsePrepStateReturn {
           } else {
             protectionEndsAtText = "Continuez vos prises quotidiennes pour être protégé.";
           }
-      } else if (secondToLastDose) {
-        const protectionEndDate = add(secondToLastDose.time, { hours: FINAL_PROTECTION_HOURS });
+      } else if (lastDose) {
+        const protectionEndDate = add(lastDose.time, { hours: FINAL_PROTECTION_HOURS });
         protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndDate, 'eeee dd MMMM HH:mm', { locale: fr })}`;
       }
   }
