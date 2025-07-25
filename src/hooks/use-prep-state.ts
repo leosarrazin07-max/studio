@@ -89,7 +89,8 @@ export function usePrepState(): UsePrepStateReturn {
   const [pushPermissionStatus, setPushPermissionStatus] = useState<NotificationPermission>();
 
   const saveState = useCallback((newState: PrepState) => {
-      if (process.env.NODE_ENV === 'development' && newState.fcmToken === null) {
+      // Don't persist mock data in dev
+      if (process.env.NODE_ENV === 'development') {
           setState(newState);
           return;
       }
@@ -103,7 +104,9 @@ export function usePrepState(): UsePrepStateReturn {
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
             
-            if (newState.pushEnabled && newState.fcmToken) {
+            // Sync state with Firestore only if we have a token.
+            // The pushEnabled flag is now just a client-side preference.
+            if (newState.fcmToken) {
                  fetch('/api/subscription', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -129,14 +132,18 @@ export function usePrepState(): UsePrepStateReturn {
 
         if (permission !== 'granted') {
             toast({ title: "Notifications refusées", description: "Vous pouvez les réactiver dans les paramètres de votre navigateur.", variant: "destructive" });
+            // Save the "disabled" preference
             saveState({...state, pushEnabled: false, fcmToken: null});
             setIsPushLoading(false);
             return false;
         }
 
+        // Wait for the service worker to be ready
         const registration = await navigator.serviceWorker.ready;
+
         const messaging = getMessaging(app);
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
         if (!vapidKey) {
             console.error("VAPID public key not found in environment variables.");
             toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
@@ -147,7 +154,12 @@ export function usePrepState(): UsePrepStateReturn {
         const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
 
         if (fcmToken) {
-            saveState({...state, pushEnabled: true, fcmToken });
+            // Important: use a functional update to get the latest state
+            setState(prevState => {
+                const newState = {...prevState, pushEnabled: true, fcmToken };
+                saveState(newState);
+                return newState;
+            });
             toast({ title: "Notifications activées!" });
         } else {
             toast({ title: "Impossible de récupérer le token", variant: "destructive" });
@@ -166,16 +178,23 @@ export function usePrepState(): UsePrepStateReturn {
   }, [state, saveState, toast]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
-    if (state.fcmToken) {
+    const fcmToken = state.fcmToken;
+    if (fcmToken) {
       setIsPushLoading(true);
       try {
         await fetch('/api/subscription', {
             method: 'DELETE',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ token: state.fcmToken })
+            body: JSON.stringify({ token: fcmToken })
         });
-        saveState({...state, pushEnabled: false, fcmToken: null});
+        
+        setState(prevState => {
+            const newState = {...prevState, pushEnabled: false, fcmToken: null};
+            saveState(newState);
+            return newState;
+        });
         toast({ title: "Notifications désactivées." });
+
       } catch (error) {
          console.error("Error unsubscribing:", error);
          toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
@@ -183,20 +202,34 @@ export function usePrepState(): UsePrepStateReturn {
         setIsPushLoading(false);
       }
     } else {
-        saveState({...state, pushEnabled: false, fcmToken: null});
+        // If there's no token, just update the state
+        setState(prevState => {
+            const newState = {...prevState, pushEnabled: false};
+            saveState(newState);
+            return newState;
+        });
     }
-  }, [state, saveState, toast]);
+  }, [state.fcmToken, saveState, toast]);
 
+  // This useEffect only runs once on the client to initialize state and listeners.
   useEffect(() => {
     setIsClient(true);
-    
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setPushPermissionStatus(Notification.permission);
-      setIsPushLoading(false);
-    } else {
-      setIsPushLoading(false);
+
+    // Load state from localStorage on initial client render
+    if(process.env.NODE_ENV !== 'development') {
+        const savedState = safelyParseJSON(localStorage.getItem('prepState'));
+        if (savedState) {
+            setState(savedState);
+        }
     }
 
+    // Set initial permission status from the browser
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setPushPermissionStatus(Notification.permission);
+    }
+    setIsPushLoading(false);
+
+    // Setup message listener
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       try {
         const messaging = getMessaging(app);
@@ -214,20 +247,16 @@ export function usePrepState(): UsePrepStateReturn {
     }
   }, [toast]);
   
+  // This useEffect only runs a timer to update the 'now' state
   useEffect(() => {
-    if (isClient && process.env.NODE_ENV !== 'development') {
-        const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-        if (savedState) {
-            setState(savedState);
-        }
-    }
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
-  }, [isClient]);
+  }, []);
 
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
     const newPrises = [newDose];
+    // Preserve notification settings on new session
     saveState({ ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled, fcmToken: state.fcmToken });
   }, [saveState, state.pushEnabled, state.fcmToken]);
 
@@ -254,9 +283,10 @@ export function usePrepState(): UsePrepStateReturn {
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    setState({ ...defaultState, pushEnabled: state.pushEnabled, fcmToken: state.fcmToken });
+    // Preserve notification settings on clear
+    saveState({ ...defaultState, pushEnabled: state.pushEnabled, fcmToken: state.fcmToken });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [state.pushEnabled, state.fcmToken, toast]);
+  }, [saveState, state.pushEnabled, state.fcmToken, toast]);
 
     const formatCountdown = (endDate: Date) => {
     const milliseconds = differenceInMilliseconds(endDate, now);
@@ -289,11 +319,11 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
- if (isClient && state.sessionActive) {
+ if (isClient && state.sessionActive && lastDose) {
     if (allPrises.length >= 3 && secondToLastDose) {
-      protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(secondToLastDose.time, 'eeee dd MMMM HH:mm', { locale: fr })}`;
-    } else if (allPrises.length === 2 && secondToLastDose) {
-      protectionEndsAtText = `Si vous continuez les prises vos rapports avant le ${format(secondToLastDose.time, 'eeee dd MMMM HH:mm', { locale: fr })} seront protégés`;
+      protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(add(lastDose.time, { hours: FINAL_PROTECTION_HOURS }), 'eeee dd MMMM HH:mm', { locale: fr })}`;
+    } else if (allPrises.length === 2 && firstDoseInSession) {
+      protectionEndsAtText = `Si vous continuez les prises vos rapports avant le ${format(firstDoseInSession.time, 'eeee dd MMMM HH:mm', { locale: fr })} seront protégés`;
     } else if (allPrises.length === 1) {
       protectionEndsAtText = "Vos rapports seront protégés par la PrEP si vous continuez les prises pendant 2 jours après ce début de session";
     }
