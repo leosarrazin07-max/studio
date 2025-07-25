@@ -1,6 +1,6 @@
 
+import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
-import *admin from "firebase-admin";
 import { getFunctions } from "firebase-admin/functions";
 import {add} from "date-fns";
 import { DOSE_REMINDER_WINDOW_START_HOURS } from "./constants";
@@ -10,7 +10,6 @@ admin.initializeApp();
 const db = admin.firestore();
 const messaging = admin.messaging();
 const LOCATION = "europe-west9";
-// Renamed the task queue to avoid a naming conflict with the function itself.
 const taskQueue = getFunctions().taskQueue("reminderTasks", LOCATION);
 
 interface PrepStateDocument {
