@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -56,7 +57,7 @@ export function PrepDashboard({
       <div className="text-center h-12 mt-2 flex flex-col justify-center">
         {status === 'loading' && <p className="text-white/80">{protectionStartsIn}</p>}
         {status === 'effective' && <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>}
-        {status === 'missed' && <p className="text-white/90 font-medium">Prenez une prise dès que possible.</p>}
+        {status === 'missed' && <p className="text-white/90 font-medium">Si vous avez eu des rapports à risque hors de la période de protection, veuillez vous faire tester.</p>}
       </div>
     );
   };
@@ -155,3 +156,5 @@ export function PrepDashboard({
     </div>
   );
 }
+
+    
