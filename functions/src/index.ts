@@ -36,7 +36,6 @@ export const onDoseLogged = functions.region(LOCATION).firestore
         return null;
     }
 
-    // Get the most recent dose
     const lastDose = session.prises.sort((a, b) => b.time.toMillis() - a.time.toMillis())[0];
     if (!lastDose) {
          functions.logger.log(`Session ${sessionId} has no doses. No reminder will be scheduled.`);
@@ -51,7 +50,7 @@ export const onDoseLogged = functions.region(LOCATION).firestore
         return null;
     }
 
-    const queue = functions.tasks.taskQueue("reminderTasks", LOCATION);
+    const queue = functions.tasks.taskQueue(`locations/${LOCATION}/queues/reminderTasks`);
 
     try {
         await queue.enqueue(
@@ -61,6 +60,7 @@ export const onDoseLogged = functions.region(LOCATION).firestore
         functions.logger.log(`Reminder scheduled for token ${session.fcmToken} in ${scheduleDelaySeconds} seconds.`);
     } catch (error) {
         functions.logger.error(`Error scheduling reminder for ${sessionId}:`, error);
+        // This is often a permissions error if the service account is not configured.
     }
 
     return null;
@@ -113,6 +113,7 @@ export const sendReminder = functions.region(LOCATION).tasks
                 return;
             }
             
+            // This will cause the task to be retried.
             throw new functions.https.HttpsError("internal", "Error sending notification, will retry.");
         }
     });
