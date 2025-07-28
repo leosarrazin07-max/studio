@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -318,10 +317,23 @@ export function usePrepState(): UsePrepStateReturn {
       .sort((a, b) => a.time.getTime() - b.time.getTime());
     
     const priseCount = sortedPrises.length;
+    const firstDose = sortedPrises[0];
 
-    if (priseCount > 0) {
-        const protectionEndsAt = add(sortedPrises[sortedPrises.length-1].time, { hours: FINAL_PROTECTION_HOURS });
-        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
+    if (priseCount > 0 && firstDose) {
+      if (priseCount < 3) {
+        // Scénario 1: Moins de 3 prises
+        const datePriseDemarrage = firstDose.time;
+        const dateTroisiemeJour = add(datePriseDemarrage, { days: 2 });
+        const dateLendemain = add(datePriseDemarrage, { hours: 24 });
+        
+        protectionEndsAtText = `Si vous continuez les prises jusqu'au ${format(dateTroisiemeJour, "dd/MM 'à' HH:mm", { locale: fr })}, vos rapports entre le ${format(datePriseDemarrage, "dd/MM 'à' HH:mm", { locale: fr })} et le ${format(dateLendemain, "dd/MM 'à' HH:mm", { locale: fr })} seront protégés.`;
+      } else {
+        // Scénario 2: 3 prises ou plus
+        const avantDernierePrise = sortedPrises[priseCount - 2];
+        if (avantDernierePrise) {
+          protectionEndsAtText = `Vos rapports avant le ${format(avantDernierePrise.time, "eeee dd MMMM 'à' HH:mm", { locale: fr })} sont protégés par la PrEP.`;
+        }
+      }
     }
   }
 
@@ -332,15 +344,15 @@ export function usePrepState(): UsePrepStateReturn {
     const reminderWindowStartTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
     const reminderWindowEndTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_END_HOURS });
 
-    // New logic to check for lapsed protection
-    let isLapsed = false;
-    if (allPrises.length > 1) {
-        for (let i = 0; i < allPrises.length - 1; i++) {
-            const currentDose = allPrises[i];
-            const previousDose = allPrises[i+1];
-            // If it's a 'start' dose, the logic is different (2 pills) so we skip checking interval before it.
-            if (previousDose.type === 'start') continue;
+    const sortedDoses = state.prises
+      .filter(d => d.type !== 'stop')
+      .sort((a, b) => a.time.getTime() - b.time.getTime());
 
+    let isLapsed = false;
+    if (sortedDoses.length > 1) {
+        for (let i = 1; i < sortedDoses.length; i++) {
+            const currentDose = sortedDoses[i];
+            const previousDose = sortedDoses[i-1];
             const hoursBetweenDoses = differenceInHours(currentDose.time, previousDose.time);
             if (hoursBetweenDoses > DOSE_REMINDER_WINDOW_END_HOURS) {
                 isLapsed = true;
@@ -348,11 +360,14 @@ export function usePrepState(): UsePrepStateReturn {
             }
         }
     }
+    
+    const hoursSinceLastDose = differenceInHours(now, lastDoseTime);
 
-    if (isLapsed) {
+    if (isLapsed || (hoursSinceLastDose > DOSE_REMINDER_WINDOW_END_HOURS && status !== 'lapsed')) {
         status = 'lapsed';
         statusColor = 'bg-destructive';
         statusText = 'Protection rompue';
+        // Overwrite the specific message for this critical status
         protectionEndsAtText = "Vous avez manqué une ou plusieurs prises. Votre protection n'est plus garantie."
     } else if (isBefore(now, protectionStartTime)) {
       status = 'loading';
@@ -375,6 +390,7 @@ export function usePrepState(): UsePrepStateReturn {
             nextDoseIn = `Prenez votre comprimé maintenant !`;
         }
     } else {
+      // This case is now handled by the isLapsed check at the beginning
       status = 'missed';
       statusColor = 'bg-destructive';
       statusText = 'Prise manquée';
@@ -414,3 +430,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
