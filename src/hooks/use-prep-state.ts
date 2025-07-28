@@ -13,27 +13,24 @@ import { getMessaging, getToken, onMessage } from "firebase/messaging";
 const createMockData = (): PrepState => {
     const mockPrises: Prise[] = [];
     const now = new Date();
-    // To see the "time to take" countdown, set the last dose to be ~24h ago
-    let lastDoseTime = sub(now, { hours: 24, minutes: 30 });
+    
+    // Scenario: User has taken their second dose.
+    const firstDoseTime = sub(now, { days: 1 }); // Start dose yesterday
+    const secondDoseTime = now; // Second dose today
 
     mockPrises.push({
-        time: sub(lastDoseTime, {days: 9}),
+        time: firstDoseTime,
         pills: 2,
         type: 'start',
         id: `mock_0`
     });
 
-    for (let i = 1; i < 10; i++) {
-        mockPrises.push({
-            time: add(mockPrises[0].time, {days: i}),
-            pills: 1,
-            type: 'dose',
-            id: `mock_${i}`
-        });
-    }
-    
-    // Replace the last mock dose with our specific time
-    mockPrises[mockPrises.length - 1].time = lastDoseTime;
+    mockPrises.push({
+        time: secondDoseTime,
+        pills: 1,
+        type: 'dose',
+        id: `mock_1`
+    });
 
     return {
         prises: mockPrises.sort((a, b) => a.time.getTime() - b.time.getTime()),
