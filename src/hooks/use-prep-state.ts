@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { add, sub, format, isAfter, isBefore, differenceInMilliseconds } from 'date-fns';
+import { add, sub, format, isAfter, isBefore, differenceInMilliseconds, differenceInHours } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
@@ -319,14 +319,9 @@ export function usePrepState(): UsePrepStateReturn {
     
     const priseCount = sortedPrises.length;
 
-    if (priseCount === 1) {
-        protectionEndsAtText = "Si vous continuez les prises pendant 2 jours vos rapports seront protégés";
-    } else if (priseCount === 2) {
-        const secondDose = sortedPrises[1];
-        protectionEndsAtText = `Si vous continuez les prises vos rapports avant le ${format(secondDose.time, "eeee dd MMMM 'à' HH:mm", { locale: fr })} seront protégés`;
-    } else if (priseCount >= 3) {
-        const secondToLastDose = sortedPrises[priseCount - 2];
-        protectionEndsAtText = `Vos rapports sont protégés depuis le ${format(secondToLastDose.time, "eeee dd MMMM 'à' HH:mm", { locale: fr })}`;
+    if (priseCount > 0) {
+        const protectionEndsAt = add(sortedPrises[sortedPrises.length-1].time, { hours: FINAL_PROTECTION_HOURS });
+        protectionEndsAtText = `Vos rapports sont protégés jusqu'au ${format(protectionEndsAt, 'eeee dd MMMM HH:mm', { locale: fr })}`;
     }
   }
 
@@ -337,7 +332,29 @@ export function usePrepState(): UsePrepStateReturn {
     const reminderWindowStartTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
     const reminderWindowEndTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_END_HOURS });
 
-    if (isBefore(now, protectionStartTime)) {
+    // New logic to check for lapsed protection
+    let isLapsed = false;
+    if (allPrises.length > 1) {
+        for (let i = 0; i < allPrises.length - 1; i++) {
+            const currentDose = allPrises[i];
+            const previousDose = allPrises[i+1];
+            // If it's a 'start' dose, the logic is different (2 pills) so we skip checking interval before it.
+            if (previousDose.type === 'start') continue;
+
+            const hoursBetweenDoses = differenceInHours(currentDose.time, previousDose.time);
+            if (hoursBetweenDoses > DOSE_REMINDER_WINDOW_END_HOURS) {
+                isLapsed = true;
+                break;
+            }
+        }
+    }
+
+    if (isLapsed) {
+        status = 'lapsed';
+        statusColor = 'bg-destructive';
+        statusText = 'Protection rompue';
+        protectionEndsAtText = "Vous avez manqué une ou plusieurs prises. Votre protection n'est plus garantie."
+    } else if (isBefore(now, protectionStartTime)) {
       status = 'loading';
       statusColor = 'bg-primary';
       statusText = 'Protection en cours...';
@@ -397,5 +414,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    

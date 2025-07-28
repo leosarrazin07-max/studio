@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info, PowerOff, ShieldQuestion } from 'lucide-react';
+import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info, PowerOff, ShieldX } from 'lucide-react';
 import type { UsePrepStateReturn, PrepCalculatorResult } from '@/lib/types';
 import { LogDoseDialog } from './log-dose-dialog';
 import { DoseHistory } from './dose-history';
@@ -47,6 +47,8 @@ export function PrepDashboard({
         return <Clock className="h-16 w-16 text-white" />;
       case 'inactive':
         return <PowerOff className="h-16 w-16 text-white" />;
+      case 'lapsed':
+        return <ShieldX className="h-16 w-16 text-white" />;
       default:
         return <Pill className="h-16 w-16 text-white" />;
     }
@@ -57,7 +59,7 @@ export function PrepDashboard({
       <div className="text-center h-12 mt-2 flex flex-col justify-center">
         {status === 'loading' && <p className="text-white/80">{protectionStartsIn}</p>}
         {status === 'effective' && <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>}
-        {status === 'missed' && <p className="text-white/90 font-medium">Si vous avez eu des rapports à risque hors de la période de protection, veuillez vous faire tester.</p>}
+        {(status === 'missed' || status === 'lapsed') && <p className="text-white/90 font-medium">Si vous avez eu des rapports à risque hors de la période de protection, veuillez vous faire tester.</p>}
       </div>
     );
   };
@@ -89,6 +91,7 @@ export function PrepDashboard({
                         size="lg"
                         className="bg-accent hover:bg-accent/90 text-accent-foreground shadow-md"
                         onClick={() => setIsLogDoseOpen(true)}
+                        disabled={status === 'lapsed'}
                     >
                         <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris ma prise
                     </Button>
@@ -158,5 +161,3 @@ export function PrepDashboard({
     </div>
   );
 }
-
-    

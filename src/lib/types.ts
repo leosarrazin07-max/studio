@@ -7,7 +7,7 @@ export interface Prise {
   id: string; 
 }
 
-export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed';
+export type PrepStatus = 'inactive' | 'loading' | 'effective' | 'missed' | 'lapsed';
 
 export interface PrepState {
   prises: Prise[];
