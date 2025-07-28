@@ -56,10 +56,10 @@ export function PrepDashboard({
 
   const StatusDetails = () => {
     return (
-      <div className="text-center h-12 mt-2 flex flex-col justify-center">
+      <div className="text-center flex flex-col justify-center">
         {status === 'loading' && <p className="text-white/80">{protectionStartsIn}</p>}
         {status === 'effective' && <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>}
-        {(status === 'missed' || status === 'lapsed') && <p className="text-white/90 font-medium">Si vous avez eu des rapports à risque hors de la période de protection, veuillez vous faire tester.</p>}
+        {(status === 'missed' || status === 'lapsed') && <p className="text-sm text-white/90 font-medium">Si vous avez eu des rapports à risque hors de la période de protection, veuillez vous faire tester.</p>}
       </div>
     );
   };
@@ -72,8 +72,8 @@ export function PrepDashboard({
             <div className="mb-4">
               <StatusIcon />
             </div>
-            <div className="min-h-[6rem] flex flex-col justify-center">
-              <h2 className="text-xl md:text-2xl font-bold text-white font-headline">{statusText}</h2>
+            <div className="min-h-[8rem] flex flex-col justify-center items-center px-4">
+              <h2 className="text-xl md:text-2xl font-bold text-white font-headline mb-2">{statusText}</h2>
               <StatusDetails />
             </div>
           </div>
