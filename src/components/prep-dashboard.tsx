@@ -66,12 +66,14 @@ export function PrepDashboard({
     <div className="flex flex-col gap-8 h-full">
       <Card className="shadow-lg rounded-xl overflow-hidden">
         <CardContent className="p-0">
-          <div className={`flex flex-col items-center justify-center p-8 transition-colors duration-500 text-center ${statusColor}`}>
+          <div className={`flex flex-col items-center justify-center p-6 transition-colors duration-500 text-center ${statusColor}`}>
             <div className="mb-4">
               <StatusIcon />
             </div>
-            <h2 className="text-xl md:text-2xl font-bold text-white font-headline">{statusText}</h2>
-            <StatusDetails />
+            <div className="min-h-[6rem] flex flex-col justify-center">
+              <h2 className="text-xl md:text-2xl font-bold text-white font-headline">{statusText}</h2>
+              <StatusDetails />
+            </div>
           </div>
           
            {protectionEndsAtText && (
