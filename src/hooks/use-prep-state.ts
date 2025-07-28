@@ -15,9 +15,9 @@ const createMockData = (): PrepState => {
     const mockPrises: Prise[] = [];
     const now = new Date();
     
-    // Scenario: User has taken their second dose.
-    const firstDoseTime = sub(now, { days: 1 }); // Start dose yesterday
-    const secondDoseTime = now; // Second dose today
+    // Scénario: L'utilisateur en est à sa deuxième prise (deuxième jour).
+    const firstDoseTime = sub(now, { days: 1 }); // Prise de départ hier
+    const secondDoseTime = now; // Deuxième prise aujourd'hui
 
     mockPrises.push({
         time: firstDoseTime,
@@ -309,7 +309,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
-  if (isClient) {
+  if (isClient && state.prises.length > 0) {
     const sortedPrises = state.prises
       .filter(d => d.type !== 'stop')
       .sort((a, b) => a.time.getTime() - b.time.getTime());
@@ -428,3 +428,5 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
+
+    
