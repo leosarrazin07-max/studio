@@ -1,5 +1,5 @@
 
-import { AdMob, AdOptions, BannerAdOptions, BannerAdSize, BannerAdPosition, InterstitialAdPluginEvents } from '@capacitor-community/admob';
+import { AdMob, AdOptions, BannerAdOptions, BannerAdSize, BannerAdPosition, AppOpenAdPluginEvents } from '@capacitor-community/admob';
 import { Capacitor } from '@capacitor/core';
 
 const isNative = Capacitor.isNativePlatform();
@@ -8,7 +8,7 @@ const isNative = Capacitor.isNativePlatform();
 const AD_UNITS = {
   // TODO: Replace with your real AdMob ad unit IDs for production
   BANNER: 'ca-app-pub-3940256099942544/6300978111',
-  INTERSTITIAL: 'ca-app-pub-3940256099942544/1033173712',
+  APP_OPEN: 'ca-app-pub-3940256099942544/3419835294',
 };
 
 export const initializeAdMob = async (): Promise<void> => {
@@ -22,17 +22,17 @@ export const initializeAdMob = async (): Promise<void> => {
   }
 };
 
-export const showInterstitialAd = async (): Promise<void> => {
+export const showAppOpenAd = async (): Promise<void> => {
   if (!isNative) return;
   const options: AdOptions = {
-    adId: AD_UNITS.INTERSTITIAL,
+    adId: AD_UNITS.APP_OPEN,
     isTesting: process.env.NODE_ENV !== 'production',
   };
   try {
-    await AdMob.prepareInterstitial(options);
-    await AdMob.showInterstitial();
+    await AdMob.prepareAppOpenAd(options);
+    await AdMob.showAppOpenAd();
   } catch (error) {
-    console.error("Error showing interstitial ad:", error);
+    console.error("Error showing App Open ad:", error);
   }
 };
 

@@ -10,7 +10,7 @@ import { Pill, Menu } from 'lucide-react';
 import { SettingsSheet } from "@/components/settings-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WelcomeDialog } from "@/components/welcome-dialog";
-import { initializeAdMob, showInterstitialAd } from "@/lib/admob";
+import { initializeAdMob, showAppOpenAd } from "@/lib/admob";
 import { Capacitor } from '@capacitor/core';
 
 
@@ -42,13 +42,13 @@ export default function Home() {
   } = usePrepState();
 
   useEffect(() => {
-    // Initialize AdMob and show interstitial ad on first load
+    // Initialize AdMob and show app open ad on first load
     if (Capacitor.isNativePlatform()) {
       initializeAdMob().then(() => {
-        const hasSeenInterstitial = sessionStorage.getItem('hasSeenInterstitial');
-        if (!hasSeenInterstitial) {
-          showInterstitialAd();
-          sessionStorage.setItem('hasSeenInterstitial', 'true');
+        const hasSeenAppOpenAd = sessionStorage.getItem('hasSeenAppOpenAd');
+        if (!hasSeenAppOpenAd) {
+          showAppOpenAd();
+          sessionStorage.setItem('hasSeenAppOpenAd', 'true');
         }
       });
     }
