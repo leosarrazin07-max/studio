@@ -3,12 +3,9 @@ import { NextResponse } from 'next/server';
 import { firestore } from '@/lib/firebase-admin';
 import * as admin from 'firebase-admin';
 
-// This endpoint now simply saves the state to Firestore.
-// The logic to send notifications should be triggered by this Firestore write,
-// but since we are in a serverless environment without direct access to event triggers like before,
-// we will simulate the "trigger" by directly calling the notification logic after saving.
-// This is not a true event-driven approach but is a common pattern in serverless functions
-// that need to perform a subsequent action.
+// This endpoint now only saves the state to Firestore.
+// The logic to send notifications is now handled by an Eventarc trigger
+// pointing to /api/tasks/schedule-notifications, which reacts to Firestore writes.
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -20,7 +17,6 @@ export async function POST(request: Request) {
 
     const sessionRef = firestore.collection('prepSessions').doc(token);
     
-    // Make sure we have a valid state object
     if (!state || !Array.isArray(state.prises)) {
         return NextResponse.json({ error: 'Valid state object is required.' }, { status: 400 });
     }
@@ -28,41 +24,16 @@ export async function POST(request: Request) {
     // Convert date strings back to Firestore Timestamps for storage
     const dataToSave = {
         fcmToken: token,
+        pushEnabled: state.pushEnabled,
         sessionActive: state.sessionActive,
         prises: state.prises.map((p: any) => ({ ...p, time: admin.firestore.Timestamp.fromDate(new Date(p.time)) })),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
     
+    // This write will trigger the event-driven notification function
     await sessionRef.set(dataToSave, { merge: true });
-
-    // Now, we will "trigger" the onDoseLogged logic by calling it internally.
-    // For this, we'll need to refactor the onDoseLogged logic into a callable function.
-    // However, since we can't directly call another route, we will just send a confirmation for now.
-    // A more robust solution would involve a pub/sub system or a task queue.
     
-    console.log(`[${token}] State saved successfully. In a real scenario, an event would trigger the notification logic.`);
-
-    // For demonstration, let's try to send a simple notification right away to confirm setup.
-    if (state.sessionActive && state.fcmToken) {
-       try {
-         const message = {
-           notification: {
-             title: 'PrEPy: Session mise à jour !',
-             body: 'Vos informations ont bien été enregistrées.',
-           },
-           token: state.fcmToken,
-         };
-         await admin.messaging().send(message);
-         console.log(`[${token}] Confirmation notification sent successfully.`);
-       } catch (error) {
-         console.error(`[${token}] Failed to send confirmation notification:`, error);
-         if ((error as any).code === 'messaging/registration-token-not-registered') {
-             await firestore.collection('prepSessions').doc(token).delete();
-             console.log(`[${token}] Removed invalid token from Firestore.`);
-         }
-       }
-    }
-
+    console.log(`[${token}] State saved successfully. Eventarc will trigger notification logic.`);
 
     return NextResponse.json({ success: true, message: 'State saved. Notification process will be triggered by Firestore.' });
   } catch (error) {

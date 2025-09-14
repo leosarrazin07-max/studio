@@ -1,3 +1,4 @@
+
 export type PriseType = 'start' | 'dose' | 'stop';
 
 export interface Prise {
@@ -43,4 +44,20 @@ export interface PrepCalculatorResult {
   nextDoseIn: string;
   protectionStartsIn: string;
   protectionEndsAtText: string;
+}
+
+// Firestore types
+export interface FirestorePrise {
+    time: admin.firestore.Timestamp;
+    pills: number;
+    type: PriseType;
+    id: string;
+}
+
+export interface PrepSessionDoc {
+    fcmToken: string;
+    pushEnabled: boolean;
+    sessionActive: boolean;
+    prises: FirestorePrise[];
+    updatedAt: admin.firestore.Timestamp;
 }

@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { add, sub, format, isAfter, isBefore, differenceInMilliseconds, differenceInHours } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
-import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, FINAL_PROTECTION_HOURS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
+import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
 import { app } from "@/lib/firebase-client";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
@@ -17,7 +17,8 @@ const createMockData = (): PrepState => {
     
     // Scénario: L'utilisateur en est à sa deuxième prise (deuxième jour).
     const firstDoseTime = sub(now, { days: 1 }); // Prise de départ hier
-    const secondDoseTime = now; // Deuxième prise aujourd'hui
+    // To see the "time to take" countdown, set the last dose to be ~22h ago
+    const secondDoseTime = sub(now, { hours: 22, minutes: 5 }); 
 
     mockPrises.push({
         time: firstDoseTime,
@@ -95,7 +96,6 @@ export function usePrepState(): UsePrepStateReturn {
       setState(newState);
       if (typeof window !== 'undefined') {
         try {
-            // Ensure we are saving a valid fcmToken state
             const stateToSave = {
                 ...newState,
                 prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
@@ -173,23 +173,26 @@ export function usePrepState(): UsePrepStateReturn {
 
   const unsubscribeFromNotifications = useCallback(async () => {
     setIsPushLoading(true);
-    if (state.fcmToken) {
+    const fcmToken = state.fcmToken;
+    // Always update local state to reflect user's choice FIRST
+    const newState = {...state, pushEnabled: false};
+    saveState(newState); // This will sync to firestore which will stop scheduled notifications
+    toast({ title: "Notifications désactivées." });
+
+    if (fcmToken) {
       try {
+        // Also try to delete the document from server
         await fetch('/api/subscription', {
             method: 'DELETE',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ token: state.fcmToken })
+            body: JSON.stringify({ token: fcmToken })
         });
       } catch (error) {
          console.error("Error unsubscribing:", error);
-         toast({ title: "Erreur lors de la désinscription", variant: "destructive" });
+         toast({ title: "Erreur lors de la désinscription du serveur", variant: "destructive" });
       }
     }
     
-    // Always update local state to reflect user's choice
-    const newState = {...state, pushEnabled: false, fcmToken: null};
-    saveState(newState);
-    toast({ title: "Notifications désactivées." });
     setIsPushLoading(false);
 
   }, [state, saveState, toast]);
@@ -213,6 +216,11 @@ export function usePrepState(): UsePrepStateReturn {
             title: payload.notification?.title,
             description: payload.notification?.body,
           });
+          // Optimistically reload state from local storage as server might have updated it
+          const savedState = safelyParseJSON(localStorage.getItem('prepState'));
+          if (savedState) {
+              setState(savedState);
+          }
         });
         return () => unsubscribe();
       } catch (err) {
@@ -231,7 +239,7 @@ export function usePrepState(): UsePrepStateReturn {
     if (!isClient) return;
     
     const permission = Notification.permission;
-    if (permission === 'denied' || permission === 'default') {
+    if (permission === 'denied') {
         if(state.pushEnabled) {
             // User manually disabled notifs in browser, sync state by turning it off
             const newState = {...state, pushEnabled: false, fcmToken: null};
@@ -312,7 +320,7 @@ export function usePrepState(): UsePrepStateReturn {
   if (isClient && state.prises.length > 0) {
     const sortedPrises = state.prises
       .filter(d => d.type !== 'stop')
-      .sort((a, b) => a.time.getTime() - b.time.getTime());
+      .sort((a, b) => a.time.getTime() - a.time.getTime());
     
     const priseCount = sortedPrises.length;
     const firstDose = sortedPrises[0];
@@ -428,5 +436,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    
