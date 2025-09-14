@@ -19,6 +19,8 @@ import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info, PowerOff, Shie
 import type { UsePrepStateReturn, PrepCalculatorResult } from '@/lib/types';
 import { LogDoseDialog } from './log-dose-dialog';
 import { DoseHistory } from './dose-history';
+import { AdBanner } from './ad-banner';
+import { Capacitor } from '@capacitor/core';
 
 type PrepDashboardProps = Pick<UsePrepStateReturn, 'prises' | 'addDose' | 'endSession' | 'sessionActive' | 'startSession'> & PrepCalculatorResult;
 
@@ -36,6 +38,7 @@ export function PrepDashboard({
   startSession
 }: PrepDashboardProps) {
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
+  const isNative = Capacitor.isNativePlatform();
 
   const StatusIcon = () => {
     switch (status) {
@@ -66,6 +69,7 @@ export function PrepDashboard({
 
   return (
     <div className="flex flex-col gap-8 h-full">
+      {isNative && <AdBanner position="top" marginTop={64} />}
       <Card className="shadow-lg rounded-xl overflow-hidden">
         <CardContent className="p-0">
           <div className={`flex flex-col items-center justify-center p-6 transition-colors duration-500 text-center ${statusColor}`}>
@@ -148,7 +152,7 @@ export function PrepDashboard({
         </div>
       )}
 
-
+      {isNative && <AdBanner position="bottom" />}
       <DoseHistory prises={prises} />
 
       <LogDoseDialog

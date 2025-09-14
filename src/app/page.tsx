@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -9,6 +10,8 @@ import { Pill, Menu } from 'lucide-react';
 import { SettingsSheet } from "@/components/settings-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WelcomeDialog } from "@/components/welcome-dialog";
+import { initializeAdMob, showInterstitialAd } from "@/lib/admob";
+import { Capacitor } from '@capacitor/core';
 
 
 export default function Home() {
@@ -37,6 +40,19 @@ export default function Home() {
     protectionEndsAtText,
     sessionActive
   } = usePrepState();
+
+  useEffect(() => {
+    // Initialize AdMob and show interstitial ad on first load
+    if (Capacitor.isNativePlatform()) {
+      initializeAdMob().then(() => {
+        const hasSeenInterstitial = sessionStorage.getItem('hasSeenInterstitial');
+        if (!hasSeenInterstitial) {
+          showInterstitialAd();
+          sessionStorage.setItem('hasSeenInterstitial', 'true');
+        }
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (welcomeScreenVisible) {

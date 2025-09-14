@@ -12,6 +12,7 @@ const withPWA = require('@ducanh2912/next-pwa').default({
 
 const nextConfig = {
   /* config options here */
+  output: 'export', // Required for Capacitor
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -19,6 +20,7 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   images: {
+    unoptimized: true, // Required for Capacitor
     remotePatterns: [
       {
         protocol: 'https',
