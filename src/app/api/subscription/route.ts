@@ -4,8 +4,8 @@ import { firestore } from '@/lib/firebase-admin';
 import * as admin from 'firebase-admin';
 
 // This endpoint now only saves the state to Firestore.
-// The logic to send notifications is now handled by an Eventarc trigger
-// pointing to /api/tasks/schedule-notifications, which reacts to Firestore writes.
+// The logic to schedule and send notifications is now handled by an Eventarc trigger
+// on the Cloud Function defined in the /functions directory.
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -30,12 +30,12 @@ export async function POST(request: Request) {
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
     
-    // This write will trigger the event-driven notification function
+    // This write will trigger the onWrite Cloud Function
     await sessionRef.set(dataToSave, { merge: true });
     
-    console.log(`[${token}] State saved successfully. Eventarc will trigger notification logic.`);
+    console.log(`[${token}] State saved successfully. Cloud Function will handle notification logic.`);
 
-    return NextResponse.json({ success: true, message: 'State saved. Notification process will be triggered by Firestore.' });
+    return NextResponse.json({ success: true, message: 'State saved. Notification process will be triggered by the Cloud Function.' });
   } catch (error) {
     console.error('Error saving subscription:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
