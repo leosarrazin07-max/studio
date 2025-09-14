@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -20,9 +21,12 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Trash2, Bell, BellOff, Loader2, AlertTriangle } from "lucide-react";
+import { Trash2, Bell, BellOff, Loader2, AlertTriangle, Languages } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { useScopedI18n, useChangeLocale, useCurrentLocale } from '@/locales/client';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {locales} from '@/lib/constants';
 
 interface SettingsSheetProps {
   isOpen: boolean;
@@ -45,6 +49,9 @@ export function SettingsSheet({
   requestNotificationPermission,
   unsubscribeFromNotifications
 }: SettingsSheetProps) {
+  const t = useScopedI18n('settings');
+  const changeLocale = useChangeLocale();
+  const currentLocale = useCurrentLocale();
 
   const handleClearHistory = () => {
     onClearHistory();
@@ -63,7 +70,7 @@ export function SettingsSheet({
     if (pushPermissionStatus === 'denied') {
       return (
         <p className="text-sm text-destructive/90">
-          Vous avez bloqué les notifications. Pour les réactiver, vous devez autoriser les notifications pour ce site dans les paramètres de votre navigateur, puis recharger la page.
+          {t('notifications.denied')}
         </p>
       )
     }
@@ -71,13 +78,13 @@ export function SettingsSheet({
         return (
             <p className="text-sm text-amber-600">
                 <AlertTriangle className="inline-block h-4 w-4 mr-1" />
-                Les rappels de prise sont désactivés. Vous ne recevrez aucune notification, ce qui peut entraîner des oublis.
+                {t('notifications.disabledWarning')}
             </p>
         )
     }
     return (
         <p className="text-sm text-muted-foreground">
-            Recevez un rappel pour chaque prise afin de garantir votre protection.
+            {t('notifications.description')}
         </p>
     )
   }
@@ -86,14 +93,14 @@ export function SettingsSheet({
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Paramètres</SheetTitle>
+          <SheetTitle>{t('title')}</SheetTitle>
           <SheetDescription>
-            Gérez vos données et préférences.
+            {t('description')}
           </SheetDescription>
         </SheetHeader>
         <div className="grid gap-6 py-8">
            <div className="flex flex-col gap-3 p-4 rounded-lg border">
-              <h3 className="font-semibold text-lg">Notifications</h3>
+              <h3 className="font-semibold text-lg">{t('notifications.title')}</h3>
               <div className="flex items-center space-x-2">
                 <Switch
                   id="notifications-switch"
@@ -104,10 +111,38 @@ export function SettingsSheet({
                 />
                 <Label htmlFor="notifications-switch" className="flex items-center">
                   {isPushLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (pushEnabled ? <Bell className="mr-2 h-4 w-4" /> : <BellOff className="mr-2 h-4 w-4" />)}
-                  {isPushLoading ? 'Chargement...' : (pushEnabled ? 'Notifications activées' : 'Notifications désactivées')}
+                  {isPushLoading ? t('notifications.loading') : (pushEnabled ? t('notifications.enabled') : t('notifications.disabled'))}
                 </Label>
               </div>
               {renderNotificationHelpText()}
+          </div>
+          <div className="flex flex-col gap-3 p-4 rounded-lg border">
+              <h3 className="font-semibold text-lg flex items-center gap-2">
+                <Languages />
+                {t('language.title')}
+              </h3>
+              <p className="text-sm text-muted-foreground">{t('language.description')}</p>
+              <Select onValueChange={(value) => changeLocale(value as any)} defaultValue={currentLocale}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('language.select')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fr">Français</SelectItem>
+                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="de">Deutsch</SelectItem>
+                  <SelectItem value="it">Italiano</SelectItem>
+                  <SelectItem value="es">Español</SelectItem>
+                  <SelectItem value="ru">Русский</SelectItem>
+                  <SelectItem value="uk">Українська</SelectItem>
+                  <SelectItem value="ar">العربية</SelectItem>
+                  <SelectItem value="tr">Türkçe</SelectItem>
+                  <SelectItem value="da">Dansk</SelectItem>
+                  <SelectItem value="sv">Svenska</SelectItem>
+                  <SelectItem value="nl">Nederlands</SelectItem>
+                  <SelectItem value="pt">Português</SelectItem>
+                  <SelectItem value="sr">Srpski</SelectItem>
+                </SelectContent>
+              </Select>
           </div>
         </div>
         <SheetFooter className="absolute bottom-4 right-4 left-4">
@@ -115,21 +150,20 @@ export function SettingsSheet({
                 <AlertDialogTrigger asChild>
                     <Button variant="destructive" className="w-full">
                         <Trash2 className="mr-2 h-4 w-4" />
-                        Supprimer mon historique
+                        {t('clearHistory.button')}
                     </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Êtes-vous absolument sûr?</AlertDialogTitle>
+                    <AlertDialogTitle>{t('clearHistory.dialog.title')}</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Cette action est irréversible. Toutes vos données de session et
-                      votre historique de comprimés seront définitivement supprimés.
+                      {t('clearHistory.dialog.description')}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>Annuler</AlertDialogCancel>
+                    <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                     <AlertDialogAction onClick={handleClearHistory} className="bg-destructive hover:bg-destructive/90">
-                      Oui, supprimer mes données
+                      {t('clearHistory.dialog.confirm')}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>

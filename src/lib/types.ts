@@ -1,4 +1,6 @@
 
+import type { getI18n, getScopedI18n } from '@/locales/server';
+
 export type PriseType = 'start' | 'dose' | 'stop';
 
 export interface Prise {
@@ -37,15 +39,6 @@ export interface UsePrepStateReturn extends PrepState {
   protectionEndsAtText: string;
 }
 
-export interface PrepCalculatorResult {
-  status: PrepStatus;
-  statusColor: string;
-  statusText: string;
-  nextDoseIn: string;
-  protectionStartsIn: string;
-  protectionEndsAtText: string;
-}
-
 // Firestore types
 export interface FirestorePrise {
     time: admin.firestore.Timestamp;
@@ -61,3 +54,6 @@ export interface PrepSessionDoc {
     prises: FirestorePrise[];
     updatedAt: admin.firestore.Timestamp;
 }
+
+export type T = Awaited<ReturnType<typeof getI18n>>;
+export type ScopedT = Awaited<ReturnType<typeof getScopedI18n>>;

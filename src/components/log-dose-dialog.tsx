@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { DateTimePicker } from '@/components/date-time-picker';
 import { Clock, Calendar, Pill, RefreshCw } from 'lucide-react';
 import type { PrepStatus } from '@/lib/types';
+import { useI18n, useScopedI18n } from '@/locales/client';
 
 interface LogDoseDialogProps {
   isOpen: boolean;
@@ -34,17 +35,19 @@ export function LogDoseDialog({
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [pickerPillCount, setPickerPillCount] = useState(1);
 
+  const t = useScopedI18n('logDoseDialog');
+
   const isInitialDose = status === 'inactive';
   const isMissedDose = status === 'missed';
 
-  let title = 'Enregistrer votre prise';
-  let description = "Confirmez quand vous avez pris votre comprimé.";
+  let title = t('regular.title');
+  let description = t('regular.description');
   if (isInitialDose) {
-    title = 'Démarrer votre session';
-    description = 'Vous commencerez avec 2 comprimés. Confirmez quand vous avez fait votre prise initiale.';
+    title = t('initial.title');
+    description = t('initial.description');
   } else if (isMissedDose) {
-    title = 'Prise manquée';
-    description = "Il semble que vous ayez manqué une prise. Choisissez une option pour mettre à jour votre statut.";
+    title = t('missed.title');
+    description = t('missed.description');
   }
 
   const handleLog = (time: Date, pills: number) => {
@@ -88,10 +91,10 @@ export function LogDoseDialog({
     if (showTimePicker) {
       return (
         <div className="py-4 flex flex-col items-center gap-4">
-          <p className="text-sm text-muted-foreground">Sélectionnez la date et l'heure de la prise de {pickerPillCount} comprimé(s).</p>
+          <p className="text-sm text-muted-foreground">{t('picker.description', { count: pickerPillCount })}</p>
           <DateTimePicker date={selectedDate} setDate={setSelectedDate} />
           <DialogFooter>
-             <Button onClick={handlePickerConfirm}>Confirmer l'heure</Button>
+             <Button onClick={handlePickerConfirm}>{t('picker.confirm')}</Button>
           </DialogFooter>
         </div>
       );
@@ -101,10 +104,10 @@ export function LogDoseDialog({
         return (
             <div className="flex flex-col gap-3 pt-4">
                 <Button variant="outline" onClick={() => handleEarlier(1)}>
-                    <Calendar className="mr-2 h-4 w-4" /> J'ai pris 1 comprimé plus tôt
+                    <Calendar className="mr-2 h-4 w-4" /> {t('missed.earlier')}
                 </Button>
                 <Button variant="destructive" onClick={handleRestartNow}>
-                    <RefreshCw className="mr-2 h-4 w-4" /> Recommencer avec 2 comprimés
+                    <RefreshCw className="mr-2 h-4 w-4" /> {t('missed.restart')}
                 </Button>
             </div>
         );
@@ -114,10 +117,10 @@ export function LogDoseDialog({
     return (
       <DialogFooter className="sm:justify-between flex-col sm:flex-row gap-2 pt-4">
           <Button variant="outline" onClick={() => handleEarlier(pills)}>
-              <Calendar className="mr-2 h-4 w-4" /> J'ai pris {pills} comprimé(s) plus tôt
+              <Calendar className="mr-2 h-4 w-4" /> {t('pills.earlier', { count: pills })}
           </Button>
           <Button onClick={() => handleNow(pills)}>
-              <Clock className="mr-2 h-4 w-4" /> J'ai pris {pills} comprimé(s) maintenant
+              <Clock className="mr-2 h-4 w-4" /> {t('pills.now', { count: pills })}
           </Button>
       </DialogFooter>
     );
@@ -136,5 +139,3 @@ export function LogDoseDialog({
     </Dialog>
   );
 }
-
-    

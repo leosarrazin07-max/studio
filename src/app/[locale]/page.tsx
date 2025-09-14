@@ -12,13 +12,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { WelcomeDialog } from "@/components/welcome-dialog";
 import { initializeAdMob, showAppOpenAd } from "@/lib/admob";
 import { Capacitor } from '@capacitor/core';
-
+import { useI18n, useScopedI18n } from '@/locales/client';
 
 export default function Home() {
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   
+  const t = useI18n();
+  const scopedT = useScopedI18n('welcomeScreen');
+
   const {
     prises,
     addDose,
@@ -75,17 +78,17 @@ export default function Home() {
             <Pill className="text-primary" size={80} strokeWidth={1.5}/>
         </div>
       <h1 className="text-4xl md:text-5xl font-bold text-primary font-headline mb-4">
-        Bienvenue sur PrEPy
+        {scopedT('title')}
       </h1>
       <p className="max-w-md text-muted-foreground mb-8">
-        Votre compagnon intelligent pour la PrEP à la demande. Suivez vos prises, restez protégé et gérez vos sessions en toute confiance.
+        {scopedT('subtitle')}
       </p>
       <Button
         size="lg"
         className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full px-8 py-6 text-lg shadow-lg"
         onClick={() => setIsLogDoseOpen(true)}
       >
-        Démarrer une session PrEP
+        {scopedT('cta')}
       </Button>
     </div>
   );

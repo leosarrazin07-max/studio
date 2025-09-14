@@ -11,19 +11,17 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info, PowerOff, ShieldX } from 'lucide-react';
-import type { UsePrepStateReturn, PrepCalculatorResult } from '@/lib/types';
+import type { UsePrepStateReturn } from '@/lib/types';
 import { LogDoseDialog } from './log-dose-dialog';
 import { DoseHistory } from './dose-history';
 import { AdBanner } from './ad-banner';
 import { Capacitor } from '@capacitor/core';
 import { AD_UNITS } from '@/lib/admob';
-
-type PrepDashboardProps = Pick<UsePrepStateReturn, 'prises' | 'addDose' | 'endSession' | 'sessionActive' | 'startSession'> & PrepCalculatorResult;
+import { useScopedI18n, useI18n } from '@/locales/client';
 
 export function PrepDashboard({
   prises,
@@ -37,9 +35,10 @@ export function PrepDashboard({
   endSession,
   sessionActive,
   startSession
-}: PrepDashboardProps) {
+}: UsePrepStateReturn) {
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
   const isNative = Capacitor.isNativePlatform();
+  const t = useI18n();
 
   const StatusIcon = () => {
     switch (status) {
@@ -63,7 +62,7 @@ export function PrepDashboard({
       <div className="text-center flex flex-col justify-center">
         {status === 'loading' && <p className="text-white/80">{protectionStartsIn}</p>}
         {status === 'effective' && <p className="text-sm text-white/90 font-medium">{nextDoseIn}</p>}
-        {(status === 'missed' || status === 'lapsed') && <p className="text-sm text-white/90 font-medium">Si vous avez eu des rapports à risque hors de la période de protection, veuillez vous faire tester.</p>}
+        {(status === 'missed' || status === 'lapsed') && <p className="text-sm text-white/90 font-medium">{t('status.riskWarning')}</p>}
       </div>
     );
   };
@@ -98,25 +97,25 @@ export function PrepDashboard({
                         onClick={() => setIsLogDoseOpen(true)}
                         disabled={status === 'lapsed'}
                     >
-                        <CheckCircle2 className="mr-2 h-5 w-5" /> J'ai pris ma prise
+                        <CheckCircle2 className="mr-2 h-5 w-5" /> {t('dashboard.logDose')}
                     </Button>
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
                         <Button size="lg" variant="destructive" className="shadow-md">
-                            Terminer la session
+                            {t('dashboard.endSession')}
                         </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                         <AlertDialogHeader>
-                            <AlertDialogTitle>Terminer votre session PrEP?</AlertDialogTitle>
+                            <AlertDialogTitle>{t('dashboard.endSessionDialog.title')}</AlertDialogTitle>
                             <AlertDialogDescription>
-                            Cela arrêtera les rappels de notification. Votre protection sera calculée en fonction de votre dernière prise.
+                                {t('dashboard.endSessionDialog.description')}
                             </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                            <AlertDialogCancel>Annuler</AlertDialogCancel>
+                            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                             <AlertDialogAction onClick={endSession} className="bg-destructive hover:bg-destructive/90">
-                            Oui, Terminer
+                            {t('dashboard.endSessionDialog.confirm')}
                             </AlertDialogAction>
                         </AlertDialogFooter>
                         </AlertDialogContent>
@@ -130,7 +129,7 @@ export function PrepDashboard({
                         onClick={() => setIsLogDoseOpen(true)}
                     >
                         <Pill className="mr-2 h-5 w-5" />
-                        <span>Démarrer une nouvelle session</span>
+                        <span>{t('dashboard.startSession')}</span>
                     </Button>
                 </div>
                )}
@@ -146,7 +145,7 @@ export function PrepDashboard({
                 </div>
                 <div className="ml-3">
                     <p className="text-sm text-primary/90">
-                       Pour arrêter la PrEP, continuez de prendre 1 comprimé par jour pendant les 2 jours qui suivent votre dernier rapport.
+                       {t('dashboard.stopPrepInfo')}
                     </p>
                 </div>
             </div>

@@ -3,21 +3,22 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { add, sub, format, isAfter, isBefore, differenceInMilliseconds, differenceInHours } from 'date-fns';
-import { fr } from 'date-fns/locale';
+import { fr, enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
 import { app } from "@/lib/firebase-client";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
+import { useI18n, useScopedI18n, useCurrentLocale } from '@/locales/client';
 
-// --- MOCK DATA GENERATION FOR DEVELOPMENT ---
+const dateLocales: { [key: string]: Locale } = {
+  fr, en: enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr
+};
+
 const createMockData = (): PrepState => {
     const mockPrises: Prise[] = [];
     const now = new Date();
-    
-    // Scénario: L'utilisateur en est à sa deuxième prise (deuxième jour).
-    const firstDoseTime = sub(now, { days: 1 }); // Prise de départ hier
-    // To see the "time to take" countdown, set the last dose to be ~22h ago
+    const firstDoseTime = sub(now, { days: 1 }); 
     const secondDoseTime = sub(now, { hours: 22, minutes: 5 }); 
 
     mockPrises.push({
@@ -41,8 +42,6 @@ const createMockData = (): PrepState => {
         fcmToken: null,
     };
 };
-// --- END MOCK DATA ---
-
 
 const safelyParseJSON = (jsonString: string | null) => {
   if (!jsonString) return null;
@@ -86,8 +85,12 @@ export function usePrepState(): UsePrepStateReturn {
   const [state, setState] = useState<PrepState>(getInitialState);
   const [pushPermissionStatus, setPushPermissionStatus] = useState<NotificationPermission>();
 
+  const t = useI18n();
+  const currentLocale = useCurrentLocale();
+  const locale = dateLocales[currentLocale] || fr;
+  const statusT = useScopedI18n('status');
+
   const saveState = useCallback((newState: PrepState) => {
-      // Don't persist mock data in dev unless we have a token (for testing notifications)
       if (process.env.NODE_ENV === 'development' && newState.fcmToken === null) {
           setState(newState);
           return;
@@ -102,7 +105,6 @@ export function usePrepState(): UsePrepStateReturn {
             };
             localStorage.setItem('prepState', JSON.stringify(stateToSave));
             
-            // Sync state with Firestore if we have a token.
             if (newState.fcmToken) {
                  fetch('/api/subscription', {
                     method: 'POST',
@@ -118,7 +120,7 @@ export function usePrepState(): UsePrepStateReturn {
   
  const requestNotificationPermission = useCallback(async () => {
     if (typeof window === 'undefined' || !('Notification' in window) || !navigator.serviceWorker) {
-        toast({ title: "Navigateur non compatible", variant: "destructive" });
+        toast({ title: t('notifications.toast.unsupported'), variant: "destructive" });
         setIsPushLoading(false);
         return false;
     }
@@ -129,7 +131,7 @@ export function usePrepState(): UsePrepStateReturn {
         setPushPermissionStatus(permission);
 
         if (permission !== 'granted') {
-            toast({ title: "Notifications refusées", description: "Vous pouvez les réactiver dans les paramètres de votre navigateur.", variant: "destructive" });
+            toast({ title: t('notifications.toast.denied.title'), description: t('notifications.toast.denied.description'), variant: "destructive" });
             const newState = {...state, pushEnabled: false, fcmToken: null};
             saveState(newState);
             setIsPushLoading(false);
@@ -142,7 +144,7 @@ export function usePrepState(): UsePrepStateReturn {
 
         if (!vapidKey) {
             console.error("VAPID public key not found in environment variables.");
-            toast({ title: "Erreur de configuration", description: "La clé de notification est manquante.", variant: "destructive" });
+            toast({ title: t('notifications.toast.configError.title'), description: t('notifications.toast.configError.description'), variant: "destructive" });
             setIsPushLoading(false);
             return false;
         }
@@ -152,36 +154,34 @@ export function usePrepState(): UsePrepStateReturn {
         if (fcmToken) {
              const newState = {...state, pushEnabled: true, fcmToken };
              saveState(newState);
-             toast({ title: "Notifications activées!" });
+             toast({ title: t('notifications.toast.enabled') });
         } else {
              const newState = {...state, pushEnabled: false, fcmToken: null };
              saveState(newState);
-             toast({ title: "Impossible de récupérer le token", variant: "destructive" });
+             toast({ title: t('notifications.toast.tokenError'), variant: "destructive" });
         }
 
         setIsPushLoading(false);
         return !!fcmToken;
     } catch (error) {
         console.error("Error getting FCM token:", error);
-        toast({ title: "Erreur d'abonnement", variant: "destructive" });
+        toast({ title: t('notifications.toast.subscriptionError'), variant: "destructive" });
         const newState = {...state, pushEnabled: false, fcmToken: null };
         saveState(newState);
         setIsPushLoading(false);
         return false;
     }
-  }, [state, saveState, toast]);
+  }, [state, saveState, toast, t]);
 
   const unsubscribeFromNotifications = useCallback(async () => {
     setIsPushLoading(true);
     const fcmToken = state.fcmToken;
-    // Always update local state to reflect user's choice FIRST
     const newState = {...state, pushEnabled: false};
-    saveState(newState); // This will sync to firestore which will stop scheduled notifications
-    toast({ title: "Notifications désactivées." });
+    saveState(newState);
+    toast({ title: t('notifications.toast.disabled') });
 
     if (fcmToken) {
       try {
-        // Also try to delete the document from server
         await fetch('/api/subscription', {
             method: 'DELETE',
             headers: {'Content-Type': 'application/json'},
@@ -189,13 +189,12 @@ export function usePrepState(): UsePrepStateReturn {
         });
       } catch (error) {
          console.error("Error unsubscribing:", error);
-         toast({ title: "Erreur lors de la désinscription du serveur", variant: "destructive" });
+         toast({ title: t('notifications.toast.unsubscribeError'), variant: "destructive" });
       }
     }
     
     setIsPushLoading(false);
-
-  }, [state, saveState, toast]);
+  }, [state, saveState, toast, t]);
 
   useEffect(() => {
     setIsClient(true);
@@ -216,7 +215,6 @@ export function usePrepState(): UsePrepStateReturn {
             title: payload.notification?.title,
             description: payload.notification?.body,
           });
-          // Optimistically reload state from local storage as server might have updated it
           const savedState = safelyParseJSON(localStorage.getItem('prepState'));
           if (savedState) {
               setState(savedState);
@@ -234,14 +232,12 @@ export function usePrepState(): UsePrepStateReturn {
     return () => clearInterval(timer);
   }, []);
 
-
   useEffect(() => {
     if (!isClient) return;
     
     const permission = Notification.permission;
     if (permission === 'denied') {
         if(state.pushEnabled) {
-            // User manually disabled notifs in browser, sync state by turning it off
             const newState = {...state, pushEnabled: false, fcmToken: null};
             saveState(newState);
         }
@@ -249,11 +245,9 @@ export function usePrepState(): UsePrepStateReturn {
     setIsPushLoading(false);
   }, [isClient, state.pushEnabled, saveState]);
 
-
   const startSession = useCallback((time: Date) => {
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
     const newPrises = [newDose];
-    // Preserve notification settings on new session
     const newState = { ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled, fcmToken: state.fcmToken };
     saveState(newState);
   }, [saveState, state.pushEnabled, state.fcmToken]);
@@ -268,26 +262,25 @@ export function usePrepState(): UsePrepStateReturn {
     const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
     const updatedDoses = [...state.prises, stopEvent];
     saveState({ ...state, sessionActive: false, prises: updatedDoses });
-    toast({ title: "Session terminée", description: "Les rappels de notification sont maintenant arrêtés." });
-  }, [state, saveState, toast]);
+    toast({ title: t('session.end.toast.title'), description: t('session.end.toast.description') });
+  }, [state, saveState, toast, t]);
 
   const clearHistory = useCallback(() => {
     if (process.env.NODE_ENV === 'development') {
         setState(createMockData());
-        toast({ title: "Données de test rechargées" });
+        toast({ title: t('session.clear.toast.dev') });
         return;
     }
     
     if (typeof window !== 'undefined') {
         localStorage.removeItem('prepState');
     }
-    // Preserve notification settings on clear
     const newState = { ...defaultState, pushEnabled: state.pushEnabled, fcmToken: state.fcmToken };
     saveState(newState);
-    toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [state.pushEnabled, state.fcmToken, toast, saveState]);
+    toast({ title: t('session.clear.toast.title'), description: t('session.clear.toast.description') });
+  }, [state.pushEnabled, state.fcmToken, toast, saveState, t]);
 
-    const formatCountdown = (endDate: Date) => {
+  const formatCountdown = (endDate: Date) => {
     const milliseconds = differenceInMilliseconds(endDate, now);
     if (milliseconds <= 0) return "0s";
     
@@ -312,7 +305,7 @@ export function usePrepState(): UsePrepStateReturn {
 
   let status: PrepStatus = 'inactive';
   let statusColor = 'bg-gray-500';
-  let statusText = 'Inactive';
+  let statusText = statusT('inactive');
   let nextDoseIn = '';
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
@@ -327,22 +320,19 @@ export function usePrepState(): UsePrepStateReturn {
 
     if (priseCount > 0 && firstDose) {
       if (priseCount < 3) {
-        // Scénario 1: Moins de 3 prises
-        const datePriseDemarrage = firstDose.time;
-        const dateTroisiemeJour = add(datePriseDemarrage, { days: 2 });
-        const dateLendemain = add(datePriseDemarrage, { hours: 24 });
-        
-        protectionEndsAtText = `Si vous continuez les prises jusqu'au ${format(dateTroisiemeJour, "dd/MM 'à' HH:mm", { locale: fr })}, vos rapports entre le ${format(datePriseDemarrage, "dd/MM 'à' HH:mm", { locale: fr })} et le ${format(dateLendemain, "dd/MM 'à' HH:mm", { locale: fr })} seront protégés.`;
+        const datePriseDemarrage = format(firstDose.time, "dd/MM 'à' HH:mm", { locale });
+        const dateTroisiemeJour = format(add(firstDose.time, { days: 2 }), "dd/MM 'à' HH:mm", { locale });
+        const dateLendemain = format(add(firstDose.time, { hours: 24 }), "dd/MM 'à' HH:mm", { locale });
+        protectionEndsAtText = t('protection.text.lessThan3doses', { datePriseDemarrage, dateTroisiemeJour, dateLendemain });
       } else {
-        // Scénario 2: 3 prises ou plus
         const avantDernierePrise = sortedPrises[priseCount - 2];
         if (avantDernierePrise) {
-          protectionEndsAtText = `Vos rapports avant le ${format(avantDernierePrise.time, "eeee dd MMMM 'à' HH:mm", { locale: fr })} sont protégés par la PrEP.`;
+          const dateAvantDernierePrise = format(avantDernierePrise.time, "eeee dd MMMM 'à' HH:mm", { locale });
+          protectionEndsAtText = t('protection.text.moreThan3doses', { dateAvantDernierePrise });
         }
       }
     }
   }
-
 
   if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
     const lastDoseTime = lastDose.time;
@@ -372,43 +362,41 @@ export function usePrepState(): UsePrepStateReturn {
     if (isLapsed || (hoursSinceLastDose > DOSE_REMINDER_WINDOW_END_HOURS && status !== 'lapsed')) {
         status = 'lapsed';
         statusColor = 'bg-destructive';
-        statusText = 'Protection rompue';
-        // Overwrite the specific message for this critical status
-        protectionEndsAtText = "Vous avez manqué une ou plusieurs prises. Votre protection n'est plus garantie."
+        statusText = statusT('lapsed');
+        protectionEndsAtText = t('protection.text.lapsed');
     } else if (isBefore(now, protectionStartTime)) {
       status = 'loading';
       statusColor = 'bg-primary';
-      statusText = 'Protection en cours...';
-      protectionStartsIn = `Sera active dans ${formatCountdown(protectionStartTime)}`;
+      statusText = statusT('loading');
+      protectionStartsIn = t('protection.startsIn', { time: formatCountdown(protectionStartTime) });
     } else if (isBefore(now, reminderWindowStartTime)) {
       status = 'effective';
       statusColor = 'bg-accent';
-      statusText = 'Protection active';
-      nextDoseIn = `Prochaine prise dans ${formatCountdown(reminderWindowStartTime)}`;
+      statusText = statusT('effective');
+      nextDoseIn = t('dose.nextIn', { time: formatCountdown(reminderWindowStartTime) });
     } else if (isBefore(now, reminderWindowEndTime)) {
         status = 'effective';
         statusColor = 'bg-accent';
-        statusText = 'Protection active';
+        statusText = statusT('effective');
         const timeLeft = formatCountdown(reminderWindowEndTime);
         if (timeLeft !== "0s") {
-            nextDoseIn = `Il vous reste ${timeLeft} pour prendre un comprimé`;
+            nextDoseIn = t('dose.timeLeft', { time: timeLeft });
         } else {
-            nextDoseIn = `Prenez votre comprimé maintenant !`;
+            nextDoseIn = t('dose.now');
         }
     } else {
-      // This case is now handled by the isLapsed check at the beginning
       status = 'missed';
       statusColor = 'bg-destructive';
-      statusText = 'Prise manquée';
+      statusText = statusT('missed');
     }
   } else if (isClient && !state.sessionActive && state.prises.length > 0) {
      status = 'missed';
      statusColor = 'bg-destructive';
-     statusText = 'Session terminée';
+     statusText = statusT('ended');
   }
 
   if (!isClient) {
-    statusText = "Chargement...";
+    statusText = statusT('loadingClient');
     statusColor = "bg-muted";
   }
 

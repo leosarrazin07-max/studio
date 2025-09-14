@@ -7,34 +7,43 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import type { Prise } from "@/lib/types";
 import { format } from "date-fns";
-import { fr } from "date-fns/locale";
+import { fr, enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr } from "date-fns/locale";
 import { History, Pill, PlayCircle, StopCircle, CheckCircle2 } from "lucide-react";
+import { useI18n, useCurrentLocale, useScopedI18n } from '@/locales/client';
 
 interface DoseHistoryProps {
   prises: Prise[];
 }
 
+const locales: { [key: string]: Locale } = {
+  fr, en: enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr
+};
+
 const EventDetails: React.FC<{ prise: Prise }> = ({ prise }) => {
+    const t = useScopedI18n('doseHistory.event');
+    const currentLocale = useCurrentLocale();
+    const locale = locales[currentLocale] || fr;
+
     let Icon;
     let title = '';
-    let details = `le ${format(new Date(prise.time), "eeee dd MMMM 'à' HH:mm", { locale: fr })}`;
+    let details = `le ${format(new Date(prise.time), "eeee dd MMMM 'à' HH:mm", { locale })}`;
 
     switch (prise.type) {
         case 'start':
             Icon = PlayCircle;
-            title = "Démarrage de la session";
+            title = t('start');
             break;
         case 'dose':
             Icon = CheckCircle2;
-            title = "Prise de comprimé";
+            title = t('dose');
             break;
         case 'stop':
             Icon = StopCircle;
-            title = "Fin de session";
+            title = t('stop');
             break;
         default:
             Icon = Pill;
-            title = "Événement inconnu";
+            title = t('unknown');
     }
 
     return (
@@ -56,6 +65,7 @@ const EventDetails: React.FC<{ prise: Prise }> = ({ prise }) => {
 
 
 export function DoseHistory({ prises }: DoseHistoryProps) {
+  const t = useScopedI18n('doseHistory');
   const reversedPrises = React.useMemo(() => [...prises].reverse(), [prises]);
 
   return (
@@ -63,9 +73,9 @@ export function DoseHistory({ prises }: DoseHistoryProps) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 font-headline">
           <History className="text-primary" />
-          Journal de bord
+          {t('title')}
         </CardTitle>
-        <CardDescription>Vos activités des 90 derniers jours.</CardDescription>
+        <CardDescription>{t('description')}</CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
         <ScrollArea className="h-48 w-full pr-4">
@@ -80,8 +90,8 @@ export function DoseHistory({ prises }: DoseHistoryProps) {
             </div>
           ) : (
             <div className="text-center text-muted-foreground py-10">
-              <p>Aucune activité enregistrée.</p>
-              <p className="text-sm">Démarrez une session pour commencer.</p>
+              <p>{t('empty.title')}</p>
+              <p className="text-sm">{t('empty.subtitle')}</p>
             </div>
           )}
         </ScrollArea>
