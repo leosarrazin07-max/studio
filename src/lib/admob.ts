@@ -4,11 +4,11 @@ import { Capacitor } from '@capacitor/core';
 
 const isNative = Capacitor.isNativePlatform();
 
-// Use test ad units for development
+// Use production ad units.
 const AD_UNITS = {
-  // TODO: Replace with your real AdMob ad unit IDs for production
-  BANNER: 'ca-app-pub-3940256099942544/6300978111',
-  APP_OPEN: 'ca-app-pub-3940256099942544/3419835294',
+  BANNER_TOP: 'ca-app-pub-9344137111723261/4902584995',
+  BANNER_BOTTOM: 'ca-app-pub-9344137111723261/2276421652',
+  APP_OPEN: 'ca-app-pub-9344137111723261/9915184623',
 };
 
 export const initializeAdMob = async (): Promise<void> => {
@@ -26,7 +26,7 @@ export const showAppOpenAd = async (): Promise<void> => {
   if (!isNative) return;
   const options: AdOptions = {
     adId: AD_UNITS.APP_OPEN,
-    isTesting: process.env.NODE_ENV !== 'production',
+    isTesting: false,
   };
   try {
     await AdMob.prepareAppOpenAd(options);
@@ -36,15 +36,14 @@ export const showAppOpenAd = async (): Promise<void> => {
   }
 };
 
-
-export const showBannerAd = async (isTop: boolean): Promise<void> => {
+export const showBannerAd = async (adId: string, isTop: boolean): Promise<void> => {
     if (!isNative) return;
     const options: BannerAdOptions = {
-        adId: AD_UNITS.BANNER,
-        adSize: BannerAdSize.BANNER,
+        adId: adId,
+        adSize: BannerAdSize.ADAPTIVE_BANNER,
         position: isTop ? BannerAdPosition.TOP_CENTER : BannerAdPosition.BOTTOM_CENTER,
-        margin: isTop ? 50 : 0, // Margin from top or bottom
-        isTesting: process.env.NODE_ENV !== 'production',
+        margin: isTop ? 64 : 0, // Margin from top or bottom
+        isTesting: false,
     };
     try {
         await AdMob.showBanner(options);
@@ -62,3 +61,5 @@ export const hideBannerAd = async (): Promise<void> => {
         console.error("Error hiding banner ad:", error);
     }
 };
+
+export { AD_UNITS };

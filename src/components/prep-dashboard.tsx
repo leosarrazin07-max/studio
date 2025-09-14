@@ -21,6 +21,7 @@ import { LogDoseDialog } from './log-dose-dialog';
 import { DoseHistory } from './dose-history';
 import { AdBanner } from './ad-banner';
 import { Capacitor } from '@capacitor/core';
+import { AD_UNITS } from '@/lib/admob';
 
 type PrepDashboardProps = Pick<UsePrepStateReturn, 'prises' | 'addDose' | 'endSession' | 'sessionActive' | 'startSession'> & PrepCalculatorResult;
 
@@ -69,7 +70,7 @@ export function PrepDashboard({
 
   return (
     <div className="flex flex-col gap-8 h-full">
-      {isNative && <AdBanner position="top" marginTop={64} />}
+      {isNative && <AdBanner adId={AD_UNITS.BANNER_TOP} position="top" />}
       <Card className="shadow-lg rounded-xl overflow-hidden">
         <CardContent className="p-0">
           <div className={`flex flex-col items-center justify-center p-6 transition-colors duration-500 text-center ${statusColor}`}>
@@ -152,7 +153,7 @@ export function PrepDashboard({
         </div>
       )}
 
-      {isNative && <AdBanner position="bottom" />}
+      {isNative && <AdBanner adId={AD_UNITS.BANNER_BOTTOM} position="bottom" />}
       <DoseHistory prises={prises} />
 
       <LogDoseDialog
