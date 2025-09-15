@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { add, sub, format, isAfter, isBefore, differenceInMilliseconds, differenceInHours } from 'date-fns';
-import { fr, enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr } from 'date-fns/locale';
+import { fr, enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr, ro, pl } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
@@ -12,7 +12,7 @@ import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import { useI18n, useScopedI18n, useCurrentLocale } from '@/locales/client';
 
 const dateLocales: { [key: string]: Locale } = {
-  fr, en: enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr
+  fr, en: enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr, ro, pl
 };
 
 const createMockData = (): PrepState => {

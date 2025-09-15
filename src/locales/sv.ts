@@ -92,7 +92,7 @@ thereis: {
   protection: {
     startsIn: 'Kommer att vara aktiv om {time}',
     text: {
-      lapsed: 'Du har missat en eller flera doser. Ditt skydd är không còn nữa.',
+      lapsed: 'Du har missat en eller flera doser. Ditt skydd är inte längre garanterat.',
       lessThan3doses: 'Om du fortsätter att ta doserna till {dateTroisiemeJour} kommer dina relationer mellan {datePriseDemarrage} och {dateLendemain} att skyddas.',
       moreThan3doses: 'Dina relationer före {dateAvantDernierePrise} skyddas av PrEP.',
     },

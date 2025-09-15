@@ -36,7 +36,7 @@ export default {
     clearHistory: {
       button: 'Eliminar mi historial',
       dialog: {
-        title: '¿Estás absolutamente seguro?',
+        title: '¿Estás absolutely seguro?',
         description: 'Esta acción es irreversible. Todos los datos de tu sesión y tu historial de pastillas se eliminarán permanentemente.',
         confirm: 'Sí, eliminar mis datos',
       },
