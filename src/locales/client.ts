@@ -19,4 +19,6 @@ export const { useI18n, useScopedI18n, I18nProviderClient, useChangeLocale, useC
   nl: () => import('./nl'),
   pt: () => import('./pt'),
   sr: () => import('./sr'),
+  ro: () => import('./ro'),
+  pl: () => import('./pl'),
 });

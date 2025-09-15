@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import type { Prise } from "@/lib/types";
 import { format } from "date-fns";
-import { fr, enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr } from "date-fns/locale";
+import { fr, enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr, ro, pl } from "date-fns/locale";
 import { History, Pill, PlayCircle, StopCircle, CheckCircle2 } from "lucide-react";
 import { useI18n, useCurrentLocale, useScopedI18n } from '@/locales/client';
 
@@ -16,7 +16,7 @@ interface DoseHistoryProps {
 }
 
 const locales: { [key: string]: Locale } = {
-  fr, en: enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr
+  fr, en: enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr, ro, pl
 };
 
 const EventDetails: React.FC<{ prise: Prise }> = ({ prise }) => {
