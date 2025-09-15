@@ -1,9 +1,25 @@
-// This file is no longer needed as the root layout has been moved to src/app/layout.tsx
-// The new root layout at src/app/layout.tsx now handles all pages.
-
+import { I18nProviderClient } from '@/locales/client';
 import { ReactNode } from 'react';
+import { locales } from '@/lib/constants';
 
-// This component is now just a pass-through.
-export default function LocaleLayout({ children }: { children: ReactNode }) {
-  return children;
+interface LocaleLayoutProps {
+  children: ReactNode;
+  params: {
+    locale: string;
+  };
+}
+
+export function generateStaticParams() {
+  return locales.map(locale => ({ locale }));
+}
+
+export default function LocaleLayout({
+  children,
+  params: { locale }
+}: LocaleLayoutProps) {
+  return (
+    <I18nProviderClient locale={locale}>
+      {children}
+    </I18nProviderClient>
+  );
 }

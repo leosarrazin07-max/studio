@@ -2,7 +2,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
-import { I18nProviderClient } from '@/locales/client';
 import { ReactNode } from 'react';
 
 const APP_NAME = "PrEPy";
@@ -39,17 +38,11 @@ export const viewport: Viewport = {
 
 interface RootLayoutProps {
   children: ReactNode;
-  params: {
-    locale: string;
-  };
 }
 
-export default function RootLayout({
-  children,
-  params: { locale }
-}: RootLayoutProps) {
+export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang={locale}>
+    <html lang="en">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -57,10 +50,8 @@ export default function RootLayout({
         <link rel="icon" href="/favicon.ico" sizes="any" />
       </head>
       <body className="font-body antialiased">
-        <I18nProviderClient locale={locale}>
-          {children}
-          <Toaster />
-        </I18nProviderClient>
+        {children}
+        <Toaster />
       </body>
     </html>
   );
