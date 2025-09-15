@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { useScopedI18n, useChangeLocale, useCurrentLocale } from '@/locales/client';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {locales} from '@/lib/constants';
+import { ScrollArea } from "./ui/scroll-area";
 
 interface SettingsSheetProps {
   isOpen: boolean;
@@ -91,63 +92,65 @@ export function SettingsSheet({
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
-      <SheetContent>
+      <SheetContent className="flex flex-col">
         <SheetHeader>
           <SheetTitle>{t('title')}</SheetTitle>
           <SheetDescription>
             {t('description')}
           </SheetDescription>
         </SheetHeader>
-        <div className="grid gap-6 py-8">
-           <div className="flex flex-col gap-3 p-4 rounded-lg border">
-              <h3 className="font-semibold text-lg">{t('notifications.title')}</h3>
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="notifications-switch"
-                  checked={pushEnabled}
-                  onCheckedChange={handleNotificationsToggle}
-                  disabled={isPushLoading || pushPermissionStatus === 'denied'}
-                  aria-readonly
-                />
-                <Label htmlFor="notifications-switch" className="flex items-center">
-                  {isPushLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (pushEnabled ? <Bell className="mr-2 h-4 w-4" /> : <BellOff className="mr-2 h-4 w-4" />)}
-                  {isPushLoading ? t('notifications.loading') : (pushEnabled ? t('notifications.enabled') : t('notifications.disabled'))}
-                </Label>
-              </div>
-              {renderNotificationHelpText()}
-          </div>
-          <div className="flex flex-col gap-3 p-4 rounded-lg border">
-              <h3 className="font-semibold text-lg flex items-center gap-2">
-                <Languages />
-                {t('language.title')}
-              </h3>
-              <p className="text-sm text-muted-foreground">{t('language.description')}</p>
-              <Select onValueChange={(value) => changeLocale(value as any)} defaultValue={currentLocale}>
-                <SelectTrigger>
-                  <SelectValue placeholder={t('language.select')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fr">Français</SelectItem>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="de">Deutsch</SelectItem>
-                  <SelectItem value="it">Italiano</SelectItem>
-                  <SelectItem value="es">Español</SelectItem>
-                  <SelectItem value="ru">Русский</SelectItem>
-                  <SelectItem value="uk">Українська</SelectItem>
-                  <SelectItem value="ar">العربية</SelectItem>
-                  <SelectItem value="tr">Türkçe</SelectItem>
-                  <SelectItem value="da">Dansk</SelectItem>
-                  <SelectItem value="sv">Svenska</SelectItem>
-                  <SelectItem value="nl">Nederlands</SelectItem>
-                  <SelectItem value="pt">Português</SelectItem>
-                  <SelectItem value="sr">Srpski</SelectItem>
-                  <SelectItem value="ro">Română</SelectItem>
-                  <SelectItem value="pl">Polski</SelectItem>
-                </SelectContent>
-              </Select>
-          </div>
-        </div>
-        <SheetFooter className="absolute bottom-4 right-4 left-4">
+        <ScrollArea className="flex-1 -mr-6 pr-6">
+            <div className="grid gap-6 py-8">
+            <div className="flex flex-col gap-3 p-4 rounded-lg border">
+                <h3 className="font-semibold text-lg">{t('notifications.title')}</h3>
+                <div className="flex items-center space-x-2">
+                    <Switch
+                    id="notifications-switch"
+                    checked={pushEnabled}
+                    onCheckedChange={handleNotificationsToggle}
+                    disabled={isPushLoading || pushPermissionStatus === 'denied'}
+                    aria-readonly
+                    />
+                    <Label htmlFor="notifications-switch" className="flex items-center">
+                    {isPushLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (pushEnabled ? <Bell className="mr-2 h-4 w-4" /> : <BellOff className="mr-2 h-4 w-4" />)}
+                    {isPushLoading ? t('notifications.loading') : (pushEnabled ? t('notifications.enabled') : t('notifications.disabled'))}
+                    </Label>
+                </div>
+                {renderNotificationHelpText()}
+            </div>
+            <div className="flex flex-col gap-3 p-4 rounded-lg border">
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                    <Languages />
+                    {t('language.title')}
+                </h3>
+                <p className="text-sm text-muted-foreground">{t('language.description')}</p>
+                <Select onValueChange={(value) => changeLocale(value as any)} defaultValue={currentLocale}>
+                    <SelectTrigger>
+                    <SelectValue placeholder={t('language.select')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                    <SelectItem value="fr">Français</SelectItem>
+                    <SelectItem value="en">English</SelectItem>
+                    <SelectItem value="de">Deutsch</SelectItem>
+                    <SelectItem value="it">Italiano</SelectItem>
+                    <SelectItem value="es">Español</SelectItem>
+                    <SelectItem value="ru">Русский</SelectItem>
+                    <SelectItem value="uk">Українська</SelectItem>
+                    <SelectItem value="ar">العربية</SelectItem>
+                    <SelectItem value="tr">Türkçe</SelectItem>
+                    <SelectItem value="da">Dansk</SelectItem>
+                    <SelectItem value="sv">Svenska</SelectItem>
+                    <SelectItem value="nl">Nederlands</SelectItem>
+                    <SelectItem value="pt">Português</SelectItem>
+                    <SelectItem value="sr">Srpski</SelectItem>
+                    <SelectItem value="ro">Română</SelectItem>
+                    <SelectItem value="pl">Polski</SelectItem>
+                    </SelectContent>
+                </Select>
+            </div>
+            </div>
+        </ScrollArea>
+        <SheetFooter className="mt-auto">
             <AlertDialog>
                 <AlertDialogTrigger asChild>
                     <Button variant="destructive" className="w-full">
