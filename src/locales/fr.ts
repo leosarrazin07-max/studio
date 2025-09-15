@@ -36,7 +36,7 @@ export default {
     clearHistory: {
       button: 'Supprimer mon historique',
       dialog: {
-        title: 'Êtes-vous absolument sûr ?',
+        title: 'Êtes-vous absolutely sûr ?',
         description: 'Cette action est irréversible. Toutes vos données de session et votre historique de comprimés seront définitivement supprimés.',
         confirm: 'Oui, supprimer mes données',
       },

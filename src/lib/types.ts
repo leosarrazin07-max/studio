@@ -1,5 +1,6 @@
 
 import type { getI18n, getScopedI18n } from '@/locales/server';
+import type * as admin from 'firebase-admin';
 
 export type PriseType = 'start' | 'dose' | 'stop';
 
