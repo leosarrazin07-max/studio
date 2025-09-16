@@ -17,3 +17,4 @@ export const FINAL_PROTECTION_HOURS = 48;
 
 export const locales = ['fr', 'en', 'de', 'it', 'es', 'ru', 'uk', 'ar', 'tr', 'da', 'sv', 'nl', 'pt', 'sr', 'ro', 'pl'] as const;
 export const defaultLocale = 'fr' as const;
+

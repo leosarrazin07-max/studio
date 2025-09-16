@@ -36,7 +36,7 @@ export default {
     clearHistory: {
       button: 'Supprimer mon historique',
       dialog: {
-        title: 'Êtes-vous absolutely sûr ?',
+        title: 'Êtes-vous absolument sûr ?',
         description: 'Cette action est irréversible. Toutes vos données de session et votre historique de comprimés seront définitivement supprimés.',
         confirm: 'Oui, supprimer mes données',
       },
@@ -51,7 +51,7 @@ export default {
       title: 'Enregistrer votre prise',
       description: 'Confirmez quand vous avez pris votre comprimé.',
     },
-missed: {
+    missed: {
       title: 'Prise manquée',
       description: 'Il semble que vous ayez manqué une prise. Choisissez une option pour mettre à jour votre statut.',
       earlier: 'J\'ai pris 1 comprimé plus tôt',
