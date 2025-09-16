@@ -1,6 +1,7 @@
 
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
+import { logger } from "firebase-functions";
 import {CloudTasksClient} from "@google-cloud/tasks";
 import {google} from "@google-cloud/tasks/build/protos/protos";
 import {add, isBefore} from "date-fns";
@@ -33,6 +34,7 @@ interface PrepSession {
     fcmToken: string;
     sessionActive: boolean;
     pushEnabled: boolean;
+
     prises: Prise[];
     scheduledTasks?: string[];
 }
@@ -47,7 +49,7 @@ async function scheduleNotification(
   body: string,
 ): Promise<string> {
   if (isBefore(executeAt, new Date())) {
-    functions.logger.log(`[${fcmToken}] Task for "${title}" is in the past. Skipping.`);
+    logger.info(`[${fcmToken}] Task for "${title}" is in the past. Skipping.`);
     return "skipped-past-date";
   }
 
@@ -66,10 +68,10 @@ async function scheduleNotification(
 
   try {
     const [response] = await tasksClient.createTask({parent: taskQueuePath, task});
-    functions.logger.log(`[${fcmToken}] Task ${response.name} scheduled for "${title}" at ${executeAt.toISOString()}`);
+    logger.info(`[${fcmToken}] Task ${response.name} scheduled for "${title}" at ${executeAt.toISOString()}`);
     return response.name || "unknown-task-name";
   } catch (error) {
-    functions.logger.error(`[${fcmToken}] Error scheduling task:`, error);
+    logger.error(`[${fcmToken}] Error scheduling task:`, error);
     throw error;
   }
 }
@@ -81,15 +83,15 @@ async function cancelPreviousTasks(taskNames: string[] | undefined) {
   if (!taskNames || taskNames.length === 0) {
     return;
   }
-  functions.logger.log(`Cancelling ${taskNames.length} previous tasks.`);
+  logger.info(`Cancelling ${taskNames.length} previous tasks.`);
   const cancellationPromises = taskNames.map(async (taskName) => {
     try {
       await tasksClient.deleteTask({name: taskName});
-      functions.logger.log(`Task ${taskName} deleted successfully.`);
+      logger.info(`Task ${taskName} deleted successfully.`);
     } catch (error: any) {
       // It's okay if the task is already deleted or executed (NOT_FOUND)
       if (error.code !== 5) {
-        functions.logger.error(`Error deleting task ${taskName}:`, error);
+        logger.error(`Error deleting task ${taskName}:`, error);
       }
     }
   });
@@ -115,7 +117,7 @@ export const scheduleNotifications = functions
 
     // If session is deleted, inactive, or push is disabled, do nothing further.
     if (!data || !data.sessionActive || !data.pushEnabled) {
-      functions.logger.log(`[${fcmToken}] Session ended or push disabled. No new notifications will be scheduled.`);
+      logger.info(`[${fcmToken}] Session ended or push disabled. No new notifications will be scheduled.`);
       return;
     }
 
@@ -124,7 +126,7 @@ export const scheduleNotifications = functions
       .sort((a, b) => a.time.toMillis() - b.time.toMillis());
 
     if (doses.length === 0) {
-      functions.logger.log(`[${fcmToken}] No doses found. Nothing to schedule.`);
+      logger.info(`[${fcmToken}] No doses found. Nothing to schedule.`);
       return;
     }
 
@@ -180,7 +182,7 @@ export const scheduleNotifications = functions
 
     // Store the names of the new tasks in Firestore
     await sessionDocRef.update({scheduledTasks: newScheduledTasks});
-    functions.logger.log(`[${fcmToken}] ${newScheduledTasks.length} notifications scheduled successfully.`);
+    logger.info(`[${fcmToken}] ${newScheduledTasks.length} notifications scheduled successfully.`);
   });
 
 
@@ -199,7 +201,7 @@ export const dispatchNotification = functions
     const {fcmToken, title, body} = req.body;
 
     if (!fcmToken || !title || !body) {
-      functions.logger.error("Invalid payload received:", req.body);
+      logger.error("Invalid payload received:", req.body);
       res.status(400).send("Bad Request: fcmToken, title, and body are required.");
       return;
     }
@@ -217,14 +219,14 @@ export const dispatchNotification = functions
 
     try {
       await admin.messaging().send(message);
-      functions.logger.log(`[${fcmToken}] Notification sent: ${title}`);
+      logger.info(`[${fcmToken}] Notification sent: ${title}`);
       res.status(200).send("Notification sent successfully.");
     } catch (error) {
-      functions.logger.error(`[${fcmToken}] Failed to send notification:`, error);
+      logger.error(`[${fcmToken}] Failed to send notification:`, error);
       // Clean up invalid tokens from Firestore
       if ((error as any).code === "messaging/registration-token-not-registered") {
         await firestore.collection("prepSessions").doc(fcmToken).delete();
-        functions.logger.log(`[${fcmToken}] Removed invalid token from Firestore.`);
+        logger.info(`[${fcmToken}] Removed invalid token from Firestore.`);
       }
       res.status(500).send("Internal Server Error");
     }
