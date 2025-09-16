@@ -2,7 +2,6 @@
 'use client';
 
 import { createI18nClient } from 'next-international/client';
-import { locales, defaultLocale } from '@/lib/constants';
 
 export const { useI18n, useScopedI18n, I18nProviderClient, useChangeLocale, useCurrentLocale } = createI18nClient({
   fr: () => import('./fr'),
