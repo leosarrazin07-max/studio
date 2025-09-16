@@ -1,21 +1,21 @@
 
-import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { logger } from "firebase-functions";
-import {CloudTasksClient} from "@google-cloud/tasks";
-import {google} from "@google-cloud/tasks/build/protos/protos";
-import {add, isBefore} from "date-fns";
+import { onDocumentWritten } from "firebase-functions/v2/firestore";
+import { onRequest } from "firebase-functions/v2/https";
+import { CloudTasksClient } from "@google-cloud/tasks";
+import { google } from "@google-cloud/tasks/build/protos/protos";
+import { add, isBefore } from "date-fns";
 
 admin.initializeApp();
 const firestore = admin.firestore();
 
 const tasksClient = new CloudTasksClient();
 const project = process.env.GCLOUD_PROJECT || "";
-const location = "europe-west9"; // Use the same region as your functions
+const location = "europe-west9";
 const queue = "prep-notifications";
 const taskQueuePath = tasksClient.queuePath(project, location, queue);
 const NOTIFICATION_DISPATCHER_URL = `https://${location}-${project}.cloudfunctions.net/dispatchNotification`;
-
 
 // Constants from the main app
 const PROTECTION_START_HOURS = 2;
@@ -34,7 +34,6 @@ interface PrepSession {
     fcmToken: string;
     sessionActive: boolean;
     pushEnabled: boolean;
-
     prises: Prise[];
     scheduledTasks?: string[];
 }
@@ -86,6 +85,8 @@ async function cancelPreviousTasks(taskNames: string[] | undefined) {
   logger.info(`Cancelling ${taskNames.length} previous tasks.`);
   const cancellationPromises = taskNames.map(async (taskName) => {
     try {
+      // Skip placeholder values from failed schedules
+      if (taskName === "skipped-past-date" || taskName === "unknown-task-name") return;
       await tasksClient.deleteTask({name: taskName});
       logger.info(`Task ${taskName} deleted successfully.`);
     } catch (error: any) {
@@ -102,20 +103,18 @@ async function cancelPreviousTasks(taskNames: string[] | undefined) {
  * This function is triggered whenever a prepSession document is written to.
  * It's responsible for scheduling all future notifications for that session.
  */
-export const scheduleNotifications = functions
-  .region("europe-west9")
-  .firestore.document("prepSessions/{fcmToken}")
-  .onWrite(async (change, context) => {
-    const fcmToken = context.params.fcmToken;
+export const scheduleNotifications = onDocumentWritten({
+    document: "prepSessions/{fcmToken}",
+    region: "europe-west9",
+}, async (event) => {
+    const fcmToken = event.params.fcmToken;
     const sessionDocRef = firestore.collection("prepSessions").doc(fcmToken);
 
-    // Cancel any notifications that were scheduled from the previous state
-    const oldData = change.before.data() as PrepSession | undefined;
+    const oldData = event.data?.before.data() as PrepSession | undefined;
     await cancelPreviousTasks(oldData?.scheduledTasks);
 
-    const data = change.after.data() as PrepSession | undefined;
+    const data = event.data?.after.data() as PrepSession | undefined;
 
-    // If session is deleted, inactive, or push is disabled, do nothing further.
     if (!data || !data.sessionActive || !data.pushEnabled) {
       logger.info(`[${fcmToken}] Session ended or push disabled. No new notifications will be scheduled.`);
       return;
@@ -134,9 +133,6 @@ export const scheduleNotifications = functions
     const lastDoseTime = lastDose.time.toDate();
     const newScheduledTasks: string[] = [];
 
-    // --- Schedule Notifications Based on State ---
-
-    // 1. Protection start notification (only for the very first dose)
     if (doses.length === 1 && lastDose.type === "start") {
       const protectionTime = add(lastDoseTime, {hours: PROTECTION_START_HOURS});
       const taskName = await scheduleNotification(
@@ -147,7 +143,6 @@ export const scheduleNotifications = functions
       newScheduledTasks.push(taskName);
     }
 
-    // 2. Schedule the main reminder window start
     const reminderWindowStart = add(lastDoseTime, {hours: DOSE_REMINDER_WINDOW_START_HOURS});
     const task1Name = await scheduleNotification(
       reminderWindowStart, fcmToken,
@@ -156,7 +151,6 @@ export const scheduleNotifications = functions
     );
     newScheduledTasks.push(task1Name);
 
-    // 3. Schedule insistent reminders every 10 minutes within the window
     const reminderWindowEnd = add(lastDoseTime, {hours: DOSE_REMINDER_WINDOW_END_HOURS});
     let reminderCount = 1;
     for (let i = DOSE_REMINDER_INTERVAL_MINUTES; i < (DOSE_REMINDER_WINDOW_END_HOURS - DOSE_REMINDER_WINDOW_START_HOURS) * 60; i += DOSE_REMINDER_INTERVAL_MINUTES) {
@@ -172,7 +166,6 @@ export const scheduleNotifications = functions
       }
     }
 
-    // 4. Schedule the final "missed dose" notification
     const taskFinalName = await scheduleNotification(
       reminderWindowEnd, fcmToken,
       "Prise manquée !",
@@ -180,7 +173,6 @@ export const scheduleNotifications = functions
     );
     newScheduledTasks.push(taskFinalName);
 
-    // Store the names of the new tasks in Firestore
     await sessionDocRef.update({scheduledTasks: newScheduledTasks});
     logger.info(`[${fcmToken}] ${newScheduledTasks.length} notifications scheduled successfully.`);
   });
@@ -190,9 +182,11 @@ export const scheduleNotifications = functions
  * This HTTP-triggered function is the target for Cloud Tasks.
  * It receives a payload and sends the notification via FCM.
  */
-export const dispatchNotification = functions
-  .region("europe-west9")
-  .https.onRequest(async (req, res) => {
+export const dispatchNotification = onRequest({
+    region: "europe-west9",
+    // Ensure the function can be called without authentication from Cloud Tasks
+    invoker: "public",
+}, async (req, res) => {
     if (req.method !== "POST") {
       res.status(405).send("Method Not Allowed");
       return;
@@ -223,7 +217,6 @@ export const dispatchNotification = functions
       res.status(200).send("Notification sent successfully.");
     } catch (error) {
       logger.error(`[${fcmToken}] Failed to send notification:`, error);
-      // Clean up invalid tokens from Firestore
       if ((error as any).code === "messaging/registration-token-not-registered") {
         await firestore.collection("prepSessions").doc(fcmToken).delete();
         logger.info(`[${fcmToken}] Removed invalid token from Firestore.`);
@@ -231,5 +224,3 @@ export const dispatchNotification = functions
       res.status(500).send("Internal Server Error");
     }
   });
-
-    
