@@ -1,3 +1,4 @@
+
 {
   "name": "functions",
   "scripts": {
@@ -12,7 +13,7 @@
   "engines": {
     "node": "18"
   },
-  "main": "lib/functions/src/index.js",
+  "main": "lib/src/index.js",
   "dependencies": {
     "@google-cloud/functions-framework": "^3.0.0",
     "@google-cloud/tasks": "^5.3.0",
