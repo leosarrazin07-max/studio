@@ -251,7 +251,7 @@ export function usePrepState(): UsePrepStateReturn {
 
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
-  }, [state.fcmToken]);
+  }, [state.fcmToken, toast]);
   
   useEffect(() => {
     // This effect runs only once on the client to load the state from localStorage
@@ -294,7 +294,7 @@ export function usePrepState(): UsePrepStateReturn {
     }
     setState({ ...defaultState, pushEnabled: state.pushEnabled, fcmToken: state.fcmToken });
     toast({ title: "Données effacées", description: "Votre historique et vos préférences ont été supprimés." });
-  }, [state.pushEnabled, state.fcmToken, toast]);
+  }, [state.pushEnabled, state.fcmToken, toast, saveState]);
 
     const formatCountdown = (endDate: Date) => {
     const milliseconds = differenceInMilliseconds(endDate, now);
@@ -378,7 +378,6 @@ export function usePrepState(): UsePrepStateReturn {
 
   return {
     ...state,
-    pushEnabled: state.pushEnabled,
     isPushLoading,
     pushPermissionStatus,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
