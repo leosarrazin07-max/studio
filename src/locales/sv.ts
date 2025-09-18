@@ -33,7 +33,7 @@ export default {
       description: 'Välj visningsspråk för applikationen.',
       select: 'Välj ett språk',
     },
-clearHistory: {
+    clearHistory: {
       button: 'Radera min historik',
       dialog: {
         title: 'Är du helt säker?',
@@ -79,7 +79,8 @@ clearHistory: {
       title: 'Ingen aktivitet registrerad.',
       subtitle: 'Starta en session för att börja.',
     },
-thereis: {
+  },
+  status: {
     inactive: 'Inaktiv',
     loading: 'Skydd väntar...',
     effective: 'Skydd effektivt',
@@ -146,5 +147,4 @@ thereis: {
       unsubscribeError: 'Fel vid avanmälan',
     },
   },
-},
 } as const;

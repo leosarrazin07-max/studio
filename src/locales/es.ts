@@ -36,7 +36,7 @@ export default {
     clearHistory: {
       button: 'Eliminar mi historial',
       dialog: {
-        title: '¿Estás absolutely seguro?',
+        title: '¿Estás absolutamente seguro?',
         description: 'Esta acción es irreversible. Todos los datos de tu sesión y tu historial de pastillas se eliminarán permanentemente.',
         confirm: 'Sí, eliminar mis datos',
       },
@@ -97,7 +97,8 @@ export default {
       lessThan3doses: 'Si continúas tomando las dosis hasta el {dateTroisiemeJour}, tus relaciones entre el {datePriseDemarrage} y el {dateLendemain} estarán protegidas.',
       moreThan3doses: 'Tus relaciones antes del {dateAvantDernierePrise} están protegidas por la PrEP.',
     },
-Dose: {
+  },
+  dose: {
     nextIn: 'Próxima dosis en {time}',
     timeLeft: 'Te quedan {time} para tomar una pastilla',
     now: '¡Toma tu pastilla ahora!',
@@ -146,5 +147,4 @@ Dose: {
       unsubscribeError: 'Error al cancelar la suscripción',
     },
   },
-},
 } as const;
