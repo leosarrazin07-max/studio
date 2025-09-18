@@ -18,4 +18,9 @@ export const { getI18n, getScopedI18n, getStaticParams, getCurrentLocale } = cre
   sr: () => import('./sr'),
   ro: () => import('./ro'),
   pl: () => import('./pl'),
+  bg: () => import('./bg'),
+  hu: () => import('./hu'),
+  cs: () => import('./cs'),
 });
+
+    

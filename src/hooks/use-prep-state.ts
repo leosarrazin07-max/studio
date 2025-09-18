@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { add, sub, format, isAfter, isBefore, differenceInMilliseconds, differenceInHours } from 'date-fns';
-import { fr, enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr, ro, pl } from 'date-fns/locale';
+import { fr, enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr, ro, pl, bg, hu, cs } from 'date-fns/locale';
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
@@ -12,7 +12,7 @@ import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import { useI18n, useScopedI18n, useCurrentLocale } from '@/locales/client';
 
 const dateLocales: { [key: string]: Locale } = {
-  fr, en: enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr, ro, pl
+  fr, en: enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr, ro, pl, bg, hu, cs
 };
 
 const createMockData = (): PrepState => {
@@ -313,7 +313,7 @@ export function usePrepState(): UsePrepStateReturn {
   if (isClient && state.prises.length > 0) {
     const sortedPrises = state.prises
       .filter(d => d.type !== 'stop')
-      .sort((a, b) => a.time.getTime() - b.time.getTime());
+      .sort((a, b) => a.time.getTime() - a.time.getTime());
     
     const priseCount = sortedPrises.length;
     const firstDose = sortedPrises[0];

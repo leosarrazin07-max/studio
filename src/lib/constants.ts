@@ -15,6 +15,7 @@ export const LAPSES_AFTER_HOURS = DOSE_REMINDER_WINDOW_END_HOURS;
 // Protection is considered to last up to this many hours after the last dose
 export const FINAL_PROTECTION_HOURS = 48;
 
-export const locales = ['fr', 'en', 'de', 'it', 'es', 'ru', 'uk', 'ar', 'tr', 'da', 'sv', 'nl', 'pt', 'sr', 'ro', 'pl'] as const;
+export const locales = ['fr', 'en', 'de', 'it', 'es', 'ru', 'uk', 'ar', 'tr', 'da', 'sv', 'nl', 'pt', 'sr', 'ro', 'pl', 'bg', 'hu', 'cs'] as const;
 export const defaultLocale = 'fr' as const;
 
+    
