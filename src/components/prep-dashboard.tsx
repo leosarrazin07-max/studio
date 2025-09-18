@@ -94,12 +94,14 @@ export function PrepDashboard({
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Button
                         size="lg"
-                        className="bg-accent hover:bg-accent/90 text-accent-foreground shadow-md whitespace-nowrap overflow-hidden text-ellipsis"
+                        className="bg-accent hover:bg-accent/90 text-accent-foreground shadow-md h-auto min-h-11"
                         onClick={() => setIsLogDoseOpen(true)}
                         disabled={status === 'lapsed'}
                     >
+                      <span className="flex items-center justify-center gap-2 whitespace-normal">
                         <CheckCircle2 className="mr-2 h-5 w-5 flex-shrink-0" />
                         <span className="truncate">{t('dashboard.logDose')}</span>
+                      </span>
                     </Button>
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -140,13 +142,13 @@ export function PrepDashboard({
       </Card>
       
       {sessionActive && (
-        <div className="bg-blue-50 border-l-4 border-primary p-4 rounded-md">
+        <div className="bg-primary/10 border-l-4 border-primary p-4 rounded-md">
             <div className="flex">
                 <div className="flex-shrink-0">
                     <Info className="h-5 w-5 text-primary" />
                 </div>
                 <div className="ml-3">
-                    <p className="text-sm text-primary/90">
+                    <p className="text-sm text-primary/90 dark:text-primary/80">
                        {t('dashboard.stopPrepInfo')}
                     </p>
                 </div>
