@@ -89,7 +89,7 @@ export default {
     loading: 'Protection pending...',
     effective: 'Protection effective',
     missed: 'Dose missed',
-lapsed: 'Protection lapsed',
+    lapsed: 'Protection lapsed',
     ended: 'Session ended',
     loadingClient: 'Loading...',
     riskWarning: 'If you have had unprotected sex outside of the protection period, please get tested.',
@@ -150,5 +150,8 @@ lapsed: 'Protection lapsed',
       disabled: 'Notifications disabled.',
       unsubscribeError: 'Error during unsubscription',
     },
+  },
+  common: {
+    cancel: 'Cancel',
   },
 } as const;

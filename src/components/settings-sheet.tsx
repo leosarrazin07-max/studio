@@ -70,8 +70,6 @@ export function SettingsSheet({
   };
   
   const handleLocaleChange = (locale: (typeof locales)[number]) => {
-    // Set cookie that the middleware will pick up
-    document.cookie = `prepy-locale=${locale};path=/;max-age=31536000`;
     changeLocale(locale);
   };
 
@@ -158,12 +156,11 @@ export function SettingsSheet({
               </div>
               <div className="flex flex-col gap-3 p-4 rounded-lg border">
                 <h3 className="font-semibold text-lg flex items-center gap-2">
-                  <Moon />
+                  <Sun className="h-5 w-5" />
                   {t('theme.title')}
                 </h3>
                 <p className="text-sm text-muted-foreground">{t('theme.description')}</p>
                 <div className="flex items-center space-x-2">
-                  <Sun className="h-5 w-5" />
                   <Switch
                     id="theme-switch"
                     checked={theme === 'dark'}

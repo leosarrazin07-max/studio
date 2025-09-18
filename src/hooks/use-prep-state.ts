@@ -313,7 +313,7 @@ export function usePrepState(): UsePrepStateReturn {
   if (isClient && state.prises.length > 0) {
     const sortedPrises = state.prises
       .filter(d => d.type !== 'stop')
-      .sort((a, b) => a.time.getTime() - a.time.getTime());
+      .sort((a, b) => a.time.getTime() - b.time.getTime());
     
     const priseCount = sortedPrises.length;
     const firstDose = sortedPrises[0];

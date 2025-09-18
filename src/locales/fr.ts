@@ -151,4 +151,7 @@ export default {
       unsubscribeError: 'Erreur lors de la désinscription',
     },
   },
+  common: {
+    cancel: 'Annuler',
+  },
 } as const;
