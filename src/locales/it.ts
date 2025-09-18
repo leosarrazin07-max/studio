@@ -33,6 +33,10 @@ export default {
       description: 'Scegli la lingua di visualizzazione dell\'applicazione.',
       select: 'Seleziona una lingua',
     },
+    theme: {
+      title: "Modalità di visualizzazione",
+      description: "Scegli tra tema chiaro e scuro."
+    },
     clearHistory: {
       button: 'Cancella la mia cronologia',
       dialog: {

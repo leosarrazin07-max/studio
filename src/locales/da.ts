@@ -33,6 +33,10 @@ welcomeDialog: {
       description: 'Vælg visningssproget for appen.',
       select: 'Vælg et sprog',
     },
+    theme: {
+      title: "Visningstilstand",
+      description: "Vælg mellem lyst og mørkt tema."
+    },
     clearHistory: {
       button: 'Slet min historik',
       dialog: {

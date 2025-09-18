@@ -33,6 +33,10 @@ export default {
       description: 'Wybierz język wyświetlania aplikacji.',
       select: 'Wybierz język',
     },
+    theme: {
+      title: "Tryb wyświetlania",
+      description: "Wybierz między jasnym a ciemnym motywem."
+    },
     clearHistory: {
       button: 'Usuń moją historię',
       dialog: {

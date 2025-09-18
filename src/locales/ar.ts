@@ -33,6 +33,10 @@ export default {
       description: 'اختر لغة العرض للتطبيق.',
       select: 'اختر لغة',
     },
+    theme: {
+      title: "وضع العرض",
+      description: "اختر بين المظهر الفاتح والمظلم."
+    },
     clearHistory: {
       button: 'حذف سجلي',
       dialog: {

@@ -33,10 +33,14 @@ export default {
       description: 'Elige el idioma de visualización de la aplicación.',
       select: 'Selecciona un idioma',
     },
+    theme: {
+      title: "Modo de visualización",
+      description: "Elige entre el tema claro y oscuro."
+    },
     clearHistory: {
       button: 'Eliminar mi historial',
       dialog: {
-        title: '¿Estás absolutamente seguro?',
+        title: '¿Estás absolutely seguro?',
         description: 'Esta acción es irreversible. Todos los datos de tu sesión y tu historial de pastillas se eliminarán permanentemente.',
         confirm: 'Sí, eliminar mis datos',
       },

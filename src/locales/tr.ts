@@ -33,6 +33,10 @@ export default {
       description: 'Uygulamanın görüntüleme dilini seçin.',
       select: 'Bir dil seçin',
     },
+    theme: {
+      title: "Görüntüleme Modu",
+      description: "Açık ve koyu tema arasında seçim yapın."
+    },
     clearHistory: {
       button: 'Geçmişimi sil',
       dialog: {

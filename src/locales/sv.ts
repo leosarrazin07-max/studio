@@ -33,6 +33,10 @@ export default {
       description: 'Välj visningsspråk för applikationen.',
       select: 'Välj ett språk',
     },
+    theme: {
+      title: "Visningsläge",
+      description: "Välj mellan ljust och mörkt tema."
+    },
     clearHistory: {
       button: 'Radera min historik',
       dialog: {
@@ -105,7 +109,7 @@ export default {
   },
   dashboard: {
     logDose: 'Jag har tagit min dos',
-    endSession: 'Avsluta session',
+    endSession: 'Avsluta sessionen',
     startSession: 'Starta ny session',
     stopPrepInfo: 'För att sluta med PrEP, fortsätt att ta 1 piller om dagen i 2 dagar efter ditt senaste samlag.',
     endSessionDialog: {

@@ -33,6 +33,10 @@ export default {
       description: 'Izaberite jezik prikaza aplikacije.',
       select: 'Izaberite jezik',
     },
+    theme: {
+      title: "Režim prikaza",
+      description: "Izaberite između svetle i tamne teme."
+    },
 clearHistory: {
       button: 'Obriši moju istoriju',
       dialog: {

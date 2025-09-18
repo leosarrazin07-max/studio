@@ -33,6 +33,10 @@ export default {
       description: 'Alege limba de afișare a aplicației.',
       select: 'Selectează o limbă',
     },
+    theme: {
+      title: "Mod de afișare",
+      description: "Alege între tema deschisă și cea întunecată."
+    },
     clearHistory: {
       button: 'Șterge istoricul meu',
       dialog: {

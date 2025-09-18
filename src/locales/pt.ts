@@ -33,6 +33,10 @@ export default {
       description: 'Escolha o idioma de exibição do aplicativo.',
       select: 'Selecione um idioma',
     },
+    theme: {
+      title: "Modo de exibição",
+      description: "Escolha entre o tema claro e escuro."
+    },
     clearHistory: {
       button: 'Excluir meu histórico',
       dialog: {

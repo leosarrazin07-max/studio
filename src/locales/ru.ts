@@ -33,6 +33,10 @@ export default {
       description: 'Выберите язык отображения приложения.',
       select: 'Выберите язык',
     },
+    theme: {
+      title: "Режим отображения",
+      description: "Выберите между светлой и темной темой."
+    },
     clearHistory: {
       button: 'Удалить мою историю',
       dialog: {

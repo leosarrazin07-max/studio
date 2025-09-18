@@ -33,6 +33,10 @@ export default {
       description: 'Kies de weergavetaal voor de applicatie.',
       select: 'Selecteer een taal',
     },
+    theme: {
+      title: "Weergavemodus",
+      description: "Kies tussen licht en donker thema."
+    },
     clearHistory: {
       button: 'Mijn geschiedenis verwijderen',
       dialog: {

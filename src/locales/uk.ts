@@ -33,6 +33,10 @@ export default {
       description: 'Виберіть мову відображення програми.',
       select: 'Виберіть мову',
     },
+    theme: {
+      title: "Режим відображення",
+      description: "Виберіть між світлою та темною темою."
+    },
 clearHistory: {
       button: 'Видалити мою історію',
       dialog: {

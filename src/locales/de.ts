@@ -33,6 +33,10 @@ export default {
       description: 'Wählen Sie die Anzeigesprache der Anwendung.',
       select: 'Sprache wählen',
     },
+    theme: {
+      title: "Anzeigemodus",
+      description: "Wählen Sie zwischen hellem und dunklem Thema."
+    },
     clearHistory: {
       button: 'Meine Historie löschen',
       dialog: {
