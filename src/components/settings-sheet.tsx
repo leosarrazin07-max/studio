@@ -29,7 +29,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {locales} from '@/lib/constants';
 import { ScrollArea } from "./ui/scroll-area";
 import { useTheme } from "@/components/theme-provider";
-import { useEffect } from "react";
 
 interface SettingsSheetProps {
   isOpen: boolean;
@@ -57,14 +56,6 @@ export function SettingsSheet({
   const currentLocale = useCurrentLocale();
   const { theme, setTheme } = useTheme();
 
-  useEffect(() => {
-    const savedLocale = localStorage.getItem('prepy-locale');
-    if (savedLocale && savedLocale !== currentLocale) {
-      changeLocale(savedLocale as any);
-    }
-  }, [changeLocale, currentLocale]);
-
-
   const handleClearHistory = () => {
     onClearHistory();
     onOpenChange(false);
@@ -79,8 +70,9 @@ export function SettingsSheet({
   };
   
   const handleLocaleChange = (locale: (typeof locales)[number]) => {
+    // Set cookie that the middleware will pick up
+    document.cookie = `prepy-locale=${locale};path=/;max-age=31536000`;
     changeLocale(locale);
-    localStorage.setItem('prepy-locale', locale);
   };
 
   const renderNotificationHelpText = () => {
