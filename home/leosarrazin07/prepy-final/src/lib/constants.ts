@@ -19,3 +19,4 @@ export const locales = ['fr', 'en', 'de', 'it', 'es', 'ru', 'uk', 'ar', 'tr', 'd
 export const defaultLocale = 'fr' as const;
 
     
+
