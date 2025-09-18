@@ -33,6 +33,10 @@ export default {
       description: 'Choose the display language for the application.',
       select: 'Select a language',
     },
+    theme: {
+      title: "Display Mode",
+      description: "Choose between light and dark theme."
+    },
     clearHistory: {
       button: 'Delete my history',
       dialog: {

@@ -7,10 +7,27 @@ const I18nMiddleware = createI18nMiddleware({
   locales: locales,
   defaultLocale: defaultLocale,
   urlMappingStrategy: 'rewrite',
+  resolveLocaleFromRequest: (request) => {
+    // Check for locale in cookie first
+    if (request.cookies.has('prepy-locale')) {
+      const cookieLocale = request.cookies.get('prepy-locale')?.value;
+      if (locales.includes(cookieLocale as any)) {
+        return cookieLocale;
+      }
+    }
+    // Fallback to default behavior (accept-language header)
+    return undefined;
+  }
 });
 
 export function middleware(request: NextRequest) {
-  return I18nMiddleware(request);
+  const response = I18nMiddleware(request);
+
+  // Persist chosen locale in cookie
+  const currentLocale = response.headers.get('x-next-intl-locale') || defaultLocale;
+  response.cookies.set('prepy-locale', currentLocale);
+
+  return response;
 }
 
 export const config = {

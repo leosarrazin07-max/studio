@@ -33,6 +33,10 @@ export default {
       description: 'Choisissez la langue d\'affichage de l\'application.',
       select: 'Choisissez une langue',
     },
+    theme: {
+      title: "Mode d'affichage",
+      description: "Choisissez entre le thème clair et le thème sombre."
+    },
     clearHistory: {
       button: 'Supprimer mon historique',
       dialog: {
