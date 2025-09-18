@@ -1,4 +1,3 @@
-
 export default {
   common: {
     cancel: 'Mégse',
@@ -56,7 +55,7 @@ welcomeDialog: {
       description: 'Erősítse meg, mikor vette be a tablettáját.',
     },
     missed: {
-      title 'Kihagyott adag',
+      title: 'Kihagyott adag',
       description: 'Úgy tűnik, kihagyott egy adagot. Válasszon egy lehetőséget az állapot frissítéséhez.',
       earlier: 'Korábban vettem be 1 tablettát',
       restart: 'Újraindítás 2 tablettával',
@@ -97,7 +96,7 @@ welcomeDialog: {
   protection: {
     startsIn: '{time} múlva lesz aktív',
     text: {
-      lapsed: 'Kihagyott egy или több adagot. A védelme már nem garantált.',
+      lapsed: 'Kihagyott egy vagy több adagot. A védelme már nem garantált.',
       lessThan3doses: 'Ha folytatja az adagok szedését {dateTroisiemeJour}-ig, a {datePriseDemarrage} és {dateLendemain} közötti kapcsolatai védettek lesznek.',
       moreThan3doses: 'A {dateAvantDernierePrise} előtti kapcsolatai védettek a PrEP által.',
     },
@@ -152,5 +151,3 @@ welcomeDialog: {
     },
   },
 } as const;
-
-    

@@ -1,4 +1,3 @@
-
 export default {
   common: {
     cancel: 'Zrušit',
@@ -152,5 +151,3 @@ export default {
     },
   },
 } as const;
-
-    
