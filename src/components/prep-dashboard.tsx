@@ -94,11 +94,12 @@ export function PrepDashboard({
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Button
                         size="lg"
-                        className="bg-accent hover:bg-accent/90 text-accent-foreground shadow-md"
+                        className="bg-accent hover:bg-accent/90 text-accent-foreground shadow-md whitespace-nowrap overflow-hidden text-ellipsis"
                         onClick={() => setIsLogDoseOpen(true)}
                         disabled={status === 'lapsed'}
                     >
-                        <CheckCircle2 className="mr-2 h-5 w-5" /> {t('dashboard.logDose')}
+                        <CheckCircle2 className="mr-2 h-5 w-5 flex-shrink-0" />
+                        <span className="truncate">{t('dashboard.logDose')}</span>
                     </Button>
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
