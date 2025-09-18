@@ -151,6 +151,9 @@ export function SettingsSheet({
                         <SelectItem value="sr">Srpski</SelectItem>
                         <SelectItem value="ro">Română</SelectItem>
                         <SelectItem value="pl">Polski</SelectItem>
+                        <SelectItem value="bg">Български</SelectItem>
+                        <SelectItem value="hu">Magyar</SelectItem>
+                        <SelectItem value="cs">Čeština</SelectItem>
                       </SelectContent>
                   </Select>
               </div>
