@@ -6,10 +6,9 @@ import { locales, defaultLocale } from './lib/constants';
 const I18nMiddleware = createI18nMiddleware({
   locales: locales,
   defaultLocale: defaultLocale,
-  // Laisser next-international gérer la détection de la langue (via cookie, header, etc.)
-  // en ne fournissant pas de fonction de détection personnalisée.
-  // Cela activera automatiquement la persistance via le cookie `next-locale`.
-  localeDetection: undefined, 
+  // By not providing a `localeDetection` function, next-international
+  // will automatically use its default strategy which includes cookie persistence.
+  // This ensures the last selected language is remembered.
   urlMappingStrategy: 'rewrite',
 });
 
