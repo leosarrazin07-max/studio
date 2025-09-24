@@ -7,278 +7,152 @@ import { fr, enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr, ro, pl, bg, h
 import type { Prise, PrepState, PrepStatus, UsePrepStateReturn } from '@/lib/types';
 import { PROTECTION_START_HOURS, MAX_HISTORY_DAYS, DOSE_REMINDER_WINDOW_START_HOURS, DOSE_REMINDER_WINDOW_END_HOURS } from '@/lib/constants';
 import { useToast } from './use-toast';
-import { app } from "@/lib/firebase-client";
-import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import { useI18n, useScopedI18n, useCurrentLocale } from '@/locales/client';
+import * as db from '@/lib/database';
+import * as notifications from '@/lib/notifications';
+import { Capacitor } from '@capacitor/core';
 
 const dateLocales: { [key: string]: Locale } = {
   fr, en: enUS, de, it, es, ru, uk, ar, tr, da, sv, nl, pt, sr, ro, pl, bg, hu, cs
-};
-
-const createMockData = (): PrepState => {
-    const mockPrises: Prise[] = [];
-    const now = new Date();
-    const firstDoseTime = sub(now, { days: 1 }); 
-    const secondDoseTime = sub(now, { hours: 22, minutes: 5 }); 
-
-    mockPrises.push({
-        time: firstDoseTime,
-        pills: 2,
-        type: 'start',
-        id: `mock_0`
-    });
-
-    mockPrises.push({
-        time: secondDoseTime,
-        pills: 1,
-        type: 'dose',
-        id: `mock_1`
-    });
-
-    return {
-        prises: mockPrises.sort((a, b) => a.time.getTime() - b.time.getTime()),
-        sessionActive: true,
-        pushEnabled: false,
-        fcmToken: null,
-    };
-};
-
-const safelyParseJSON = (jsonString: string | null) => {
-  if (!jsonString) return null;
-  try {
-    const parsed = JSON.parse(jsonString);
-    if (Array.isArray(parsed.prises)) {
-        parsed.prises = parsed.prises.map((d: any) => ({...d, time: new Date(d.time)}));
-    } else {
-        parsed.prises = [];
-    }
-    return parsed;
-  } catch (e) {
-    console.error("Failed to parse JSON from localStorage", e);
-    return null;
-  }
 };
 
 const defaultState: PrepState = {
     prises: [],
     sessionActive: false,
     pushEnabled: false,
-    fcmToken: null,
 };
 
-const getInitialState = () => {
-    if (typeof window === 'undefined') {
-        return defaultState;
-    }
-    if (process.env.NODE_ENV === 'development') {
-        return createMockData();
-    }
-    const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-    return savedState || defaultState;
-}
-
 export function usePrepState(): UsePrepStateReturn {
-  const [isClient, setIsClient] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   const [now, setNow] = useState(new Date());
   const { toast } = useToast();
-  const [isPushLoading, setIsPushLoading] = useState(true);
-  const [state, setState] = useState<PrepState>(getInitialState);
-  const [pushPermissionStatus, setPushPermissionStatus] = useState<NotificationPermission>();
+  const [isPushLoading, setIsPushLoading] = useState(false);
+  const [state, setState] = useState<PrepState>(defaultState);
+  const [pushPermissionStatus, setPushPermissionStatus] = useState<PermissionState>();
 
   const t = useI18n();
   const currentLocale = useCurrentLocale();
   const locale = dateLocales[currentLocale] || fr;
   const statusT = useScopedI18n('status');
 
-  const saveState = useCallback((newState: PrepState) => {
-      if (process.env.NODE_ENV === 'development' && newState.fcmToken === null) {
-          setState(newState);
-          return;
-      }
-      
-      setState(newState);
-      if (typeof window !== 'undefined') {
-        try {
-            const stateToSave = {
-                ...newState,
-                prises: newState.prises.map(d => ({...d, time: d.time.toISOString()}))
-            };
-            localStorage.setItem('prepState', JSON.stringify(stateToSave));
-            
-            if (newState.fcmToken) {
-                 fetch('/api/subscription', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ token: newState.fcmToken, state: stateToSave })
-                }).catch(err => console.error("Failed to sync state to server:", err));
-            }
-        } catch (e) {
-            console.error("Could not save state", e);
-        }
-      }
-  }, []);
-  
- const requestNotificationPermission = useCallback(async () => {
-    if (typeof window === 'undefined' || !('Notification' in window) || !navigator.serviceWorker) {
-        toast({ title: t('notifications.toast.unsupported'), variant: "destructive" });
-        setIsPushLoading(false);
-        return false;
-    }
-    setIsPushLoading(true);
-
+  const loadInitialState = useCallback(async () => {
     try {
-        const permission = await Notification.requestPermission();
-        setPushPermissionStatus(permission);
+      await db.initialize();
+      const prises = await db.getPrises();
+      const sessionActive = await db.isSessionActive();
+      
+      const pushEnabled = Capacitor.isNativePlatform() ? (await notifications.areNotificationsEnabled()) : false;
+      
+      setState({ prises, sessionActive, pushEnabled });
 
-        if (permission !== 'granted') {
-            toast({ title: t('notifications.toast.denied.title'), description: t('notifications.toast.denied.description'), variant: "destructive" });
-            const newState = {...state, pushEnabled: false, fcmToken: null};
-            saveState(newState);
-            setIsPushLoading(false);
-            return false;
-        }
-
-        const registration = await navigator.serviceWorker.ready;
-        const messaging = getMessaging(app);
-        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-
-        if (!vapidKey) {
-            console.error("VAPID public key not found in environment variables.");
-            toast({ title: t('notifications.toast.configError.title'), description: t('notifications.toast.configError.description'), variant: "destructive" });
-            setIsPushLoading(false);
-            return false;
-        }
-
-        const fcmToken = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
-        
-        if (fcmToken) {
-             const newState = {...state, pushEnabled: true, fcmToken };
-             saveState(newState);
-             toast({ title: t('notifications.toast.enabled') });
-        } else {
-             const newState = {...state, pushEnabled: false, fcmToken: null };
-             saveState(newState);
-             toast({ title: t('notifications.toast.tokenError'), variant: "destructive" });
-        }
-
-        setIsPushLoading(false);
-        return !!fcmToken;
-    } catch (error) {
-        console.error("Error getting FCM token:", error);
-        toast({ title: t('notifications.toast.subscriptionError'), variant: "destructive" });
-        const newState = {...state, pushEnabled: false, fcmToken: null };
-        saveState(newState);
-        setIsPushLoading(false);
-        return false;
-    }
-  }, [state, saveState, toast, t]);
-
-  const unsubscribeFromNotifications = useCallback(async () => {
-    setIsPushLoading(true);
-    const fcmToken = state.fcmToken;
-    const newState = {...state, pushEnabled: false};
-    saveState(newState);
-    toast({ title: t('notifications.toast.disabled') });
-
-    if (fcmToken) {
-      try {
-        await fetch('/api/subscription', {
-            method: 'DELETE',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ token: fcmToken })
-        });
-      } catch (error) {
-         console.error("Error unsubscribing:", error);
-         toast({ title: t('notifications.toast.unsubscribeError'), variant: "destructive" });
+      if (Capacitor.isNativePlatform()) {
+        const status = await notifications.checkPermissions();
+        setPushPermissionStatus(status.display);
       }
-    }
-    
-    setIsPushLoading(false);
-  }, [state, saveState, toast, t]);
-
-  useEffect(() => {
-    setIsClient(true);
-    if (typeof window !== 'undefined') {
-        const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-        if (savedState) {
-            setState(savedState);
-        }
-    }
-    
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setPushPermissionStatus(Notification.permission);
-      try {
-        const messaging = getMessaging(app);
-        const unsubscribe = onMessage(messaging, (payload) => {
-          console.log("Message received. ", payload);
-          toast({
-            title: payload.notification?.title,
-            description: payload.notification?.body,
-          });
-          const savedState = safelyParseJSON(localStorage.getItem('prepState'));
-          if (savedState) {
-              setState(savedState);
-          }
-        });
-        return () => unsubscribe();
-      } catch (err) {
-        console.error("Error setting up onMessage listener:", err)
-      }
+    } catch (e) {
+      console.error("Failed to load initial state", e);
+      toast({ title: "Error", description: "Could not load data from local database.", variant: "destructive" });
+    } finally {
+      setIsReady(true);
     }
   }, [toast]);
+
+  useEffect(() => {
+    loadInitialState();
+  }, [loadInitialState]);
   
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (!isClient) return;
-    
-    const permission = Notification.permission;
-    if (permission === 'denied') {
-        if(state.pushEnabled) {
-            const newState = {...state, pushEnabled: false, fcmToken: null};
-            saveState(newState);
+  const requestNotificationPermission = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) {
+      toast({ title: t('notifications.toast.unsupported'), variant: "destructive" });
+      return false;
+    }
+    setIsPushLoading(true);
+    try {
+      const result = await notifications.requestPermissions();
+      setPushPermissionStatus(result.display);
+      const newPushState = result.display === 'granted';
+      setState(s => ({...s, pushEnabled: newPushState }));
+
+      if (newPushState) {
+        toast({ title: t('notifications.toast.enabled') });
+        const lastDose = state.prises.filter(p => p.type !== 'stop').sort((a,b) => b.time.getTime() - a.time.getTime())[0];
+        if (lastDose) {
+          await notifications.scheduleDoseReminders(lastDose.time, t);
         }
+      } else {
+        toast({ title: t('notifications.toast.denied.title'), description: t('notifications.toast.denied.description'), variant: "destructive" });
+      }
+      return newPushState;
+    } catch (error) {
+      console.error("Error requesting notification permission:", error);
+      toast({ title: "Error", description: "Could not request notification permissions.", variant: "destructive" });
+      return false;
+    } finally {
+      setIsPushLoading(false);
     }
-    setIsPushLoading(false);
-  }, [isClient, state.pushEnabled, saveState]);
+  }, [state.prises, t, toast]);
 
-  const startSession = useCallback((time: Date) => {
+  const unsubscribeFromNotifications = useCallback(async () => {
+      if (!Capacitor.isNativePlatform()) return;
+      setIsPushLoading(true);
+      await notifications.cancelAllNotifications();
+      setState(s => ({...s, pushEnabled: false}));
+      toast({ title: t('notifications.toast.disabled') });
+      setIsPushLoading(false);
+  }, [t, toast]);
+
+
+  const startSession = useCallback(async (time: Date) => {
+    setIsReady(false);
     const newDose = { time, pills: 2, type: 'start' as const, id: new Date().toISOString() };
-    const newPrises = [newDose];
-    const newState = { ...defaultState, prises: newPrises, sessionActive: true, pushEnabled: state.pushEnabled, fcmToken: state.fcmToken };
-    saveState(newState);
-  }, [saveState, state.pushEnabled, state.fcmToken]);
-
-  const addDose = useCallback((prise: { time: Date; pills: number }) => {
-    const newDose = { ...prise, type: 'dose' as const, id: new Date().toISOString() };
-    const newPrises = [...state.prises, newDose].sort((a, b) => a.time.getTime() - b.time.getTime());
-    saveState({ ...state, prises: newPrises });
-  }, [state, saveState]);
-
-  const endSession = useCallback(() => {
-    const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
-    const updatedDoses = [...state.prises, stopEvent];
-    saveState({ ...state, sessionActive: false, prises: updatedDoses });
-    toast({ title: t('session.end.toast.title'), description: t('session.end.toast.description') });
-  }, [state, saveState, toast, t]);
-
-  const clearHistory = useCallback(() => {
-    if (process.env.NODE_ENV === 'development') {
-        setState(createMockData());
-        toast({ title: t('session.clear.toast.dev') });
-        return;
+    await db.clearHistory();
+    await db.addPrise(newDose);
+    await db.setSessionActive(true);
+    
+    if (state.pushEnabled) {
+      await notifications.scheduleDoseReminders(newDose.time, t);
     }
     
-    if (typeof window !== 'undefined') {
-        localStorage.removeItem('prepState');
+    await loadInitialState();
+  }, [loadInitialState, state.pushEnabled, t]);
+
+  const addDose = useCallback(async (prise: { time: Date; pills: number }) => {
+    setIsReady(false);
+    const newDose = { ...prise, type: 'dose' as const, id: new Date().toISOString() };
+    await db.addPrise(newDose);
+
+    if (state.pushEnabled) {
+      await notifications.scheduleDoseReminders(newDose.time, t);
     }
-    const newState = { ...defaultState, pushEnabled: state.pushEnabled, fcmToken: state.fcmToken };
-    saveState(newState);
+    
+    await loadInitialState();
+  }, [loadInitialState, state.pushEnabled, t]);
+
+  const endSession = useCallback(async () => {
+    setIsReady(false);
+    const stopEvent = { time: new Date(), pills: 0, type: 'stop' as const, id: new Date().toISOString() };
+    await db.addPrise(stopEvent);
+    await db.setSessionActive(false);
+    
+    await notifications.cancelAllNotifications();
+
+    await loadInitialState();
+    toast({ title: t('session.end.toast.title'), description: t('session.end.toast.description') });
+  }, [loadInitialState, t, toast]);
+
+  const clearHistory = useCallback(async () => {
+    setIsReady(false);
+    await db.clearHistory();
+    await db.setSessionActive(false);
+    await notifications.cancelAllNotifications();
+    await loadInitialState();
     toast({ title: t('session.clear.toast.title'), description: t('session.clear.toast.description') });
-  }, [state.pushEnabled, state.fcmToken, toast, saveState, t]);
+  }, [loadInitialState, t, toast]);
 
   const formatCountdown = (endDate: Date) => {
     const milliseconds = differenceInMilliseconds(endDate, now);
@@ -310,7 +184,7 @@ export function usePrepState(): UsePrepStateReturn {
   let protectionStartsIn = '';
   let protectionEndsAtText = '';
 
-  if (isClient && state.prises.length > 0) {
+  if (isReady && state.prises.length > 0) {
     const sortedPrises = state.prises
       .filter(d => d.type !== 'stop')
       .sort((a, b) => a.time.getTime() - b.time.getTime());
@@ -334,7 +208,7 @@ export function usePrepState(): UsePrepStateReturn {
     }
   }
 
-  if (isClient && state.sessionActive && lastDose && firstDoseInSession) {
+  if (isReady && state.sessionActive && lastDose && firstDoseInSession) {
     const lastDoseTime = lastDose.time;
     const protectionStartTime = add(firstDoseInSession.time, { hours: PROTECTION_START_HOURS });
     const reminderWindowStartTime = add(lastDoseTime, { hours: DOSE_REMINDER_WINDOW_START_HOURS });
@@ -389,22 +263,23 @@ export function usePrepState(): UsePrepStateReturn {
       statusColor = 'bg-destructive';
       statusText = statusT('missed');
     }
-  } else if (isClient && !state.sessionActive && state.prises.length > 0) {
+  } else if (isReady && !state.sessionActive && state.prises.length > 0) {
      status = 'missed';
      statusColor = 'bg-destructive';
      statusText = statusT('ended');
   }
 
-  if (!isClient) {
+  if (!isReady) {
     statusText = statusT('loadingClient');
     statusColor = "bg-muted";
   }
 
-  const welcomeScreenVisible = isClient && state.prises.length === 0;
-  const dashboardVisible = isClient && state.prises.length > 0;
+  const welcomeScreenVisible = isReady && state.prises.length === 0;
+  const dashboardVisible = isReady && state.prises.length > 0;
 
   return {
     ...state,
+    isReady,
     isPushLoading,
     pushPermissionStatus,
     prises: state.prises.filter(dose => isAfter(dose.time, sub(now, { days: MAX_HISTORY_DAYS }))),
@@ -424,5 +299,3 @@ export function usePrepState(): UsePrepStateReturn {
     dashboardVisible,
   };
 }
-
-    

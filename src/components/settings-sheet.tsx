@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -29,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {locales} from '@/lib/constants';
 import { ScrollArea } from "./ui/scroll-area";
 import { useTheme } from "@/components/theme-provider";
+import { Capacitor } from "@capacitor/core";
 
 interface SettingsSheetProps {
   isOpen: boolean;
@@ -36,7 +36,7 @@ interface SettingsSheetProps {
   onClearHistory: () => void;
   pushEnabled: boolean;
   isPushLoading: boolean;
-  pushPermissionStatus: NotificationPermission | undefined;
+  pushPermissionStatus: PermissionState | undefined;
   requestNotificationPermission: () => void;
   unsubscribeFromNotifications: () => void;
 }
@@ -73,7 +73,11 @@ export function SettingsSheet({
     changeLocale(locale);
   };
 
+  const isNative = Capacitor.isNativePlatform();
+
   const renderNotificationHelpText = () => {
+    if (!isNative) return null;
+
     if (pushPermissionStatus === 'denied') {
       return (
         <p className="text-sm text-destructive/90">
@@ -107,23 +111,25 @@ export function SettingsSheet({
         </SheetHeader>
         <ScrollArea className="flex-1 -mr-6 pr-6">
             <div className="grid gap-6 py-8">
-              <div className="flex flex-col gap-3 p-4 rounded-lg border">
-                  <h3 className="font-semibold text-lg">{t('notifications.title')}</h3>
-                  <div className="flex items-center space-x-2">
-                      <Switch
-                      id="notifications-switch"
-                      checked={pushEnabled}
-                      onCheckedChange={handleNotificationsToggle}
-                      disabled={isPushLoading || pushPermissionStatus === 'denied'}
-                      aria-readonly
-                      />
-                      <Label htmlFor="notifications-switch" className="flex items-center">
-                      {isPushLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (pushEnabled ? <Bell className="mr-2 h-4 w-4" /> : <BellOff className="mr-2 h-4 w-4" />)}
-                      {isPushLoading ? t('notifications.loading') : (pushEnabled ? t('notifications.enabled') : t('notifications.disabled'))}
-                      </Label>
-                  </div>
-                  {renderNotificationHelpText()}
-              </div>
+              {isNative && (
+                <div className="flex flex-col gap-3 p-4 rounded-lg border">
+                    <h3 className="font-semibold text-lg">{t('notifications.title')}</h3>
+                    <div className="flex items-center space-x-2">
+                        <Switch
+                        id="notifications-switch"
+                        checked={pushEnabled}
+                        onCheckedChange={handleNotificationsToggle}
+                        disabled={isPushLoading || pushPermissionStatus === 'denied'}
+                        aria-readonly
+                        />
+                        <Label htmlFor="notifications-switch" className="flex items-center">
+                        {isPushLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (pushEnabled ? <Bell className="mr-2 h-4 w-4" /> : <BellOff className="mr-2 h-4 w-4" />)}
+                        {isPushLoading ? t('notifications.loading') : (pushEnabled ? t('notifications.enabled') : t('notifications.disabled'))}
+                        </Label>
+                    </div>
+                    {renderNotificationHelpText()}
+                </div>
+              )}
               <div className="flex flex-col gap-3 p-4 rounded-lg border">
                   <h3 className="font-semibold text-lg flex items-center gap-2">
                       <Languages />

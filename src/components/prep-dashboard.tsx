@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -19,7 +18,7 @@ import { Pill, ShieldCheck, Clock, CheckCircle2, ShieldOff, Info, PowerOff, Shie
 import type { UsePrepStateReturn } from '@/lib/types';
 import { LogDoseDialog } from './log-dose-dialog';
 import { DoseHistory } from './dose-history';
-import { useScopedI18n, useI18n } from '@/locales/client';
+import { useI18n } from '@/locales/client';
 
 export function PrepDashboard({
   prises,
@@ -33,7 +32,7 @@ export function PrepDashboard({
   endSession,
   sessionActive,
   startSession
-}: UsePrepStateReturn) {
+}: Omit<UsePrepStateReturn, 'clearHistory'>) {
   const [isLogDoseOpen, setIsLogDoseOpen] = useState(false);
   const t = useI18n();
 
