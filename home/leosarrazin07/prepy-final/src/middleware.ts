@@ -6,9 +6,12 @@ import { locales, defaultLocale } from './lib/constants';
 const I18nMiddleware = createI18nMiddleware({
   locales: locales,
   defaultLocale: defaultLocale,
-  // By returning `undefined`, we disable the default locale detection based
-  // on the `Accept-Language` header and rely solely on the `next-locale` cookie.
-  // This ensures the user's last selected language is always remembered.
+  // This custom detection function implements the desired logic:
+  // 1. We return 'undefined' to let the default detection strategy run.
+  // 2. The default strategy in next-international prioritizes the 'next-locale' cookie.
+  // 3. If the cookie is not found (first visit), it falls back to the 'Accept-Language' header.
+  // This achieves the goal of detecting browser language on first visit and respecting
+  // the user's choice on subsequent visits.
   localeDetection: () => undefined,
   urlMappingStrategy: 'rewrite',
 });
