@@ -1,15 +1,6 @@
 
 /** @type {import('next').NextConfig} */
 
-const withPWA = require('@ducanh2912/next-pwa').default({
-  dest: 'public',
-  reloadOnOnline: true,
-  swcMinify: true,
-  disable: process.env.NODE_ENV === 'development',
-  sw: 'firebase-messaging-sw.js', // Point to the Firebase service worker
-});
-
-
 const nextConfig = {
   /* config options here */
   typescript: {
@@ -19,7 +10,7 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   images: {
-    unoptimized: true, // Required for Capacitor
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',
@@ -40,4 +31,4 @@ const nextConfig = {
   }
 };
 
-module.exports = withPWA(nextConfig);
+module.exports = nextConfig;

@@ -10,8 +10,6 @@ import { Pill, Menu } from 'lucide-react';
 import { SettingsSheet } from "@/components/settings-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WelcomeDialog } from "@/components/welcome-dialog";
-import { initializeAdMob, showAppOpenAd } from "@/lib/admob";
-import { Capacitor } from '@capacitor/core';
 import { useI18n, useScopedI18n } from '@/locales/client';
 
 export default function Home() {
@@ -43,19 +41,6 @@ export default function Home() {
     protectionEndsAtText,
     sessionActive
   } = usePrepState();
-
-  useEffect(() => {
-    // Initialize AdMob and show app open ad on first load
-    if (Capacitor.isNativePlatform()) {
-      initializeAdMob().then(() => {
-        const hasSeenAppOpenAd = sessionStorage.getItem('hasSeenAppOpenAd');
-        if (!hasSeenAppOpenAd) {
-          showAppOpenAd();
-          sessionStorage.setItem('hasSeenAppOpenAd', 'true');
-        }
-      });
-    }
-  }, []);
 
   useEffect(() => {
     if (welcomeScreenVisible) {
